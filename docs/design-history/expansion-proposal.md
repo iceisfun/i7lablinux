@@ -1,3 +1,5 @@
+> **Note (added later):** the public demo keys discussed here no longer exist; they were removed. The text below is unchanged design history.
+
 # EXPANSION: roadmap, packaging and project hygiene
 
 > **Superseded by docs/PLAN.md (authoritative) on:** PLAN.md C1 (seven crates; no `labcrypto`, `i7lab-tui`, `labtests`), C10 (BIOS supported, mandatory), C19 (keys as a separate `keys.cpio` overlay), paths `configs/kernel` (not `kernel/`), section 15 (roadmap and v1 cut lines). Read PLAN.md first; where this note disagrees, PLAN.md wins.

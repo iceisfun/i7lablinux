@@ -28,7 +28,7 @@ pub struct Identity {
     pub mac: Option<String>,
     /// `key_summary()` of the daemon: roles + fingerprints, never key material
     pub key_summary: String,
-    /// red banners: `DEMO KEYS ...`, `NO KEYS: ...` (the host decides the wording)
+    /// red banners: `NO KEYS: ...` (the host decides the wording)
     pub banners: Vec<String>,
     /// `i7lab.console=locked`: the TUI is read-only and cannot open a shell
     pub console_locked: bool,

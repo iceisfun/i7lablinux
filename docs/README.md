@@ -8,7 +8,7 @@ Start with the [project README](../README.md). Then pick by what you are doing.
 |---|---|
 | [QUICKSTART.md](QUICKSTART.md) | stick to first command, and what to do when it does not come up |
 | [I7LABCTL.md](I7LABCTL.md) | the operator CLI: every command, options, exit codes, key lookup |
-| [KEYS.md](KEYS.md) | the baked keys: generate, bake, rotate, demo keys, threat statement |
+| [KEYS.md](KEYS.md) | the baked keys: generate, bake, rotate, test keys, threat statement |
 | [REMOTE-BOOT.md](REMOTE-BOOT.md) | getting a host you are not at to boot lab linux (stick, instructed person, JetKVM) |
 | [TUI.md](TUI.md) | the console UI, pages and keys |
 | [WEB.md](WEB.md) | HTTP API, authentication and the web page |

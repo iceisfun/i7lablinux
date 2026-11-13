@@ -160,7 +160,7 @@ i7labctl ls
 usage: i7labctl ls [--all] [--sort mac|ip|age|board] [--state live|stale|any]
 transports: local   role: none
 
-List the hosts in the registry (no network). live = beacon within 15 s; entries older than 10 minutes are hidden unless --all. The NOTE column flags: src-mac-mismatch, v1, unverified-tag, other-keyset (the host's key set matches none of your keys: commands to it exit 5 without sending), demo.
+List the hosts in the registry (no network). live = beacon within 15 s; entries older than 10 minutes are hidden unless --all. The NOTE column flags: src-mac-mismatch, v1, unverified-tag, other-keyset (the host's key set matches none of your keys: commands to it exit 5 without sending).
   --sort mac|ip|age|board   (default age)
   --state live|stale|any    (default live and stale)
 
@@ -647,13 +647,12 @@ usage: i7labctl key init|show|verify|import|export ...
 transports: local   role: none
 
 Key management. Keys are `i7k1:<role>:<64 hex>` files, mode 0600. They are found without flags in this order: --key, $I7LABCTL_KEY, $I7LABCTL_KEYDIR/<role>.key, ~/.config/i7labctl/keys/<role>.key, ./keys/<role>.key.
-  key init [--dir DIR] [--force] [--demo]   create admin.key, ro.key, KEYSET-ID in ~/.config/i7labctl/keys and ./keys (or DIR only); refuses to overwrite without --force, then keeps the old set in old/<date>-<ts>/
+  key init [--dir DIR] [--force]   create admin.key, ro.key, KEYSET-ID in ~/.config/i7labctl/keys and ./keys (or DIR only); refuses to overwrite without --force, then keeps the old set in old/<date>-<ts>/
   key show [--role R] [--secret]            fingerprints and paths; --secret prints the key line after asking
   key verify <host>                         authenticate to the host and print the granted role
   key export [--role ro] [--file F] [-y]    print/copy a key line; the admin key needs --yes (it is root on every host of the set)
   key import <file> [--force]               install a key line
   key rotate                                not in v1: scripts/gen-keys --force, then scripts/bake-keys per stick
---demo creates the PUBLIC demo keys: never use them on real hardware.
 
 examples
   i7labctl key init

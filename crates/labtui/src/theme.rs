@@ -20,7 +20,7 @@ pub struct Theme {
     /// bottom key bar and its key labels
     pub bar: Style,
     pub bar_key: Style,
-    /// red banner strip (DEMO keys, NO CONTROL PATH)
+    /// red banner strip (NO KEYS, NO CONTROL PATH)
     pub banner: Style,
 }
 

@@ -18,8 +18,8 @@ segment with hosts you do not trust. There is no TLS and no encryption: control 
 * Real keys never go to the build host. Images built there are keyless and identical for everybody; keys are added on your
   own machine by `bake-keys`.
 * Rotation is by re-baking (`scripts/gen-keys --rotate`); there is no remote key change in v0.1.
-* **Demo keys** are public by construction and exist for QEMU tests. The agent grants them read-only on real hardware and
-  shows a red DEMO banner; the scripts refuse them unless `ALLOW_DEMO_KEYS=1`.
+* There are **no public or derivable keys**: the agent accepts only the keys baked into the image. QEMU tests generate a
+  random throwaway set per run (`scripts/gen-keys --out DIR --throwaway`). An earlier "demo key" set was removed.
 
 ## Threat model
 

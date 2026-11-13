@@ -1,6 +1,6 @@
  i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.141  mac 3c:ec:ef:12:34:56                             attention: 7
 [Overview]  PCIe   Storage   Network   USB   Sensors   Log   Actions
- DEMO KEYS: full admin only because this is a VM
+ NO KEYS: the host cannot be controlled remotely (bake keys with scripts/bake-keys)
  NO CONTROL PATH: no NIC driver for 0000:03:00.0 RTL8126 5GbE
 ┌─ System ───────────────────────────────────────────────────────┐┌─ Attention ────────────────────────────────────────────────────┐
 │Product:       LENOVO ThinkCentre M720q                         ││!! NIC 0000:03:00.0 has no driver (RTL8126 5GbE)                │

@@ -17,9 +17,9 @@ rings, `aria-live` regions, native `<dialog>` for modals, `prefers-reduced-motio
 
 ## Auth (what the SPA does)
 
-The page asks for a key line `i7k1:ro:<64 hex>` (the ro key by default; "Use the documented demo read-only key" builds
-`SHA256("i7lablinux-demo-ro")` locally). The admin key is loaded only on the Actions page, verified with an `id` call
-(the host may downgrade it: the SPA then says so). Keys live in `sessionStorage` for the tab and are never sent.
+The page asks for a key line `i7k1:ro:<64 hex>` (the ro key by default; there is no built-in or documented key: it
+is the one you baked, see docs/KEYS.md). The admin key is loaded only on the Actions page, verified with an `id` call
+(the host may grant a lower role: the SPA then says so). Keys live in `sessionStorage` for the tab and are never sent.
 Own JS SHA-256/HMAC (WebCrypto is unavailable on plain-HTTP origins). Per request:
 
 1. `GET /api/v1/nonce`, answered as `{"nonce":"<hex>"}` (a bare text nonce is also accepted).
@@ -35,7 +35,7 @@ Own JS SHA-256/HMAC (WebCrypto is unavailable on plain-HTTP origins). Per reques
 
 | call | used by | expected |
 |---|---|---|
-| `GET /api/v1/hello` (open) | login, header | `{hostname, version?, build?, state?, demo?: bool}` (all optional; `demo:true` shows the DEMO KEYS badge) |
+| `GET /api/v1/hello` (open) | login, header | `{hostname, version?, build?, state?}` (all optional) |
 | `GET /api/v1/probe/<a,b,..>` | all data pages | `{"v":1, "<section>": <labprobe report> or {"error","message"}}`, sections = `system cpu mem dmi pci usb block net thermal smart kmsg firmware` (PLAN 4.2 field names; extra fields ignored; a failed section is shown inline, not fatal) |
 | `POST /api/v1/cmd/id` / `cmds` / `ping` | login check, Actions, About | the PLAN catalogue handlers (`role`, `version`, `kid`, ...; `cmds` entries `{name, access, streams, usage, summary}`, optional `planned: true` and `since` which grey the command out) |
 | `POST /api/v1/cmd/<name>` body `{"args":[..]}` | Actions: `identify msg time.set tui reboot poweroff` (admin) | JSON reply, errors `{"error":{"code","message","reasons"?}}` with the HTTP status |
@@ -57,13 +57,13 @@ model, size and serial and needs the serial typed once more. This is UX only: `l
 ## Development and tests (no cargo needed)
 
 ```
-python3 web/dev/mock-server.py --port 8080     # prints the demo key lines; open http://127.0.0.1:8080/
+python3 web/dev/mock-server.py --port 8080     # prints a random per-run key pair; open http://127.0.0.1:8080/
 node web/dev/test-core.js                      # 89 unit checks of the pure functions (SHA-256/HMAC vs node:crypto, RFC 4231,
                                                #   MAC layouts, stream checks, sanitiser, tree/partition/gate logic)
-node web/dev/browser-check.js [chrome]         # headless Chrome over DevTools: 78 checks, drives the mock end to end
+node web/dev/browser-check.js [chrome]         # headless Chrome over DevTools: 77 checks, drives the mock end to end
 ```
 
-`mock-server.py` implements the real auth (single-use nonces, request check with the demo keys, proof, event macs,
+`mock-server.py` implements the real auth (single-use nonces, request check with a random per-run key pair, proof, event macs,
 nonce CSP) and a fixture host with hostile strings (`<img onerror>`, `<script>`, ESC sequences, bidi) in model, serial, DMI, USB and kmsg.
 `MOCK_BAD_PROOF=1` makes it a host that fails verification (used by the browser check).
 

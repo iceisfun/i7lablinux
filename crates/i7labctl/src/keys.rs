@@ -225,13 +225,9 @@ pub struct Created {
     pub path: PathBuf,
 }
 
-/// A fresh key set (or the public demo set).
-pub fn generate_set(demo: bool) -> Result<(Key, Key), ClientError> {
-    if demo {
-        Ok((Key::demo(Role::Admin), Key::demo(Role::Ro)))
-    } else {
-        Ok((Key::generate(Role::Admin)?, Key::generate(Role::Ro)?))
-    }
+/// A fresh random key set.
+pub fn generate_set() -> Result<(Key, Key), ClientError> {
+    Ok((Key::generate(Role::Admin)?, Key::generate(Role::Ro)?))
 }
 
 /// Does `dir` already hold any key file?
@@ -254,21 +250,20 @@ pub fn write_set(dir: &Path, admin: &Key, ro: &Key, force: bool, now: u64) -> Re
             std::fs::rename(&p, old.join(p.file_name().unwrap()))?;
         }
     }
-    let demo = admin.is_demo() || ro.is_demo();
     let mut out = Vec::new();
     for k in [admin, ro] {
         let p = dir.join(format!("{}.key", k.role.name()));
         write_private(&p, &format!("{}\n", k.to_line()), false)?;
         out.push(Created { role: k.role, fingerprint: k.fingerprint(), path: p });
     }
-    let id = format!("i7lablinux keyset {}{} admin={} ro={}\n", date_of(now), if demo { " DEMO" } else { "" }, admin.fingerprint(), ro.fingerprint());
+    let id = format!("i7lablinux keyset {} admin={} ro={}\n", date_of(now), admin.fingerprint(), ro.fingerprint());
     write_private(&dir.join("KEYSET-ID"), &id, false)?;
     Ok(out)
 }
 
-/// Generate and write a key set into one directory (`demo` = the public demo keys, never for real hardware).
-pub fn init_dir(dir: &Path, force: bool, demo: bool, now: u64) -> Result<Vec<Created>, ClientError> {
-    let (a, r) = generate_set(demo)?;
+/// Generate and write a key set into one directory.
+pub fn init_dir(dir: &Path, force: bool, now: u64) -> Result<Vec<Created>, ClientError> {
+    let (a, r) = generate_set()?;
     write_set(dir, &a, &r, force, now)
 }
 
@@ -319,7 +314,7 @@ mod tests {
     fn init_show_force_and_perms() {
         let d = tmp("init");
         let keys = d.join("keys");
-        let made = init_dir(&keys, false, false, 1_794_000_000).unwrap();
+        let made = init_dir(&keys, false, 1_794_000_000).unwrap();
         assert_eq!(made.len(), 2);
         for c in &made {
             assert_eq!(std::fs::metadata(&c.path).unwrap().permissions().mode() & 0o777, 0o600);
@@ -329,10 +324,10 @@ mod tests {
         assert!(id.contains("2026-11-06") && id.contains(&made[0].fingerprint));
         assert!(!id.contains(&made[0].path.display().to_string()));
         // refuse overwrite
-        assert!(matches!(init_dir(&keys, false, false, 1), Err(ClientError::Safety(_))));
+        assert!(matches!(init_dir(&keys, false, 1), Err(ClientError::Safety(_))));
         // force keeps the old set
         let before = std::fs::read_to_string(keys.join("admin.key")).unwrap();
-        init_dir(&keys, true, false, 1_794_000_100).unwrap();
+        init_dir(&keys, true, 1_794_000_100).unwrap();
         assert_ne!(std::fs::read_to_string(keys.join("admin.key")).unwrap(), before);
         let olds: Vec<_> = std::fs::read_dir(keys.join("old")).unwrap().collect();
         assert_eq!(olds.len(), 1);
@@ -343,7 +338,7 @@ mod tests {
     fn select_role_defaults_and_kid() {
         let d = tmp("sel");
         let keys = d.join("keys");
-        init_dir(&keys, false, false, 5).unwrap();
+        init_dir(&keys, false, 5).unwrap();
         let env = KeyEnv { env_keydir: Some(keys.clone()), ..Default::default() };
         let (k, _) = select(&env, None, None).unwrap();
         assert_eq!(k.role, Role::Admin);
@@ -377,7 +372,7 @@ mod tests {
         assert!(e.to_string().contains("key init"));
         // loose permissions are refused
         let keys = d.join("keys");
-        init_dir(&keys, false, false, 5).unwrap();
+        init_dir(&keys, false, 5).unwrap();
         std::fs::set_permissions(keys.join("admin.key"), std::fs::Permissions::from_mode(0o644)).unwrap();
         let env = KeyEnv { env_keydir: Some(keys), ..Default::default() };
         let e = select(&env, Some(Role::Admin), None).unwrap_err();
@@ -386,11 +381,11 @@ mod tests {
     }
 
     #[test]
-    fn demo_keys_and_import() {
-        let d = tmp("demo");
-        let made = init_dir(&d.join("k"), false, true, 5).unwrap();
-        assert_eq!(made[0].fingerprint, Key::demo(Role::Admin).fingerprint());
-        let line = Key::demo(Role::Ro).to_line();
+    fn generated_keys_and_import() {
+        let d = tmp("import");
+        let made = init_dir(&d.join("k"), false, 5).unwrap();
+        assert_eq!(made[0].role, Role::Admin);
+        let line = Key { role: Role::Ro, bytes: [5; 32] }.to_line();
         let c = import_into(&d.join("imp"), &line, false).unwrap();
         assert_eq!(c.role, Role::Ro);
         assert!(import_into(&d.join("imp"), &line, false).is_err());

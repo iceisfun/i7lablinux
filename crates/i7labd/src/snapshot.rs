@@ -39,8 +39,6 @@ pub fn overview(d: &Daemon, fast: &labprobe::Inventory, slow: &labprobe::Invento
     w.field_str("state", &d.state_str());
     w.field_str("build", &d.config.image_build);
     w.field_str("kid", &d.kid());
-    w.field_bool("demo_keys", d.policy.demo);
-    w.field_bool("vm", d.policy.vm);
     merge(&mut w, fast);
     merge(&mut w, slow);
     w.end_object();
@@ -50,9 +48,6 @@ pub fn overview(d: &Daemon, fast: &labprobe::Inventory, slow: &labprobe::Invento
 /// Strings for the console banner and SPA header, most severe first.
 pub fn attention(d: &Daemon, net: &[crate::beacon::Nic], pci_json: Option<&str>) -> Vec<String> {
     let mut v = Vec::new();
-    if let Some(b) = d.policy.banner() {
-        v.push(b.to_string());
-    }
     if d.keys.read().unwrap().admin.is_none() {
         v.push("NO ADMIN KEY: the host cannot be controlled (bake keys with scripts/bake-keys)".into());
     }

@@ -502,9 +502,6 @@ impl<'a> Run<'a> {
     pub fn key_for(&mut self, t: &Target) -> Result<Key, ClientError> {
         let kid = if self.g.no_registry { None } else { t.entry.as_ref().map(|e| e.kid_pair()) };
         let (k, _path) = crate::keys::select(&self.keyenv(), self.g.role, kid)?;
-        if k.is_demo() {
-            self.note("i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)");
-        }
         Ok(k)
     }
 

@@ -1,3 +1,4 @@
+NOTE (added later): the public demo keys used by this run no longer exist; they were removed from i7lablinux. Current tests use per-run random throwaway keys. The text below is unchanged history.
 # V2 brief audit: supplementary QEMU runs on the build host, 2026-11-12 (image built from this tree, scripts/build-image --full;
 # BIOS q35 guest, demo keys, --link mcast test segment; scripts in the audit agent's scratchpad, logic as scripts/e2e start_guest)
 

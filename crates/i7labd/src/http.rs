@@ -157,7 +157,6 @@ fn hello_json(d: &Daemon) -> String {
     w.field_u64("proto", labproto::frame::VERSION as u64);
     w.field_str("state", &d.state_str());
     w.field_u64("caps", labproto::catalog::caps_bits() as u64);
-    w.field_bool("demo_keys", d.policy.demo);
     w.end_object();
     w.finish()
 }

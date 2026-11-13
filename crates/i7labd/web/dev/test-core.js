@@ -20,10 +20,10 @@ for (const len of [0, 1, 55, 56, 57, 63, 64, 65, 119, 120, 1000, 100000]) { cons
 eq(I7.hex(I7.hmac(u('Jefe'), u('what do ya want for nothing?'))), '5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843', 'RFC4231 #2');
 for (const kl of [1, 32, 64, 65, 131]) { const k = nc.randomBytes(kl), d = nc.randomBytes(77); eq(I7.hex(I7.hmac(new Uint8Array(k), new Uint8Array(d))), nc.createHmac('sha256', k).update(d).digest('hex'), 'hmac kl ' + kl); }
 
-// Key lines, ids, demo keys (formula of labproto::keys)
-const dk = I7.demoKey('ro');
-eq(I7.hex(dk.bytes), nsha('i7lablinux-demo-ro'));
-eq(dk.id, nsha(Buffer.concat([Buffer.from('i7c-keyid'), Buffer.from(dk.bytes)])).slice(0, 8));
+// Key lines and ids (formula of labproto::keys), with a random key per run
+const rk = nc.randomBytes(32), dk = I7.parseKey('i7k1:ro:' + rk.toString('hex'));
+eq(I7.hex(dk.bytes), rk.toString('hex'));
+eq(dk.id, nsha(Buffer.concat([Buffer.from('i7c-keyid'), rk])).slice(0, 8));
 eq(I7.parseKey(dk.line).id, dk.id);
 ok(I7.parseKey('i7k1:root:' + '00'.repeat(32)) === null && I7.parseKey('i7k1:ro:abcd') === null && I7.parseKey('') === null, 'bad key lines rejected');
 eq(I7.parseKey('  i7k1:admin:' + 'AB'.repeat(32) + '\n').line, 'i7k1:admin:' + 'ab'.repeat(32));
@@ -89,8 +89,8 @@ eq(I7.blkArgs(disk(), 'read', { mb: 64, regions: 'mid', bs: '1m', direct: true }
 ok(!I7.blkArgs(disk(), 'read', { mb: 1 }).includes('--destructive'), 'read never carries --destructive');
 
 // Attention
-const a1 = I7.attention({ pci: { devices: [{ bdf: 'x', vendor: '10ec', device: '8126', class: '020000', driver: null }] }, net: { ifaces: [{ name: 'lo' }] }, hello: { demo: true } });
-ok(a1.some(a => a.level === 'bad' && /NO CONTROL PATH/.test(a.text)) && a1.some(a => /DEMO/.test(a.text)), 'attention: no control path + demo');
+const a1 = I7.attention({ pci: { devices: [{ bdf: 'x', vendor: '10ec', device: '8126', class: '020000', driver: null }] }, net: { ifaces: [{ name: 'lo' }] }, hello: {} });
+ok(a1.some(a => a.level === 'bad' && /NO CONTROL PATH/.test(a.text)), 'attention: no control path');
 ok(I7.attention({ smart: { devices: [{ dev: 'sda', verdict: 'fail', reasons: ['r'] }] } }).some(a => a.level === 'bad'), 'smart fail');
 eq(I7.attention({}).length, 0);
 

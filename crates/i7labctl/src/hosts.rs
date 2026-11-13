@@ -51,7 +51,6 @@ pub struct HostEntry {
     pub http: String,
     pub caps: String,
     pub tag_ok: Option<bool>,
-    pub demo: bool,
     pub up: Option<u64>,
     pub first_seen: u64,
     pub last_seen: u64,
@@ -95,7 +94,7 @@ impl HostEntry {
         }
         (a, r)
     }
-    /// Notes shown by `ls` (I7LABCTL.md 3.1): `src-mac-mismatch`, `v1`, `unverified-tag`, `other-keyset`, `demo`.
+    /// Notes shown by `ls` (I7LABCTL.md 3.1): `src-mac-mismatch`, `v1`, `unverified-tag`, `other-keyset`.
     pub fn flags(&self, local_fps: &[String]) -> Vec<&'static str> {
         let mut f = Vec::new();
         if self.mac_mismatch {
@@ -108,9 +107,6 @@ impl HostEntry {
         }
         if !self.kid.is_empty() && !self.kid_matches(local_fps) {
             f.push("other-keyset");
-        }
-        if self.demo {
-            f.push("demo");
         }
         f
     }
@@ -213,7 +209,6 @@ impl Registry {
             http: g("http"),
             caps: g("caps"),
             tag_ok: if b.version == 2 { m.tag_ok } else { None },
-            demo: b.get("demo") == Some("1"),
             up: b.get("up").and_then(|v| v.parse().ok()),
             first_seen: now,
             last_seen: now,
@@ -327,7 +322,6 @@ impl Registry {
                 Some(b) => w.bool(b),
                 None => w.null(),
             }
-            w.field_bool("demo", h.demo);
             w.field_opt_u64("up", h.up);
             w.end_object();
         }
@@ -388,7 +382,6 @@ impl Registry {
                     http: st("http"),
                     caps: st("caps"),
                     tag_ok: jv::b(v, "tag_ok"),
-                    demo: jv::b(v, "demo").unwrap_or(false),
                     up: v.get("up").and_then(Value::as_u64),
                     first_seen: nu("first_seen"),
                     last_seen: nu("last_seen"),
@@ -582,7 +575,7 @@ mod tests {
             return;
         }
         let mut r = Registry::default();
-        r.observe(&beacon(&[("demo", "1")]), &meta(), 77);
+        r.observe(&beacon(&[]), &meta(), 77);
         let j = r.to_json();
         let r2 = Registry::from_json(&j).expect("parse");
         assert_eq!(r.hosts, r2.hosts);

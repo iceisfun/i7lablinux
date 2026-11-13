@@ -27,7 +27,7 @@ The project has no crates.io dependencies, so no dependency forces a choice.
   no CLA. A copyleft or relicensing plan wants a CLA or DCO sign-off decided now, while there are few contributors.
 * **Prior art**: the earlier lab-init and lab-proxy code was copied in and adapted. Those are the operator's own code, so the
   operator may license the result however they like.
-* **The demo keys** are public by design and are not a licence matter ([KEYS.md](KEYS.md)).
+* **Keys**: there are no public keys; key material is never tracked ([KEYS.md](KEYS.md)).
 * **Name**: the public name (`i7lablinux`) is a separate open decision.
 
 ## To apply a decision

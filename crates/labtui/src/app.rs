@@ -330,7 +330,7 @@ impl App {
         }
         let set = if self.ascii { BorderSet::Ascii } else { BorderSet::Unicode };
         self.draw_header(buf, w);
-        // banners (DEMO keys, NO KEYS, NO CONTROL PATH) under the tab bar
+        // banners (NO KEYS, NO CONTROL PATH) under the tab bar
         let banners = self.data.banners();
         let tabs_y = 1;
         let labels_full: Vec<&str> = TAB_NAMES.to_vec();

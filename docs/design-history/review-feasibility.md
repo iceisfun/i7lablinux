@@ -1,3 +1,5 @@
+> **Note (added later):** the public demo keys discussed here no longer exist; they were removed. The text below is unchanged design history.
+
 # Review D3: feasibility and completeness of the i7lablinux plan
 
 Reviewer: D3 (adversarial, feasibility/completeness). Date 2026-11-12.

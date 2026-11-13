@@ -33,7 +33,7 @@ port 8080 once the host has an IP (DHCP runs in the background).
 
 ```
 scripts/build-usb-drive --image out/mine.img --iso out/mine.iso      # keyed image + ISO (JetKVM virtual media, QEMU)
-scripts/qemu-test --both                                             # boot-level check in QEMU on the build host (demo keys)
+scripts/qemu-test --both                                             # boot-level check in QEMU on the build host (throwaway keys)
 ```
 
 ## Getting a remote machine to boot it

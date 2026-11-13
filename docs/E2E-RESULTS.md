@@ -2,8 +2,12 @@
 
 Host: the build host (128 cores, KVM). Guests: q35, 4 vCPU, 2 GiB, USB stick (the image, `snapshot=on`), NVMe `I7NVME0001`,
 virtio disks `I7VIRT0001` and `I7PART0001` (GPT + ext4), virtio-net on a multicast L2 segment (no IP configured on it) and
-an e1000e on QEMU user networking (DHCP, HTTP forwarded). Firmware: SeaBIOS and OVMF (UEFI). The PUBLIC demo keys are baked
-into a scratch copy of the image; admin works because the guest is a VM (PLAN C20).
+an e1000e on QEMU user networking (DHCP, HTTP forwarded). Firmware: SeaBIOS and OVMF (UEFI). A random THROWAWAY key set (made per
+run) is baked into a scratch copy of the image.
+
+> **Note:** these results were recorded before the public demo keys were removed (the run used them, with admin allowed
+> because the guest is a VM). Demo keys no longer exist; `scripts/e2e` now generates throwaway keys per run. The numbers
+> below are history and were not rewritten.
 
 Full transcript of the last run (every command and its output): [e2e/transcript-20261113.txt](e2e/transcript-20261113.txt).
 VGA console (tty1 TUI, UEFI guest, QEMU screendump): [e2e/tui-vga-uefi.png](e2e/tui-vga-uefi.png).
@@ -93,7 +97,7 @@ Unit and integration tests: `cargo test --workspace` on the build host, **728 pa
 ## NOT RUN
 
 * Any real hardware, a real USB stick, the real PDU/JetKVM remote-boot procedure (docs/REMOTE-BOOT.md is not exercised here).
-* Booting an image with the operator's REAL keys (the real-key image was built and read-back verified, but running it needs the real key on the build host, which I did not copy there). The demo-key paths are identical code.
+* Booting an image with the operator's REAL keys (the real-key image was built and read-back verified, but running it needs the real key on the build host, which I did not copy there). The (since removed) demo-key paths were identical code.
 * 802.1Q/802.1ad tagged L2 (the BPF program and aux-data parser are unit-tested; no tagged frames were sent through QEMU).
 * `i7labctl` over a real NIC with `cap_net_raw` (`PacketLink` on the client side): only the server side uses `PacketLink` in these runs (the guest's NIC loop); the client used the multicast test link.
 * DHCP failure paths, static address hints (`I7LR2`), netcfg rollback, the `net set/vlan` commands against the live kernel.

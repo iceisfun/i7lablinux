@@ -148,7 +148,6 @@ guests at once, every guest under `timeout`. The full e2e plan is `tests/e2e` (d
 | `I7_FIRMWARE_DIR` | firmware source (default `/lib/firmware`) |
 | `PMBR_ACTIVE`, `--pmbr-active 0\|1` | mark the protective MBR entry active (default 1) |
 | `I7_GRUB_PC`, `I7_GRUB_EFI` | GRUB module dirs (default `/usr/lib/grub/{i386-pc,x86_64-efi}`) |
-| `ALLOW_DEMO_KEYS=1` | permit the public demo keys (tests only) |
 
 ## Not yet proven
 

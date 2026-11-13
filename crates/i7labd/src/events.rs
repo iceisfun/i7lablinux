@@ -17,7 +17,7 @@ pub struct Snapshot {
     /// labprobe summaries as JSON (system, cpu, mem, thermal, net, block verdicts): same object as
     /// `GET /api/v1/overview`
     pub overview_json: String,
-    /// human strings, most severe first ("NO CONTROL PATH: unbound 10ec:8126 at 03:00.0", "DEMO KEYS", ...)
+    /// human strings, most severe first ("NO CONTROL PATH: unbound 10ec:8126 at 03:00.0", "NO ADMIN KEY: ...", ...)
     pub attention: Vec<String>,
     /// "booting" | "ready" | "busy" | "degraded" | "shutdown"
     pub state: String,

@@ -165,7 +165,7 @@ impl T {
         let _ = std::fs::remove_dir_all(&dir);
         let home = dir.join("home");
         std::fs::create_dir_all(&home).unwrap();
-        i7labctl::keys::init_dir(&i7labctl::keys::default_key_dir(&home), false, false, 1_794_000_000).unwrap();
+        i7labctl::keys::init_dir(&i7labctl::keys::default_key_dir(&home), false, 1_794_000_000).unwrap();
         let reply: Reply = Arc::new(|_, _| Ok(MockOut::ok("{}")));
         T {
             dir,

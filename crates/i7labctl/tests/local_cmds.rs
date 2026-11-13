@@ -363,26 +363,6 @@ fn key_init_also_fills_the_build_tree_keys_dir() {
 }
 
 #[test]
-fn key_init_demo_warns() {
-    need_json!();
-    let t = T::new("keydemo");
-    fresh_home(&t);
-    let (code, _, e) = t.run(&["key", "init", "--demo"]);
-    assert_eq!(code, 0);
-    assert!(e.contains("PUBLIC demo keys"), "{}", e);
-    let (_, o, _) = t.run(&["key", "show"]);
-    assert!(o.contains("DEMO"), "{}", o);
-    // using one warns on stderr but works
-    t.add_host(MAC, 3, &[]);
-    let (code, _, e) = t.run(&["id", MAC]);
-    assert_eq!(code, 0);
-    assert!(e.contains("DEMO"), "{}", e);
-    t.err.0.lock().unwrap().clear();
-    let (_, _, e) = t.run(&["id", MAC, "-q"]);
-    assert!(!e.contains("DEMO"), "{}", e);
-}
-
-#[test]
 fn key_verify_reports_the_granted_role() {
     need_json!();
     let t = T::new("keyverify");

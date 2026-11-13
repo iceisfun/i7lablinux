@@ -184,10 +184,6 @@ function parseKey(line) {
   const bytes = unhex(m[2].toLowerCase());
   return { role: m[1], bytes, id: keyId(bytes), line: 'i7k1:' + m[1] + ':' + m[2].toLowerCase() };
 }
-function demoKey(role) {
-  const bytes = sha256(utf8('i7lablinux-demo-' + role));
-  return { role, bytes, id: keyId(bytes), line: 'i7k1:' + role + ':' + hex(bytes), demo: true };
-}
 
 /* labproto::httpauth */
 function requestMac(key, nonce, method, target, body) {
@@ -327,7 +323,6 @@ function attention(d) {
     const nonet = !nics.length;
     add(nonet ? 'bad' : 'warn', (nonet ? 'NO CONTROL PATH: ' : '') + 'NIC without a driver: ' + unbound.map(x => (x.vendor + ':' + x.device) + ' at ' + x.bdf).join(', '));
   }
-  if (d.hello && d.hello.demo) add('warn', 'DEMO KEYS are baked into this host (publicly documented keys).');
   const deg = pci.filter(degraded);
   if (deg.length) add('warn', 'PCIe link below maximum: ' + deg.map(x => x.bdf + ' ' + fmtLink(x.link)).join(', '));
   const aer = pci.filter(x => aerTotal(x) > 0);
@@ -368,7 +363,7 @@ function decodeStdout(ev) {
   if (typeof ev.b64 === 'string') { try { return new TextDecoder().decode(Uint8Array.from(atob(ev.b64), c => c.charCodeAt(0))); } catch (e) { return ''; } }
   return '';
 }
-return { utf8, hex, unhex, ctEq, sha256, hmac, keyId, parseKey, demoKey, requestMac, responseMac, eventMac, checkEvent, feedLines, feedSSE,
+return { utf8, hex, unhex, ctEq, sha256, hmac, keyId, parseKey, requestMac, responseMac, eventMac, checkEvent, feedLines, feedSSE,
   clean, fmtBytes, fmtKib, fmtRate, fmtDur, fmtLink, buildTree, buildUsbTree, isNic, degraded, aerTotal, partLayout, diskId, writeGate, blkArgs,
   attention, sensorSamples, pushRing, rate, logFilter, decodeStdout };
 })();
@@ -873,7 +868,7 @@ pages.actions = function (root, sig) {
     if (!k || k.role !== 'admin') { adminMsg.replaceChildren(h('div', { class: 'alert bad' }, 'That is not an admin key line (i7k1:admin:<64 hex>).')); return; }
     const prev = S.admin; S.admin = k;
     try { const r = await cmd('id', [], { admin: true, signal: sig }); saveKey(k); adminIn.value = '';
-      adminMsg.replaceChildren(r.role === 'admin' ? h('div', { class: 'alert info' }, 'Admin key accepted (' + k.id + ').') : h('div', { class: 'alert warn' }, 'The host accepted the key but treats it as "' + t(r.role) + '" (demo keys act as admin only inside a VM).'));
+      adminMsg.replaceChildren(r.role === 'admin' ? h('div', { class: 'alert info' }, 'Admin key accepted (' + k.id + ').') : h('div', { class: 'alert warn' }, 'The host accepted the key but treats it as "' + t(r.role) + '".'));
       whoami(); renderActions(); }
     catch (e) { S.admin = prev; adminMsg.replaceChildren(errBox(e)); }
   };
@@ -924,7 +919,6 @@ function whoami() {
   const w = $('#whoami'); w.textContent = '';
   const k = S.admin || S.ro;
   if (k) w.append(badge((S.admin ? 'admin' : 'read-only') + ' ' + k.id, S.admin ? 'warn' : 'ok'));
-  if (S.hello && S.hello.demo) w.append(' ', badge('DEMO KEYS', 'warn'));
   $('#signout').hidden = !k;
   $('#hostname').textContent = S.hello && S.hello.hostname ? t(S.hello.hostname) : '';
   document.title = 'i7lablinux' + (S.hello && S.hello.hostname ? ' ' + t(S.hello.hostname) : '');
@@ -941,9 +935,8 @@ function loginPage(root) {
   root.append(h('div', { class: 'login' }, h('h1', null, 'Connect to ' + t(S.hello && S.hello.hostname || 'this host')),
     S.hello && S.hello.error ? h('div', { class: 'alert bad' }, 'Cannot reach the agent: ' + t(S.hello.error)) : null,
     h('p', null, 'Paste a key line. Use the read-only key (', h('code', null, 'i7k1:ro:...'), ') for looking around; the admin key is loaded later, on the Actions page. Keys live only in this tab and are never sent over the network.'),
-    h('label', { for: 'keyline' }, 'Key line'), ta, h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { type: 'button', class: 'pri', onclick: go }, 'Connect'),
-      h('button', { type: 'button', onclick: () => enter(I7.demoKey('ro')) }, 'Use the documented demo read-only key')),
-    msg, h('p', { class: 'dim' }, 'Keys are in ~/.config/i7labctl/keys/ on the machine that built the stick (docs/KEYS.md). A host that still has the demo keys accepts the demo key.')));
+    h('label', { for: 'keyline' }, 'Key line'), ta, h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { type: 'button', class: 'pri', onclick: go }, 'Connect')),
+    msg, h('p', { class: 'dim' }, 'Keys are in ~/.config/i7labctl/keys/ on the machine that built the stick (docs/KEYS.md).')));
   ta.focus();
 }
 let routeSeq = 0;

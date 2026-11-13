@@ -1,3 +1,5 @@
+> **Note (added later):** the public demo keys discussed here no longer exist; they were removed. The text below is unchanged design history.
+
 # i7lablinux security/safety review (D2, adversarial)
 
 Status: review of the design as written in `PLAN.md`, `PROTOCOL.md`, `PROBES.md`, `WEB.md`,

@@ -61,7 +61,9 @@ key_line_hex() {
   [ "$prefix" = i7k1 ] && [ "$role" = "$2" ] && is_hex64 "$hex" || return 1
   printf '%s' "$hex"
 }
-demo_hex() { printf 'i7lablinux-demo-%s' "$1" | sha256sum | cut -d' ' -f1; }   # public by construction
+# make_throwaway_keys DIR : a fresh RANDOM key set for one test run (scripts/gen-keys --out DIR --throwaway). Never touches
+# ./keys or ~/.config/i7labctl. DIR must not exist yet.
+make_throwaway_keys() { "$I7_ROOT/scripts/gen-keys" --out "$1" --throwaway --quiet; }
 
 # ---- newc cpio helpers (root-less device nodes from the prior art, kept here so every script can test them) --------
 # Character device without root: a newc header we write ourselves. A second archive appended to the first is

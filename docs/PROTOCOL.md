@@ -1,6 +1,6 @@
 # i7lablinux wire protocols
 
-> **Superseded by docs/PLAN.md (authoritative) on:** PLAN.md C3 (HTTP paths `/api/v1/nonce`, `/api/v1/hello`; no `/nonce`, `/health`), C5 (`inv` sections), C20 (demo keys ro on hardware), C21 (one `labproto::session` engine), C22 (file path policy), C23 + section 4.4 (`accept_v1_hint` default off, `i7lab.ether=`), `frame::canonical_tags` (VLAN stack), new ids `time.set` 0x0005 and `tui.dump` 0x0083, `key.set` planned v0.3 (section 5). Read PLAN.md first; where this note disagrees, PLAN.md wins.
+> **Superseded by docs/PLAN.md (authoritative) on:** PLAN.md C3 (HTTP paths `/api/v1/nonce`, `/api/v1/hello`; no `/nonce`, `/health`), C5 (`inv` sections), C20 (no public keys), C21 (one `labproto::session` engine), C22 (file path policy), C23 + section 4.4 (`accept_v1_hint` default off, `i7lab.ether=`), `frame::canonical_tags` (VLAN stack), new ids `time.set` 0x0005 and `tui.dump` 0x0083, `key.set` planned v0.3 (section 5). Read PLAN.md first; where this note disagrees, PLAN.md wins.
 
 
 Status: design, version 1 of the command protocol, version 2 of the beacon. No code implements this yet.

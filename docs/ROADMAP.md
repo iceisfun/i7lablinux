@@ -44,5 +44,5 @@ recorder on a data partition; cross-host disk benchmark history; USB passthrough
 ## Operator decisions waiting
 
 Licence ([LICENSE-DECISION.md](LICENSE-DECISION.md)), public name, console open by default, optional ssh add-on,
-firmware bundling default, publishing the demo key set, raw-socket privilege model for `i7labctl`, JetKVM through
+firmware bundling default, raw-socket privilege model for `i7labctl`, JetKVM through
 hwlabd or directly. The full list with the assumptions made is [PLAN.md](PLAN.md) section 16.

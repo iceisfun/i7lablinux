@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
-use labproto::keys::{KeySet, Role};
+use labproto::keys::KeySet;
 
 use crate::audit::Audit;
 use crate::beacon::Identity;
@@ -14,43 +14,6 @@ use crate::limits::{Limits, Stats};
 use crate::logring::LogRing;
 use crate::netcfg::NetState;
 use crate::registry::Registry;
-
-/// Runtime key policy (PLAN.md C20, review security F3). Demo keys are public: on real hardware every request
-/// authenticated with a demo key runs with role ro (probes only); full admin with demo keys exists only inside a
-/// VM (DMI sys_vendor "QEMU" or the CPU `hypervisor` flag), which is what the e2e tests use.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct KeyPolicy {
-    pub demo: bool,
-    pub vm: bool,
-}
-
-impl KeyPolicy {
-    pub fn detect(keys: &KeySet) -> KeyPolicy {
-        let vendor = std::fs::read_to_string("/sys/class/dmi/id/sys_vendor").unwrap_or_default();
-        let cpu = std::fs::read_to_string("/proc/cpuinfo").unwrap_or_default();
-        let vm = vendor.trim() == "QEMU"
-            || cpu.lines().any(|l| l.starts_with("flags") && l.split_whitespace().any(|f| f == "hypervisor"));
-        KeyPolicy { demo: keys.is_demo(), vm }
-    }
-
-    /// Role a request actually runs with.
-    pub fn effective(&self, role: Role) -> Role {
-        if self.demo && !self.vm {
-            Role::Ro
-        } else {
-            role
-        }
-    }
-
-    /// Red banner text for TUI / `id` / beacon `demo=1`, if any.
-    pub fn banner(&self) -> Option<&'static str> {
-        match (self.demo, self.vm) {
-            (true, false) => Some("DEMO KEYS: public keys, read-only on real hardware. Bake real keys (scripts/bake-keys)."),
-            (true, true) => Some("DEMO KEYS (VM): public keys, full control. Test use only."),
-            _ => None,
-        }
-    }
-}
 
 /// Live state shown by beacon, TUI and `id`.
 #[derive(Clone, Debug, Default)]
@@ -95,7 +58,6 @@ pub struct Daemon {
     pub audit: Audit,
     pub jobs: Jobs,
     pub state: RwLock<HostState>,
-    pub policy: KeyPolicy,
     pub snapshot: Snapshots,
     pub events: EventBus,
     // additions inside the agent (P6a/P6b/P7)
@@ -118,14 +80,12 @@ impl Daemon {
         let keys = KeySet::load_dir(&config.key_dir).unwrap_or_default();
         let mut boot_id = [0u8; 8];
         labproto::crypto::random_bytes(&mut boot_id)?;
-        let policy = KeyPolicy::detect(&keys);
         let mut probe = labprobe::ProbeCtx::live();
         if let Some(pu) = &config.boot_partuuid {
             probe.boot_partuuid = Some(pu.clone());
             probe.boot_disk = labprobe::block::resolve_boot_disk(&probe, pu);
         }
         Ok(Daemon {
-            policy,
             snapshot: Snapshots::default(),
             events: EventBus::default(),
             registry: Registry::standard(),
@@ -217,9 +177,6 @@ pub fn run(daemon: Arc<Daemon>) -> ! {
     let _ = std::fs::create_dir_all(&daemon.config.run_dir);
     let _ = std::fs::write(daemon.config.run_dir.join("i7labd.pid"), std::process::id().to_string());
     daemon.log(&format!("i7labd {} build {} starting; keys {}", labproto::VERSION, daemon.config.image_build, daemon.key_summary()));
-    if let Some(b) = daemon.policy.banner() {
-        daemon.log(b);
-    }
     supervise(daemon.clone(), "snapshot", crate::snapshot::run);
     supervise(daemon.clone(), "net", crate::netcfg::run);
     supervise(daemon.clone(), "ether", crate::ether::run);
@@ -252,15 +209,6 @@ pub fn run(daemon: Arc<Daemon>) -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn demo_on_hardware_is_ro() {
-        let hw = KeyPolicy { demo: true, vm: false };
-        assert_eq!(hw.effective(Role::Admin), Role::Ro);
-        assert!(hw.banner().is_some());
-        assert_eq!(KeyPolicy { demo: true, vm: true }.effective(Role::Admin), Role::Admin);
-        assert_eq!(KeyPolicy { demo: false, vm: false }.effective(Role::Admin), Role::Admin);
-    }
-
     #[test]
     fn kid_and_state() {
         let d = crate::registry::tests_support::test_daemon();

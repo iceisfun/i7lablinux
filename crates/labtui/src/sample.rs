@@ -287,7 +287,7 @@ pub fn demo_data_with_test() -> ViewData {
     d
 }
 
-/// A host where the only NIC has no driver and demo keys are active: red banners.
+/// A host where the only NIC has no driver and no keys are baked: red banners.
 pub fn demo_data_no_control_path() -> ViewData {
     let mut d = demo_data();
     if let Some(n) = d.net.as_mut() {
@@ -296,6 +296,6 @@ pub fn demo_data_no_control_path() -> ViewData {
     if let Some(p) = d.pci.as_mut() {
         p.devices.retain(|x| x.bdf != "0000:02:00.0");
     }
-    d.identity.banners = vec!["DEMO KEYS: full admin only because this is a VM".into()];
+    d.identity.banners = vec!["NO KEYS: the host cannot be controlled remotely (bake keys with scripts/bake-keys)".into()];
     d
 }

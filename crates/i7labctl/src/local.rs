@@ -54,7 +54,6 @@ pub fn entry_json(h: &HostEntry, now: u64, fps: &[String]) -> String {
     w.field_str("iface", &h.iface);
     w.field_opt_u64("vlan", h.vlan.map(u64::from));
     w.field_u64("proto_ver", u64::from(h.proto_ver));
-    w.field_bool("demo", h.demo);
     w.key("tag_ok");
     match h.tag_ok {
         Some(b) => w.bool(b),
@@ -477,9 +476,8 @@ pub fn key(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
 }
 
 fn key_init(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
-    let p = run.parse(args, &Spec::new("key init [--dir DIR] [--force] [--demo]").flags(&["force", "demo"]).valued(&["dir"]).no_host())?;
+    let p = run.parse(args, &Spec::new("key init [--dir DIR] [--force]").flags(&["force"]).valued(&["dir"]).no_host())?;
     let force = p.opts.flag("force");
-    let demo = p.opts.flag("demo");
     let now = run.env.now();
     let mut dirs: Vec<PathBuf> = Vec::new();
     match p.opts.value("dir") {
@@ -498,7 +496,7 @@ fn key_init(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
             return Err(ClientError::Safety(format!("{} already holds keys; use --force to replace them (the old set is kept in old/)", d.display())));
         }
     }
-    let (a, r) = keys::generate_set(demo)?;
+    let (a, r) = keys::generate_set()?;
     let mut made = Vec::new();
     for d in &dirs {
         made.extend(keys::write_set(d, &a, &r, force, now)?);
@@ -510,9 +508,6 @@ fn key_init(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
     } else {
         for c in &made {
             run.outln(&format!("{:<6} {}  {}", c.role.name(), c.fingerprint, c.path.display()));
-        }
-        if demo {
-            run.err("WARNING: these are the PUBLIC demo keys. Anyone can use them. VMs and tests only; never bake them into a stick for real hardware.");
         }
         run.outln("keys are found automatically from now on (see: i7labctl help key). Next: scripts/build-usb-drive, then i7labctl discover");
     }
@@ -535,8 +530,7 @@ fn key_show(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
         match keys::find_key(&kenv, r) {
             Ok((k, path)) => {
                 found += 1;
-                let demo = if k.is_demo() { "  DEMO KEY (public)" } else { "" };
-                run.outln(&format!("{:<6} {}  {}{}", r.name(), k.fingerprint(), path.display(), demo));
+                run.outln(&format!("{:<6} {}  {}", r.name(), k.fingerprint(), path.display()));
                 if secret {
                     run.outln(&format!("       {}", k.to_line()));
                 }

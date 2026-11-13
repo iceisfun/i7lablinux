@@ -128,9 +128,6 @@ pub fn build(daemon: &Daemon, nic: &Nic, gen: u64) -> Beacon {
     b.set("http", &daemon.flags.http_port().map(|p| p.to_string()).unwrap_or_default());
     b.set("ssh", "0");
     b.set("vlan", &nic.vlan.to_string());
-    if daemon.policy.demo {
-        b.set("demo", "1");
-    }
     b
 }
 

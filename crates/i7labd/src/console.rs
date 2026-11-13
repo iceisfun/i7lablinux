@@ -283,9 +283,6 @@ fn collect(d: &Daemon, cur: &mut ViewData, slow: bool, last_net: &mut Option<(In
     let ips: Vec<String> = cur.net.as_ref().map(|n| n.ifaces.iter().flat_map(|i| i.ipv4.iter().cloned()).collect()).unwrap_or_default();
     let mac = cur.net.as_ref().and_then(|n| n.ifaces.iter().find(|i| i.driver.is_some() && i.mac.is_some() && i.name != "lo" && !i.name.starts_with("dummy")).or_else(|| n.ifaces.iter().find(|i| i.name != "lo" && i.mac.is_some())).and_then(|i| i.mac.clone()));
     let mut banners = Vec::new();
-    if let Some(b) = d.policy.banner() {
-        banners.push(b.to_string());
-    }
     if d.keys.read().unwrap().admin.is_none() {
         banners.push("NO KEYS: the host cannot be controlled remotely (bake keys with scripts/bake-keys)".to_string());
     }

@@ -2,7 +2,7 @@
 
 Scope: the code as it stands (crates, scripts, web SPA, tracked docs), not the design. The design review is
 [design-history/review-security.md](design-history/review-security.md); most of its findings are implemented (openat2 for
-the ro key, lock-then-decide block gate, demo keys read-only on hardware, v1 hints off by default, penalty box kept off
+the ro key, lock-then-decide block gate, v1 hints off by default, penalty box kept off
 established sessions). This review looked for what the code still gets wrong. Every item says whether it was **FIXED**
 in this pass (small, safe, tested) or is **OPEN** (needs an owner decision or a larger change).
 
@@ -54,10 +54,9 @@ is a `read(2)` of device I/O BARs with possible side effects. `registry::PROC_DE
 
 ### C5 (LOW, FIXED) Key set edge cases
 
-* `Key::is_demo` only compared against the demo key of the file's own role: `i7k1:admin:<demo ro bytes>` was not detected
-  as public. Now either demo key counts.
+* (Resolved later: the public demo keys and their detection were removed entirely; see O2.)
 * `KeySet::load_dir` accepted `admin.key` and `ro.key` with the same bytes; `by_id` finds admin first, so every ro holder
-  would be admin. Now refused. Tests `keys::tests::demo_detection`, `identical_admin_and_ro_refused`.
+  would be admin. Now refused. Test `keys::tests::identical_admin_and_ro_refused`.
 
 ### C6 (LOW, FIXED) `scripts/remote --clean` label
 
@@ -87,7 +86,11 @@ the key line typed into it (sessionStorage does not help). Recommendation: say i
 trusted segments only and prefer the ro key there; longer term ship the SPA inside `i7labctl` (`i7labctl web HOST` serves it
 on localhost and proxies signed requests), so the key never enters a page served by the device.
 
-### O2 (MEDIUM) Demo keys give public remote root inside any VM
+### O2 (MEDIUM, RESOLVED) Demo keys give public remote root inside any VM
+
+**Resolved: demo keys removed.** There are no public or derivable keys any more: `i7labd` accepts only the keys baked at
+`/etc/i7lab/keys`, `KeyPolicy` and the VM/hardware downgrade are gone, and the QEMU tests use a random throwaway set per
+run (`scripts/gen-keys --out DIR --throwaway`). The text below is the original finding.
 
 `KeyPolicy` grants full admin to demo keys whenever DMI says QEMU or the CPU has the `hypervisor` flag. A demo image booted
 in a VM bridged onto a real LAN is remote root for anyone. Recommendation: additionally require an explicit kernel flag

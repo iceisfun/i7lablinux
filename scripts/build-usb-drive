@@ -8,7 +8,7 @@
 #   --internal         allow a non-removable / non-USB disk (never one that is mounted, holds / or is in use)
 #   --no-build         use out/image/i7lablinux.img from the last build;  --from FILE  use that keyless image
 #   --build-host H     build host (default $I7LL_HOST, else ~/.config/i7lablinux/build-host), or "local" if this machine can build
-#   --keys DIR | --demo | --no-keys     key set (default ./keys, then ~/.config/i7labctl/keys); --no-keys leaves the placeholder
+#   --keys DIR | --no-keys     key set (default ./keys, then ~/.config/i7labctl/keys); --no-keys leaves the placeholder
 #   FIRMWARE=auto|none|wifi, WIFI=1     passed to the build (default auto)
 #   Safety: refuses mounted devices, the disk holding /, devices in use, partitions, read-only devices, and non-removable
 #   disks without --internal; shows model/serial/size/partitions; needs the typed device name or --yes-i-am-sure + --serial.
@@ -29,7 +29,6 @@ while [ $# -gt 0 ]; do
     --from) FROM="${2:?--from FILE}"; NOBUILD=1; shift 2;;
     --build-host) if [ "${2:?}" = local ]; then I7_BUILD_HOST=local; else I7_HOST="$2"; fi; shift 2;;
     --keys) KEYARGS=(--keys "${2:?--keys DIR}"); shift 2;;
-    --demo) KEYARGS=(--demo); shift;;
     --no-keys) KEYARGS=(--none); shift;;
     FIRMWARE=*|WIFI=*) BUILDARGS+=("$1"); shift;;
     -h|--help) sed -n '2,17p' "$0"; exit 0;;
@@ -47,14 +46,10 @@ need sgdisk sha256sum dd
 # ---- 0. key set must exist before we spend minutes building --------------------------------------------------------------------
 BAKEKEYS=("$I7_ROOT/scripts/bake-keys")
 if [ "${KEYARGS[0]:-}" != --none ]; then
-  if [ "${KEYARGS[0]:-}" = --demo ]; then
-    [ "${ALLOW_DEMO_KEYS:-0}" = 1 ] || die "--demo keys are public: set ALLOW_DEMO_KEYS=1 (QEMU tests only, never a real stick)"
-  else
-    KD="${KEYARGS[1]:-}"
-    [ -n "$KD" ] || { [ -s "$I7_ROOT/keys/admin.key" ] && KD="$I7_ROOT/keys" || KD="$HOME/.config/i7labctl/keys"; }
-    [ -s "$KD/admin.key" ] && [ -s "$KD/ro.key" ] || die "no keys in $KD. Run scripts/gen-keys first (or --no-keys for the placeholder, --demo for QEMU)"
-    KEYARGS=(--keys "$KD")
-  fi
+  KD="${KEYARGS[1]:-}"
+  [ -n "$KD" ] || { [ -s "$I7_ROOT/keys/admin.key" ] && KD="$I7_ROOT/keys" || KD="$HOME/.config/i7labctl/keys"; }
+  [ -s "$KD/admin.key" ] && [ -s "$KD/ro.key" ] || die "no keys in $KD. Run scripts/gen-keys first (or --no-keys for the placeholder)"
+  KEYARGS=(--keys "$KD")
 fi
 
 # ---- 1. build (or reuse) the keyless image ---------------------------------------------------------------------------------------

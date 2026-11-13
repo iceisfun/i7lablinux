@@ -24,7 +24,7 @@ Log, Actions, About. Light and dark follow the OS; it works from phone width up.
 | method and path | auth | purpose |
 |---|---|---|
 | `GET /` | open | the page |
-| `GET /api/v1/hello` | open | identity: hostname, version, build, state, `demo` flag |
+| `GET /api/v1/hello` | open | identity: hostname, version, build, state |
 | `GET /api/v1/nonce` | open | single-use nonce, valid 30 s |
 | `GET /api/v1/openapi.json` | open | generated from the command catalogue |
 | `POST /api/v1/cmd/<name>` | signed | run a catalogue command, body `{"args":["--mb","256"]}`; `?stream=1` for NDJSON |

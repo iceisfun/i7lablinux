@@ -7,7 +7,7 @@
 * **No dependencies.** Rust 2021, std plus the hand-written FFI in each crate's `ffi.rs` or `labproto::sys`. Ask before
   adding even a tiny well-known crate; the answer is usually a small module instead.
 * **No secrets in the tree.** Never commit keys, tokens or passwords. `keys/` and `out/` are gitignored. Only public
-  material (the demo key derivation) and documentation of the scheme may be tracked.
+  material and documentation of the scheme may be tracked.
 * **Safety of writes.** Anything that can write a block device goes through `labprobe::block::WriteGuard`. Do not add a
   second path around it. Tests that write use loop files or QEMU disks, never a real device.
 * **Host-testable.** Put logic in pure functions with unit tests; keep syscalls behind thin wrappers. Real-hardware or QEMU

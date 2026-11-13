@@ -346,11 +346,11 @@ fn too_small_terminal_says_so() {
 }
 
 #[test]
-fn no_control_path_and_demo_banner() {
+fn no_control_path_and_no_keys_banner() {
     let mut h = Headless::new(132, 43, demo_data_no_control_path(), Options::default());
     let f = h.frame();
     assert!(f.contains("NO CONTROL PATH"), "{}", f);
-    assert!(f.contains("DEMO KEYS"));
+    assert!(f.contains("NO KEYS"));
     assert!(f.contains("RTL8126"));
 }
 

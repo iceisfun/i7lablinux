@@ -2,11 +2,12 @@
 # End-to-end test of a built image in QEMU: boot, beacon, L2 commands without IP, HTTP, block write gate, exec, TUI.
 # usage: e2e [--fw bios|uefi|both] [--image FILE] [--port N] [--keep] [--no-tui]      (run on the BUILD host)
 #   Needs out/image/i7lablinux.img (scripts/build-image --full), out/bin/i7labctl (cargo build --release -p i7labctl;
-#   scripts/build-userland builds only the image binaries), keys/demo (scripts/gen-keys --demo), qemu-system-x86_64.
+#   scripts/build-userland builds only the image binaries), qemu-system-x86_64. The key set is generated per run.
 #   TUI capture needs python3 with `pyte` on PYTHONPATH (pip install --target DIR pyte); without it that part is NOT RUN.
 #   One guest at a time, every guest under `timeout`, only the QEMU pid we started is ever killed.
 #   Writes out/e2e/<ts>/transcript.txt (every command and its output) and prints PASS/FAIL per check.
-#   The demo keys are PUBLIC and baked only into a scratch copy of the image; admin works because the guest is a VM.
+#   Keys: a THROWAWAY random set (scripts/gen-keys --out TMP --throwaway) is made per run, baked only into scratch copies
+#   of the image and deleted at exit. The operator's real keys are never read.
 # Owner: integrator (task X1). Spec: docs/PLAN.md section 14.
 . "$(dirname "$0")/lib/common.sh"
 need qemu-system-x86_64 timeout curl mcopy sgdisk mkfs.ext4
@@ -25,8 +26,8 @@ while [ $# -gt 0 ]; do
 done
 [ -f "$IMG" ] || die "$IMG missing: scripts/build-image --full"
 CTL="$I7_OUT/bin/i7labctl"; [ -x "$CTL" ] || die "$CTL missing: cargo build --release -p i7labctl && cp target/release/i7labctl out/bin/"
-[ -s "$I7_ROOT/keys/demo/admin.key" ] || "$I7_ROOT/scripts/gen-keys" --demo --quiet
-export I7LABCTL_KEYDIR="$I7_ROOT/keys/demo"
+KTMP="$(mktemp -d)"; KD="$KTMP/keys"; make_throwaway_keys "$KD" || die "gen-keys failed"
+export I7LABCTL_KEYDIR="$KD"
 OVMF_CODE="${OVMF_CODE:-/usr/share/OVMF/OVMF_CODE_4M.fd}" OVMF_VARS="${OVMF_VARS:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"; EV="$I7_OUT/e2e/$TS"; mkdir -p "$EV"; T="$EV/transcript.txt"; : >"$T"
 MAC=52:54:00:17:00:01; ESP_OFF=$((4096 * 512))
@@ -38,7 +39,7 @@ chk() {
   local name=$1 want=$2 pat=$3; shift 4
   local out rc
   out=$(timeout 120 "$@" 2>&1) && rc=0 || rc=$?
-  { printf '\n$ %s\n' "$*"; { printf '%s\n' "$out" | grep -v 'public DEMO key' | cut -c1-400 | head -40; } || true; printf '[rc=%s]\n' "$rc"; } >>"$T"
+  { printf '\n$ %s\n' "$*"; { printf '%s\n' "$out" | cut -c1-400 | head -40; } || true; printf '[rc=%s]\n' "$rc"; } >>"$T"
   if { [ "$rc" = "$want" ] || { [ "$want" = nz ] && [ "$rc" != 0 ]; }; } && { [ -z "$pat" ] || grep -Eq -- "$pat" <<<"$out"; }; then
     PASS=$((PASS + 1)); echo "PASS $FWNOW $name"; log "PASS $FWNOW $name"
   else
@@ -47,13 +48,13 @@ chk() {
 }
 
 stop_guest() { [ -n "$QPID" ] && kill "$QPID" 2>/dev/null; QPID=""; sleep 1; }
-trap stop_guest EXIT
+trap 'stop_guest; rm -rf "$KTMP"' EXIT
 
-# start_guest FW ENTRY : boots a scratch copy of the image (demo keys baked), serial on a unix socket, returns when the beacon is seen
+# start_guest FW ENTRY : boots a scratch copy of the image (throwaway keys baked), serial on a unix socket, returns when the beacon is seen
 start_guest() {
   local fw=$1 entry=$2 D="$EV/$1-$2"; mkdir -p "$D"
   cp --reflink=auto "$IMG" "$D/disk.img"
-  ALLOW_DEMO_KEYS=1 "$I7_ROOT/scripts/bake-keys" --demo --image "$D/disk.img" >/dev/null 2>&1 || die "bake-keys failed"
+  "$I7_ROOT/scripts/bake-keys" --keys "$KD" --image "$D/disk.img" >/dev/null 2>&1 || die "bake-keys failed"
   if [ "$entry" != 0 ]; then   # GRUB entry N (1 = serial TUI, ASCII); edit the scratch copy's grub.cfg on the ESP
     mcopy -i "$D/disk.img@@$ESP_OFF" ::/boot/grub/grub.cfg "$D/g.cfg"
     sed -i "s/^set default=0/set default=$entry/" "$D/g.cfg"
@@ -114,7 +115,7 @@ run_fw() {
   chk "gate: mounted disk with the right serial -> refused (exit 7)" 7 'REFUSED' -- "${CL[@]}" blk write $MAC vdb --destructive --serial I7PART0001 --mb 4 --yes
   chk "umount" 0 '' -- "${CL[@]}" sh $MAC "umount /mnt"
   chk "gate: partitioned+unmounted with the right serial -> allowed" 0 'RESULT: ok' -- "${CL[@]}" blk write $MAC vdb --destructive --serial I7PART0001 --mb 4 --yes
-  local rokeys="$EV/ro-keys"; mkdir -p "$rokeys"; cp "$I7_ROOT/keys/demo/ro.key" "$rokeys/"; chmod 700 "$rokeys"; chmod 600 "$rokeys/ro.key"
+  local rokeys="$EV/ro-keys"; mkdir -p "$rokeys"; cp "$KD/ro.key" "$rokeys/"; chmod 700 "$rokeys"; chmod 600 "$rokeys/ro.key"
   chk "read-only key cannot write (EPERM, exit 5)" 5 'EPERM' -- env I7LABCTL_KEYDIR="$rokeys" "$CTL" --link "mcast:239.255.71.1:$MP" blk write $MAC nvme0n1 --destructive --serial I7NVME0001 --mb 4 --yes
   chk "read-only key can read" 0 'WRITE-SAFE' -- env I7LABCTL_KEYDIR="$rokeys" "$CTL" --link "mcast:239.255.71.1:$MP" blk ls $MAC
   local badkeys="$EV/bad-keys"; mkdir -p "$badkeys"; chmod 700 "$badkeys"

@@ -266,17 +266,15 @@ impl Registry {
     }
 
     /// The single entry point for all front ends.
-    /// Order: key policy (demo keys on hardware => ro), planned => UNSUPPORTED, role, path policy (the path is
+    /// Order: planned => UNSUPPORTED, role, path policy (the path is
     /// the FIRST argv word, rewritten to its normal form, so handler and check can never disagree), limits,
     /// handler with panic catch, audit.
     pub fn dispatch(&self, ctx: &mut Ctx, cmd: &Command) -> Reply {
-        ctx.role = ctx.daemon.policy.effective(ctx.role);
         if cmd.spec.planned() {
             return Reply::error(Status::Unsupported, &format!("{} is planned for {}", cmd.spec.name, cmd.spec.since));
         }
         if let (Access::Admin, Role::Ro) = (cmd.spec.access, ctx.role) {
-            let why = if ctx.daemon.policy.demo && !ctx.daemon.policy.vm { "demo keys are read-only on real hardware" } else { "admin key required" };
-            return Reply::error(Status::Eperm, why);
+            return Reply::error(Status::Eperm, "admin key required");
         }
         if let Some(op) = cmd.spec.path_op() {
             match ctx.args.first().filter(|a| !a.starts_with('-')) {

@@ -61,7 +61,7 @@ pub static SUBS: &[Sub] = &[
     s!("time-set", "EH", "W", "time-set <host> [UNIX_SECONDS|now]", "set the host clock", &[], &[], None, Some("time.set")),
     s!("svc", "EH", "W", "svc <host> http|beacon|ether start|stop|status [--port N] [--force]", "agent services", &["--port", "--force"], &[], None, Some("svc")),
     s!("tui", "EH", "R/W", "tui tab NAME|reset|dump <host>", "console TUI of the host: switch tab, text screenshot", &[], &["tab", "reset", "dump"], None, Some("tui")),
-    s!("key", "L", "-", "key init|show|verify|import|export ...", "key management", &["--dir", "--force", "--demo", "--secret", "--file"], &["init", "show", "verify", "import", "export", "rotate"], None, None),
+    s!("key", "L", "-", "key init|show|verify|import|export ...", "key management", &["--dir", "--force", "--secret", "--file"], &["init", "show", "verify", "import", "export", "rotate"], None, None),
     s!("ether", "E", "-", "ether cmds|probe|hello|sniff|frame|replay ...", "raw protocol tools", &["--decode", "--count"], &["cmds", "probe", "hello", "sniff", "frame", "replay"], None, None),
     s!("api", "H", "-", "api <host> METHOD PATH [--data JSON|@file]", "raw authenticated HTTP request", &["--data"], &[], None, None),
     s!("ssh", "S", "W", "ssh <host> [--user U] [--no-start] [-- ssh-args..]", "ssh to a host that runs sshd (system ssh, pinned host keys)", &["--user", "--no-start"], &[], None, None),

@@ -3,7 +3,7 @@
 //!   demo                  interactive (needs a terminal); q then Enter on "Yes" quits
 //!   demo --dump WxH [tab] print one frame as plain text and exit (no terminal needed), e.g. `--dump 132x43 Storage`
 //!   demo --ascii | --mono force ASCII frames / monochrome
-//!   demo --no-control     demo host with a NIC that has no driver and a DEMO banner
+//!   demo --no-control     demo host with a NIC that has no driver and a NO KEYS banner
 //!
 //! Requests the TUI makes (reboot, shell ...) are only shown on the status line; nothing is executed.
 

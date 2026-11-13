@@ -63,9 +63,6 @@ fn id(ctx: &mut Ctx) -> Reply {
     w.field_str("board_serial", &ident.board_serial);
     w.field_str("kernel", &ident.kernel);
     w.field_u64("uptime_s", labproto::sys::uptime_ms() / 1000);
-    w.field_bool("demo_keys", d.policy.demo);
-    w.field_bool("vm", d.policy.vm);
-    w.field_opt_str("banner", d.policy.banner());
     w.field_opt_u64("http_port", d.flags.http_port().map(u64::from));
     w.field_bool("ether", d.flags.ether_up());
     w.end_object();

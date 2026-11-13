@@ -1,3 +1,4 @@
+NOTE (added later): the public demo keys used by this run no longer exist; they were removed from i7lablinux. Current tests use per-run random throwaway keys. The text below is unchanged history.
 
 ######## bios ########
 

@@ -60,7 +60,7 @@ A. Review disposition (D2 security, D3 feasibility)
 | C16 | DEFAULT console policy | prior art: locked console by default  | **Console open by default** (TUI + `i7labsh` on quit): the operator wants a console shell; physical presence is trusted in this lab. `i7lab.console=locked` gives a read-only TUI and no shell. Documented as a deliberate change. |
 | C17 | streams on HTTP | WEB: jobs + SSE | Streaming commands answer `POST /api/v1/cmd/<name>?stream=1` with **chunked NDJSON** using the same event objects as `i7labctl --json` (`{"event":"stdout",...}`), ending in `{"event":"result",...}`. `GET /api/v1/events` (SSE) carries the 2 s snapshot for the SPA. **Every NDJSON/SSE event carries `seq` + `mac`** (`httpauth::event_mac`; S-F9). **Files are raw, not NDJSON** (F-F10): `GET /api/v1/file?path=..&offset=..&len=..` (octet-stream, `X-Lab-Proof` as trailer over the streamed body hash) and `PUT /api/v1/file?path=..&mode=..` (raw body; `X-Lab-Auth` over the streamed body hash, `request_mac_hashed`). `--detach` + `jobs` for long runs. |
 | C19 | where keys enter the image | PLAN 5: "the image bakes them in" (unspecified; keys are excluded from the build host) | **Keyless image + local key overlay** (F-F1, S-F10). the build host builds a reproducible image with **no keys** and a placeholder `/i7lab/keys.cpio` (empty newc archive). On the operator machine `scripts/bake-keys` writes `keys.cpio` (uncompressed newc: `/etc/i7lab/keys/{admin,ro}.key`, `KEYSET-ID`, written by a bash `cpio_node` writer) onto the ESP of the stick, into a `.img`, or into an ISO (`xorriso`, present on the operator machine). GRUB: `initrd /i7lab/initramfs.cpio.zst /i7lab/keys.cpio`; the kernel unpacks both. Real keys never leave the operator machine. |
-| C20 | demo keys | PLAN 5: refused at build unless `ALLOW_DEMO_KEYS=1`, beacon `demo=1` | Also enforced **at run time** (S-F3): when any loaded key is a demo key, i7labd runs every request as **ro on real hardware** and with full admin only inside a VM (DMI `sys_vendor` QEMU or CPU `hypervisor` flag: what e2e uses). Red banner in TUI/`id`, `demo=1` in the beacon. |
+| C20 | no public keys | **Resolved: demo keys removed.** i7labd accepts only the baked keys; no demo/derived key, no `ALLOW_DEMO_KEYS`, no beacon `demo=1`, no KeyPolicy. QEMU tests use per-run random throwaway sets (`scripts/gen-keys --out DIR --throwaway`). | Historic text below that mentions demo keys describes the removed design. |
 | C21 | session engine | P6 writes the server, P9 the client | **One sans-IO engine in `labproto::session`** (P1): `ClientSession` + `ServerSessions`, `on_frame/poll/send_req/respond/stream_data -> Vec<Action>`, injected clock. i7labd and i7labctl only drive it (F-F6). |
 | C22 | ro file access | `ro_path_allowed` string prefix allow-list | **Path policy** `i7labd::registry::path_policy(role, op, path)` (S-F1, F-F31): PATH must be the first argv word and is rewritten to its lexical normal form; `/etc/i7lab/keys` denied for every role; writes under `/run/i7lab` and `/etc/i7lab` denied for every role; ro: allow-listed roots only, `/proc/*/{root,cwd,exe,fd,fdinfo,map_files,environ,mem,pagemap,auxv,syscall}`, `/proc/kcore|kmem`, efivars, debugfs denied; the handler then opens with `openat2(RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS)` from the root's fd (`labproto::sys::openat2_beneath`, fails closed until implemented). |
 | C23 | exposure defaults | WEB: HTTP on all interfaces; ether on every NIC | **Kept** (the brief: plug any lab host in and drive it with no IP or config), with knobs `i7lab.ether=IFACE,..`/`all`, `i7lab.http_bind=IFACE|ADDR`, `i7lab.http=off`, and the exposure stated in KEYS.md (S-F14, partly rejected; Appendix A). Unauthenticated I7LR1 hints are **off** by default (S-F6). |
@@ -155,8 +155,7 @@ Bodies are stubs returning `Unsupported`/empty values. **Changing a public signa
 note in your final report; adding items is free.** Revision D4 changed or added the items marked `// D4` below; the
 scaffold is authoritative where this text abbreviates. Implemented in the scaffold already (keep, refine, test more):
 `frame::canonical_tags`, `cmdline`, `local`, `httpauth::*_hashed`/`event_mac`, `sys::getrandom_blocking`/`flock`,
-`keys` redaction + demo detection, `labprobe::block::decide`, `i7labd::registry::path_policy`, `i7labd::events`,
-`i7labd::daemon::KeyPolicy`.
+`keys` redaction, `labprobe::block::decide`, `i7labd::registry::path_policy`, `i7labd::events`.
 
 ### 4.1 labproto
 
@@ -180,7 +179,6 @@ impl Key {
     pub fn to_line(&self) -> String;
     pub fn key_id(&self) -> [u8; 4];                             // first4(SHA256("i7c-keyid" | K))
     pub fn fingerprint(&self) -> String;                         // 8 hex of key_id
-    pub fn demo(role: Role) -> Key; pub fn is_demo(&self) -> bool; // D4 (C20)
 }
 impl Debug for Key / Display for Key                             // D4: "Key(<role> <fp>)", never the bytes (S-F17)
 pub struct KeySet { pub admin: Option<Key>, pub ro: Option<Key> }
@@ -188,7 +186,6 @@ impl KeySet {
     pub fn load_dir(dir: &Path) -> Result<KeySet, KeyError>;     // admin.key, ro.key; refuses group/world readable
     pub fn by_id(&self, id: &[u8; 4]) -> Option<&Key>;
     pub fn beacon_key(&self) -> Option<[u8; 32]>;               // HMAC(K_ro, "i7c-beacon-key")
-    pub fn is_demo(&self) -> bool;                               // D4
 }
 pub enum KeyError { Io(std::io::Error), Format(String), Permissions(PathBuf) }
 
@@ -509,9 +506,7 @@ impl Registry {
 }
 pub struct Daemon { pub registry: Registry, pub keys: RwLock<KeySet>, pub config: Config, pub boot_id: [u8; 8],
                     pub audit: Audit, pub jobs: Jobs, pub state: RwLock<HostState>,
-                    pub policy: KeyPolicy, pub snapshot: Snapshots, pub events: EventBus }      // D4
-pub struct KeyPolicy { pub demo: bool, pub vm: bool }                                         // D4 (C20)
-impl KeyPolicy { pub fn detect(&KeySet) -> Self; pub fn effective(&self, Role) -> Role; pub fn banner(&self) -> Option<&str>; }
+                    pub snapshot: Snapshots, pub events: EventBus }      // D4
 // i7labd::events (D4, F-F8; owner P6a, consumers P5 P6b P7)
 pub struct Snapshot { taken_ms, overview_json, attention: Vec<String>, state, links, sessions, stats_json }
 pub struct Snapshots { /* Arc<Snapshot> swapped every 2 s */ pub console_frame: Mutex<String> }  impl { get() -> Arc<Snapshot>; set(Snapshot) }
@@ -640,10 +635,9 @@ i7labctl discover                    # hosts booted from the stick appear within
   wrapped (`new XOR HMAC-SHA256(SK, "i7c-keywrap\0" | req_id | ctr)` keystream + tag over the plaintext); a persisted
   key may only **add** a key and must be signed by the baked admin key with a monotonic counter; the baked keys
   always win; `id`/TUI/beacon show "persisted key present"; build opt-in `allow_persist_keys=0` by default.
-* **Demo keys (C20):** `scripts/gen-keys --demo` / `bake-keys --demo` use the documented well-known set
-  `K = SHA256("i7lablinux-demo-<role>")`, public by construction. `build-image`/`bake-keys` refuse them unless
-  `ALLOW_DEMO_KEYS=1`. At run time i7labd treats every demo-key request as **ro on real hardware**; full admin with
-  demo keys exists only in a VM. The beacon carries `demo=1`, the TUI and `id` show a red DEMO banner, i7labctl warns.
+* **No public keys (C20, resolved):** an earlier design had a documented "demo" key set (derived from public text, read-only
+  on hardware, admin in a VM). It was removed: i7labd accepts only the keys baked at `/etc/i7lab/keys`; QEMU tests bake a
+  random throwaway set per run.
 * **Key hygiene:** `Key`'s `Debug`/`Display` print only role + fingerprint (tested); `i7labd --check` prints
   fingerprints; `key show --secret` is the single intentional disclosure (asks first); build scripts never run
   `set -x` around key files; `scripts/remote` keeps `--exclude keys --exclude out`.
@@ -901,17 +895,17 @@ migrate later (F-F7).
 | **P2 sys-net + init** | sonnet | `crates/labproto/src/{sys,packet,link,netlink,cmdline}.rs`, `crates/i7lab-init/**` | **first push: the FFI wrapper list in `sys.rs` docs** (F-F7); `openat2_beneath`; AF_PACKET + BPF accepting exactly the `canonical_tags` shapes + auxdata; `UdpLink::multicast`; rtnetlink; PID 1 (port lab-init minus busybox/dropbear/DHCP; loglevel + TUI handoff rules of 4.5) | P1 types only |
 | **P3 probes** | sonnet | `crates/labprobe/Cargo.toml`, `crates/labprobe/src/{lib,ctx,inventory,system,cpu,mem,dmi,pci,pciids,usb,net,thermal,firmware,kmsg}.rs`, `crates/labprobe/data/`, `crates/labprobe/tests/fixtures/` (except `fixtures/block/`), `crates/labprobe/tests/probe_*.rs`, `scripts/capture-fixture` | probes with fixture-tree golden tests (fixtures captured read-only on the operator machine Intel + the build host AMD, scrubbed); v0.1 depth: DMI types 0,1,2,3,4,16,17, no ASPM/SR-IOV/ACS decode; `unbound_nics`; `firmware::{internal_os_entry,set_boot_next,set_os_indications}`; `net::ethtool_phys_id` | P1 json, P2 sys |
 | **P4 block** | opus | `crates/labprobe/src/block/**`, `crates/labprobe/tests/fixtures/block/`, `crates/labprobe/tests/block_*.rs` | enumeration incl. serial resolution order, GPT/MBR, signatures, **lock-first `acquire`** + `decide`, flock, `audit_write`, `reread_partitions`, `resolve_boot_disk`, test engine, SMART ATA/NVMe. Loop/mount tests are `#[ignore]` tests run explicitly with sudo on the build host; file tests tolerate `O_DIRECT` EINVAL on tmpfs | P1 json, P2 sys |
-| **P5 tui** | sonnet | `crates/labtui/**`, `crates/i7labd/src/console.rs`, `crates/i7labd/src/cmds/console.rs` | renderer + key decoder (golden tests); console app consuming `Daemon::snapshot`/`events`; v0.1 pages Overview (incl. attention + NO CONTROL PATH + DEMO banners), PCIe, Storage (read-only), Network, Log, About; Actions = reboot/poweroff/shell via `Registry::dispatch`; F10 shell handoff; handlers `msg`, `tui`, `tui.dump` (from `Snapshots::console_frame`), `identify` (banner + `ethtool_phys_id`) | P1, P3, P6a |
+| **P5 tui** | sonnet | `crates/labtui/**`, `crates/i7labd/src/console.rs`, `crates/i7labd/src/cmds/console.rs` | renderer + key decoder (golden tests); console app consuming `Daemon::snapshot`/`events`; v0.1 pages Overview (incl. attention + NO CONTROL PATH + NO KEYS banners), PCIe, Storage (read-only), Network, Log, About; Actions = reboot/poweroff/shell via `Registry::dispatch`; F10 shell handoff; handlers `msg`, `tui`, `tui.dump` (from `Snapshots::console_frame`), `identify` (banner + `ethtool_phys_id`) | P1, P3, P6a |
 | **P6a agent core** | opus | `crates/i7labd/Cargo.toml`, `crates/i7labd/src/{lib,main,registry,daemon,config,audit,jobs,events,exec,localsock}.rs`, `crates/i7labd/src/cmds/**` except `cmds/console.rs` | registry + every non-console handler (probe, blk, net, exec/shell pty, files with `path_policy` + `openat2_beneath`, power incl. `reboot --to-os` UEFI and `--uefi`, logs incl. `--audit -f`, jobs, `time.set`), snapshot thread, event bus, audit fd, local socket server, `KeyPolicy` wiring, BLKRRPART after destructive writes | P1, P2, P3, P4 |
-| **P6b agent net** | sonnet | `crates/i7labd/src/{ether,beacon,netcfg,dhcp}.rs` | ether server driving `ServerSessions` over `PacketLink` (all NICs or `ether_allow`), beacon v2 (`demo=1`, `kid`, `state`, attention), PROBE_REPLY only to unicast sources, rate-limited per destination MAC + per NIC + global (S-F8), hints (I7LR2; I7LR1 only if `accept_v1_hint`, audited, hinted gateway never used for daemon-initiated traffic), DHCP port, static/VLAN netcfg over `labproto::netlink` | P1, P2, P6a |
+| **P6b agent net** | sonnet | `crates/i7labd/src/{ether,beacon,netcfg,dhcp}.rs` | ether server driving `ServerSessions` over `PacketLink` (all NICs or `ether_allow`), beacon v2 (`kid`, `state`, attention), PROBE_REPLY only to unicast sources, rate-limited per destination MAC + per NIC + global (S-F8), hints (I7LR2; I7LR1 only if `accept_v1_hint`, audited, hinted gateway never used for daemon-initiated traffic), DHCP port, static/VLAN netcfg over `labproto::netlink` | P1, P2, P6a |
 | **P7 http + web** | sonnet | `crates/i7labd/src/{http,web}.rs`, `crates/i7labd/web/**` | HTTP/1.1 server (`http_bind`), nonce HMAC, `/api/v1/*` to `Registry::dispatch`, per-event-MAC NDJSON + SSE, raw `/api/v1/file` GET/PUT with streaming hash and trailer proof, SPA (ro key default, nonce CSP, render-injection test) | P1, P6a |
 | **P8 shell** | sonnet | `crates/i7labsh/**` | parser, executor (pipes, redirects), builtins (lspci/lsblk/lsusb/sensors/probe as thin labprobe wrappers; `ip` over `labproto::netlink`; `blk write` only through `WriteGuard`), `lab` builtin over `labproto::local`, line editor | P1, P2, P3, P4 |
 | **P9 ctl** | opus | `crates/i7labctl/**` | the v1 subcommand list of 4.7 with full help (planned marked), key discovery, registry + aliases, discover/probe/hints, ether client driving `ClientSession`, http client (proof + event mac checks), `--link udp:`/`mcast:`, test replay hook, exit-code rules of F-F20, `lab-boot --jetkvm` over hwlabd (`cmds/labboot.rs`, behind `HWLAB=`) | P1, P2 link |
-| **P10 build** | sonnet | `configs/**`, `scripts/{gen-keys,bake-keys,install-ctl,build-kernel,build-userland,build-initramfs,build-image,build-usb-drive,check-no-busybox,remote}`, `scripts/lib/**`, `docs/{BUILD,KEYS,REMOTE-BOOT,THIRD_PARTY,SAFETY}.md` | kernel (NIC =y check, video config), keyless initramfs, 64 MiB-ESP GPT image + root-less BIOS stage + PMBR active, hybrid ISO, placeholder `keys.cpio`, `bake-keys` (stick/img/iso, refuses demo keys without `ALLOW_DEMO_KEYS=1`, refuses to run on a host flagged shared), USB writer (section 6), `install-ctl`, gen-keys, busybox guard (`--dir` too), docs incl. the threat statement and measured image size | binaries from P2/P6/P8 (paths only) |
+| **P10 build** | sonnet | `configs/**`, `scripts/{gen-keys,bake-keys,install-ctl,build-kernel,build-userland,build-initramfs,build-image,build-usb-drive,check-no-busybox,remote}`, `scripts/lib/**`, `docs/{BUILD,KEYS,REMOTE-BOOT,THIRD_PARTY,SAFETY}.md` | kernel (NIC =y check, video config), keyless initramfs, 64 MiB-ESP GPT image + root-less BIOS stage + PMBR active, hybrid ISO, placeholder `keys.cpio`, `bake-keys` (stick/img/iso, refuses to run on a host flagged shared), USB writer (section 6), `install-ctl`, gen-keys, busybox guard (`--dir` too), docs incl. the threat statement and measured image size | binaries from P2/P6/P8 (paths only) |
 | **P11 e2e + integrator** | sonnet | `scripts/qemu-test`, `tests/e2e/**`, `docs/TESTING.md` | **from day one**: keeps `cargo test --workspace` + the musl build green on the build host after every lane push and runs M0; then the full section 14 e2e with evidence logs | everything |
 
 **Sequencing (F-F28b).** P1, P2, P10 start immediately. **M0 vertical slice** before the wide fan-out finishes: P10
-kernel with 00/10 fragments + minimal keyless initramfs + demo `keys.cpio`; P2 init brings `lo` up and execs i7labd;
+kernel with 00/10 fragments + minimal keyless initramfs + throwaway `keys.cpio`; P2 init brings `lo` up and execs i7labd;
 P6b beacons + `ping`/`id` over `labproto::session`; P9 `discover` + `--ether .. --cmd ping` over `UdpLink`; P11 runs
 e2e steps 1-3 in QEMU. P3, P4, P8 run in parallel against the scaffold from the start; P6a, P5, P7 as soon as P1's
 crypto/json land (stubbing against scaffold signatures meanwhile); P11 integrates continuously. Builds and tests only on
@@ -944,7 +938,7 @@ Host (the build host, `cargo test --workspace` and `--target x86_64-unknown-linu
 6. i7labsh: parser table tests; builtins on a temp dir; pipeline `echo a | cat` without fork of a shell.
 7. i7labd: `path_policy` table (ro `get /proc/1/root/etc/i7lab/keys/admin.key`, `/proc/self/{root,cwd,mem,fd/N}`,
    `/proc/kcore`, efivars, `..` => EPERM; admin `get /etc/i7lab/keys/*` => EPERM; `put`/`fs.rm` under `/run/i7lab`
-   => EPERM; PATH not first => BAD_ARGS); `KeyPolicy` demo-on-hardware => admin commands EPERM; planned commands =>
+   => EPERM; PATH not first => BAD_ARGS); planned commands =>
    UNSUPPORTED; config defaults (`accept_v1_hint` off).
 8. i7labctl: `help` output covers every catalogue command and marks planned ones; exit-code mapping table incl. the
    kid-mismatch exit 5 and HELLO-timeout exit 4; key lookup order with env overrides.
@@ -962,8 +956,8 @@ real JetKVM virtual-media boot in Disk and CD-ROM mode).
 ## 14. End-to-end QEMU test plan (the build host)
 
 `scripts/qemu-test` (P11) runs on the build host with `timeout` on every guest, at most 2 guests, workdir `/tmp/i7ll-e2e`,
-evidence in `out/e2e/<timestamp>/`. Image built keyless and baked with demo keys (`ALLOW_DEMO_KEYS=1 bake-keys --demo
---image`); in the guest DMI says QEMU, so `KeyPolicy` grants demo admin. Ports and the multicast group port come from a
+evidence in `out/e2e/<timestamp>/`. Image built keyless and baked with a per-run random throwaway key set (`gen-keys --out DIR --throwaway`, then
+`bake-keys --keys DIR --image`). Ports and the multicast group port come from a
 per-label hash so lanes running e2e at the same time do not collide. `qemu-test` discovers the firmware files and fails
 clearly when missing (the build host: `/usr/share/OVMF/OVMF_CODE_4M.fd` + `OVMF_VARS_4M.fd`; `/usr/share/ovmf/` is empty; F-F19).
 
@@ -999,7 +993,7 @@ with the same tag stack.
 **Steps and asserts** (each step writes JSON evidence; disks are always selected by **serial** from `blk ls --json`):
 1. Serial log shows GRUB menu, kernel, `i7lab-init` as PID 1, `i7labd` start; no "busybox" string anywhere in serial log;
    under OVMF `/sys/class/graphics/fb0` exists (`exec -- i7labsh -c 'ls /sys/class/graphics'`).
-2. `i7labctl discover --listen 20` sees `mac=52:54:00:17:00:01` with `state=ready`, `kid` matching the demo set, `demo=1`, `tag_ok`.
+2. `i7labctl discover --listen 20` sees `mac=52:54:00:17:00:01` with `state=ready`, `kid` matching the throwaway set, `tag_ok`.
 3. `i7labctl --ether 52:54:00:17:00:01 --cmd ping` exits 0. With another key set after `discover` (registry knows the
    kid): exit 5 without sending; with `--no-registry`: exit 4 and the "no CHALLENGE" hint. `I7LABCTL_TEST_REPLAY=1`
    resend of a captured REQ produces no second execution (`stats` counter).
@@ -1065,8 +1059,7 @@ probe = one labprobe module + `Section` variant + fixture test. Protocol changes
 
 1. Licence (no LICENSE file until chosen). 2. Public name. 3. Console open by default (C16) acceptable? 4. Optional
 ssh add-on ever (would be static dropbear built from source: third-party C, not busybox). 5. Firmware bundling default
-(C12). 6. Demo key set published in the repo docs (public by construction; now read-only on real hardware, C20)
-acceptable? 7. Privileged ether access on operator machines: `setcap cap_net_raw+ep i7labctl` (default) vs a root relay
+(C12). 6. (Withdrawn: the public demo key set was removed, C20.) 7. Privileged ether access on operator machines: `setcap cap_net_raw+ep i7labctl` (default) vs a root relay
 daemon. 8. JetKVM driven through hwlabd (recommended) or directly by i7labctl. 9. "Remove the drive and power cycle" =
 remove the internal OS drive (assumed, procedure B1) or something else (netboot?). 10. `key.set` stays out of v1
 (assumed) or key-wrap is pulled into v0.1. 11. `PMBR_ACTIVE=1` default for legacy BIOS compatibility (assumed).
@@ -1084,7 +1077,7 @@ applied in the sections named; the scaffold changes are marked `// D4` in sectio
 |---|---|---|
 | S-F1 / F-F31 ro reads admin key via /proc, `..` | accepted | C22, `registry::path_policy` (+ tests), `sys::openat2_beneath`, test 7. Also fixed: dispatch took "first non-dash word" as the path, so `get --offset 0 /etc/shadow` checked `0`; PATH must now be the first word and is rewritten to its normal form |
 | S-F2 WEB.md bearer token | accepted | C3, section 10; banner in WEB.md voids its auth text |
-| S-F3 demo keys = remote root | accepted (variant) | C20, `daemon::KeyPolicy`: ro on real hardware, admin only in a VM (keeps e2e working); banner + `demo=1` |
+| S-F3 demo keys = remote root | resolved | C20: demo keys removed entirely |
 | S-F4 gate TOCTOU | accepted | section 6 order, `WriteGuard::acquire` doc, pure `decide`, test 4 |
 | S-F5 persisted key backdoor | accepted | `key.set` planned v0.3 (`since`), add-only signed persistence, baked keys win (section 5) |
 | S-F6 I7LR1 default on | accepted | `accept_v1_hint` default false (config + `i7lab.conf`) |

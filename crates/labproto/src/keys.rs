@@ -98,17 +98,6 @@ impl Key {
     pub fn fingerprint(&self) -> String {
         crypto::hex(&self.key_id())
     }
-
-    /// The documented, public demo key: K = SHA256("i7lablinux-demo-<role>") (PLAN.md section 5).
-    pub fn demo(role: Role) -> Key {
-        Key { role, bytes: crypto::sha256(format!("i7lablinux-demo-{}", role.name()).as_bytes()) }
-    }
-
-    /// Either public demo key, whatever role the file claims (a real admin file holding the demo ro bytes is
-    /// just as public).
-    pub fn is_demo(&self) -> bool {
-        [Role::Admin, Role::Ro].iter().any(|r| crypto::ct_eq(&self.bytes, &Key::demo(*r).bytes))
-    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -156,12 +145,6 @@ impl KeySet {
 
     pub fn by_id(&self, id: &[u8; 4]) -> Option<&Key> {
         [self.admin.as_ref(), self.ro.as_ref()].into_iter().flatten().find(|k| &k.key_id() == id)
-    }
-
-    /// true if any loaded key is a demo key. i7labd then runs in demo policy (PLAN.md C20): admin requests are
-    /// downgraded to ro unless the host is a QEMU/KVM guest.
-    pub fn is_demo(&self) -> bool {
-        [self.admin.as_ref(), self.ro.as_ref()].into_iter().flatten().any(Key::is_demo)
     }
 
     /// K_beacon = HMAC(K_ro, "i7c-beacon-key")
@@ -216,13 +199,5 @@ mod tests {
         let d = format!("{:?} {}", k, k);
         assert!(!d.contains("abababab"), "{}", d);
         assert!(format!("{:?}", KeySet { admin: Some(k), ro: None }).len() < 200);
-    }
-
-    #[test]
-    fn demo_detection() {
-        assert!(Key::demo(Role::Ro).is_demo());
-        assert!(!Key { role: Role::Ro, bytes: [1; 32] }.is_demo());
-        assert!(KeySet { admin: Some(Key::demo(Role::Admin)), ro: None }.is_demo());
-        assert!(Key { role: Role::Admin, bytes: Key::demo(Role::Ro).bytes }.is_demo(), "role-swapped demo bytes");
     }
 }

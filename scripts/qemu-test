@@ -3,7 +3,7 @@
 # on a multicast socket netdev, then check the boot. Smoke level: GRUB/kernel/PID 1 markers, optional beacon + ping.
 # usage: qemu-test [--bios|--uefi|--both] [--image FILE | --iso FILE | --direct] [--no-bake] [--ctl PATH]
 #                  [--timeout S] [--keep] [--label L]
-#   default: --both on out/image/i7lablinux.img, baked with the public demo keys into a scratch copy (QEMU only).
+#   default: --both on out/image/i7lablinux.img, baked with a THROWAWAY random key set (made per run, deleted at exit) into a scratch copy.
 #   --iso boots the ISO as a USB CD-ROM; --direct boots out/kernel/bzImage + initramfs + keys.cpio with -kernel (no GRUB).
 #   With out/bin/i7labctl (or --ctl) it also runs `discover` and `--ether MAC --cmd ping` over the multicast L2 link.
 #   Runs on the build host (re-runs itself there through scripts/remote on a small machine; fetches out/e2e/<ts>). At most 2 guests
@@ -47,7 +47,12 @@ MP=$((20000 + $(printf '%s' "$LABEL$EV" | cksum | cut -d' ' -f1) % 20000))     #
 KACC=kvm:tcg; [ -w /dev/kvm ] || KACC=tcg
 [ "$KACC" = tcg ] && TMO=$((TMO * 3))
 MAC1=52:54:00:17:00:01
-[ "$BAKE" = 0 ] || export I7LABCTL_KEYDIR="$I7_ROOT/keys/demo"   # the key set baked into the scratch image below
+KD=""
+if [ "$BAKE" = 1 ]; then   # a fresh random key set for this run only; never ./keys or ~/.config/i7labctl
+  KTMP="$(mktemp -d)"; trap 'rm -rf "$KTMP"' EXIT
+  KD="$KTMP/keys"; make_throwaway_keys "$KD" || die "gen-keys failed"
+  export I7LABCTL_KEYDIR="$KD"   # the key set baked into the scratch image below
+fi
 
 # ---- inputs -----------------------------------------------------------------------------------------------------------------
 case "$SRC" in
@@ -55,16 +60,14 @@ case "$SRC" in
     [ -n "$FILE" ] || FILE="$I7_OUT/image/i7lablinux.img"
     [ -f "$FILE" ] || die "$FILE missing: scripts/build-image --full"
     cp --reflink=auto "$FILE" "$EV/disk.img"
-    [ "$BAKE" = 0 ] || ALLOW_DEMO_KEYS=1 "$I7_ROOT/scripts/bake-keys" --demo --image "$EV/disk.img" >/dev/null || die "bake-keys failed";;
+    [ "$BAKE" = 0 ] || "$I7_ROOT/scripts/bake-keys" --keys "$KD" --image "$EV/disk.img" >/dev/null || die "bake-keys failed";;
   iso)
     [ -n "$FILE" ] || FILE="$I7_OUT/image/i7lablinux.iso"
     [ -f "$FILE" ] || die "$FILE missing: scripts/build-image --full"
     cp --reflink=auto "$FILE" "$EV/disk.iso"
-    [ "$BAKE" = 0 ] || ALLOW_DEMO_KEYS=1 "$I7_ROOT/scripts/bake-keys" --demo --iso "$EV/disk.iso" >/dev/null || die "bake-keys failed";;
+    [ "$BAKE" = 0 ] || "$I7_ROOT/scripts/bake-keys" --keys "$KD" --iso "$EV/disk.iso" >/dev/null || die "bake-keys failed";;
   direct)
     [ -s "$I7_OUT/kernel/bzImage" ] && [ -s "$I7_OUT/initramfs.cpio.zst" ] || die "out/kernel and out/initramfs.cpio.zst needed"
-    KD=""
-    if [ "$BAKE" = 1 ]; then [ -s "$I7_ROOT/keys/demo/admin.key" ] || "$I7_ROOT/scripts/gen-keys" --demo --quiet; KD="$I7_ROOT/keys/demo"; fi
     make_keys_cpio "$KD" "$EV/keys.cpio"
     # GRUB aligns every initrd to 4 bytes; -initrd gets one file, so do the same (the kernel skips zero padding)
     cp "$I7_OUT/initramfs.cpio.zst" "$EV/initrd.bin"

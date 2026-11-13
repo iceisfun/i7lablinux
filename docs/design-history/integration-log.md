@@ -1,3 +1,5 @@
+> **Note (added later):** the public demo keys discussed here no longer exist; they were removed. The text below is unchanged design history.
+
 # Integration log (task X1, 2026-11-13)
 
 Every change the integrator made to another lane's crate or script, with the smallest-change rule: what, where, why.

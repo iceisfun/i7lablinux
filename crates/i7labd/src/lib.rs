@@ -24,6 +24,6 @@ pub mod registry;
 pub mod snapshot;
 pub mod web;
 
-pub use daemon::{run, Daemon, HostState, KeyPolicy};
+pub use daemon::{run, Daemon, HostState};
 pub use events::{Event, EventBus, Snapshot, Snapshots};
 pub use registry::{Command, Content, Ctx, Handler, Registry, Reply, Sink, Source};

@@ -48,13 +48,18 @@ Hosts booted from an old stick stay controllable with the old key set (keep `key
 to a host with a known-different key set exits 5 without sending anything. `key.set` (changing keys over the wire) is
 **not** in v1 because a key sent to a host would outlive the baked one; it is planned for v0.3.
 
-## Demo keys (QEMU tests only)
+## No public keys; keys for QEMU tests
 
-`scripts/gen-keys --demo` writes the documented, public set to `keys/demo/` (`K = SHA256("i7lablinux-demo-<role>")`,
-never installed in `~/.config`). `ALLOW_DEMO_KEYS=1 scripts/bake-keys --demo --image X` bakes them. Because everybody
-knows them, `i7labd` treats demo-key requests as read-only on real hardware and grants admin only inside a VM; the
-beacon says `demo=1` and the console shows a red DEMO banner. Use with `I7LABCTL_KEYDIR=keys/demo i7labctl ...`.
-`scripts/build-usb-drive` and `bake-keys` refuse them without `ALLOW_DEMO_KEYS=1`.
+There is no built-in, documented or derivable key anywhere: `i7labd` accepts only the keys baked at `/etc/i7lab/keys`,
+and a keyless image answers nothing. (An earlier version had a public "demo" key set; it was removed.) The QEMU tests
+(`scripts/qemu-test`, `scripts/e2e`) make a fresh random throwaway set for every run:
+
+```
+scripts/gen-keys --out /tmp/t/keys --throwaway      # random, 0700, touches neither ./keys nor ~/.config/i7labctl
+scripts/bake-keys --keys /tmp/t/keys --image scratch.img      # a THROWAWAY marker lets this run on a build host (image/ISO only)
+I7LABCTL_KEYDIR=/tmp/t/keys i7labctl ...
+```
+The tests delete the set at exit. Never reuse your real keys in tests; `bake-keys` refuses real keys on a build host.
 
 ## Threat statement
 

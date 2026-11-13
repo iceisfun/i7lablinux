@@ -4,12 +4,13 @@
     python3 web/dev/mock-server.py [--port 8080] [--bind 127.0.0.1]
 
 Implements the contract of docs/PLAN.md C3/C4/C17 for real: single-use nonces, HMAC request check
-with the documented DEMO keys (K = SHA256("i7lablinux-demo-<role>")), X-Lab-Proof on responses, per-event
+with a RANDOM throwaway key pair generated at every start (or the key bytes in $I7_MOCK_RO_HEX / $I7_MOCK_ADMIN_HEX,
+which browser-check.js uses), X-Lab-Proof on responses, per-event
 `seq`+`mac` on NDJSON and SSE, role checks, a nonce CSP on `/`. The probe data is a fixture that includes
 hostile strings (HTML/script in model, serial, DMI) to exercise the SPA's escaping.
 
-Demo keys to paste in the SPA (or use its "demo read-only key" button):
-    i7k1:ro:<hex sha256("i7lablinux-demo-ro")>      printed at start-up
+Key lines to paste in the SPA are printed at start-up (unless MOCK_QUIET is set); they change on every run and are
+valid for this mock only.
 """
 import argparse, hashlib, hmac, json, math, os, random, secrets, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,13 +20,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(HERE, '..', 'index.html')
 
 
-def demo(role):
-    return hashlib.sha256(('i7lablinux-demo-' + role).encode()).digest()
+def mock_key(role):
+    """Random 32-byte key per run; never derived from any text."""
+    h = os.environ.get('I7_MOCK_%s_HEX' % role.upper())
+    return bytes.fromhex(h) if h else secrets.token_bytes(32)
 
 
+MOCK_KEYS = {r: mock_key(r) for r in ('ro', 'admin')}
 KEYS = {}
 for _r in ('ro', 'admin'):
-    _k = demo(_r)
+    _k = MOCK_KEYS[_r]
     KEYS[hashlib.sha256(b'i7c-keyid' + _k).digest()[:4].hex()] = (_r, _k)
 
 NONCES = {}
@@ -205,7 +209,7 @@ class H(BaseHTTPRequestHandler):
             html = open(INDEX, encoding='utf-8').read().replace('__I7LAB_NONCE__', SERVER_NONCE).encode()
             return self.send(200, html, 'text/html; charset=utf-8', {'Content-Security-Policy': "default-src 'self'; script-src 'nonce-%s'; style-src 'self' 'unsafe-inline'" % SERVER_NONCE})
         if p == '/api/v1/hello':
-            return self.reply(200, {'v': 1, 'hostname': sysinfo()['hostname'], 'version': '0.1.0-mock', 'build': 'mock-1', 'boot_id': 'abcd', 'state': 'ready', 'demo': True, 'proto': 1})
+            return self.reply(200, {'v': 1, 'hostname': sysinfo()['hostname'], 'version': '0.1.0-mock', 'build': 'mock-1', 'boot_id': 'abcd', 'state': 'ready', 'proto': 1})
         if p == '/api/v1/nonce':
             n = secrets.token_hex(16)
             with NLOCK: NONCES[n] = time.time() + 30
@@ -233,7 +237,7 @@ class H(BaseHTTPRequestHandler):
         seq = 0
         try:
             while True:
-                ev = {'event': 'snapshot', 'state': 'ready', 'attention': ['DEMO KEYS: mock host'], 'taken_ms': int(time.time() * 1000)}
+                ev = {'event': 'snapshot', 'state': 'ready', 'attention': ['NO ADMIN KEY: mock host'], 'taken_ms': int(time.time() * 1000)}
                 self.chunk(('event: snapshot\ndata: %s\n\n' % event_line(key, nonce, seq, ev)).encode()); seq += 1
                 time.sleep(1.0 if os.environ.get('MOCK_FAST') else 2.0)
         except (BrokenPipeError, ConnectionResetError, OSError):
@@ -293,7 +297,8 @@ class H(BaseHTTPRequestHandler):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--port', type=int, default=8080); ap.add_argument('--bind', default='127.0.0.1')
     a = ap.parse_args()
-    for r in ('ro', 'admin'): print('i7k1:%s:%s' % (r, demo(r).hex()))
+    if os.environ.get('MOCK_QUIET') != '1':
+        for r in ('ro', 'admin'): print('i7k1:%s:%s' % (r, MOCK_KEYS[r].hex()))
     srv = ThreadingHTTPServer((a.bind, a.port), H); srv.daemon_threads = True
     print('mock i7labd on http://%s:%d/' % (a.bind, a.port), flush=True)
     srv.serve_forever()

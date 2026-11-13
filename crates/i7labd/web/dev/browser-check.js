@@ -10,8 +10,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 let fails = 0, passes = 0;
 const check = (c, msg) => { if (c) { passes++; console.log('  ok   ' + msg); } else { fails++; console.log('  FAIL ' + msg); } };
 
+const RO_HEX = require('crypto').randomBytes(32).toString('hex'), ADMIN_HEX = require('crypto').randomBytes(32).toString('hex');  // random per run
 function startMock(port, env) {
-  const p = spawn('python3', [path.join(HERE, 'mock-server.py'), '--port', String(port)], { env: Object.assign({}, process.env, { MOCK_QUIET: '1', MOCK_FAST: '1' }, env), stdio: 'ignore' });
+  const p = spawn('python3', [path.join(HERE, 'mock-server.py'), '--port', String(port)], { env: Object.assign({}, process.env, { MOCK_QUIET: '1', MOCK_FAST: '1', I7_MOCK_RO_HEX: RO_HEX, I7_MOCK_ADMIN_HEX: ADMIN_HEX }, env), stdio: 'ignore' });
   return p;
 }
 async function cdpConnect(url) {
@@ -53,14 +54,14 @@ async function main() {
     check(await ev('!!document.querySelector("script[nonce]") && document.querySelectorAll("script").length===2'), 'only the two nonce scripts are present');
     await setVal('#keyline', 'i7k1:ro:00'); await click('.login button.pri');
     check(await waitFor('document.querySelector(".login .alert.bad")', 3000, 'bad key message'), 'malformed key is rejected locally');
-    await clickText('.login button', 'demo read-only key');
-    check(await waitFor('location.hash==="#/overview" && document.querySelectorAll(".card").length>3', 8000, 'overview rendered'), 'demo key accepted, overview rendered');
+    await setVal('#keyline', 'i7k1:ro:' + RO_HEX); await click('.login button.pri');
+    check(await waitFor('location.hash==="#/overview" && document.querySelectorAll(".card").length>3', 8000, 'overview rendered'), 'random run key accepted, overview rendered');
     check(await ev('!!sessionStorage.getItem("i7lab.ro") && !localStorage.getItem("i7lab.ro")'), 'key held in sessionStorage only');
 
     console.log('overview + escaping');
     await waitFor('document.querySelector(".alert.warn")', 5000, 'attention');
     let tx = await text();
-    check(/DEMO KEYS/.test(tx) && /NIC without a driver: 10ec:8126/.test(tx), 'attention list: demo keys + driverless NIC');
+    check(/NIC without a driver: 10ec:8126/.test(tx), 'attention list: driverless NIC');
     check(/ThinkCentre M720q/.test(tx) && /i7-8700/.test(tx) && /4\.0 GiB used of 16/.test(tx), 'machine, CPU and memory cards');
     check(/<img src=x onerror=/.test(tx) === true, 'hostile product string is shown as literal text');
     check(await ev('window.__pwned===undefined && !document.querySelector("img") && !document.querySelector("main script")'), 'no injected element or script ran (render injection)');
@@ -99,8 +100,7 @@ async function main() {
     check(/admin key not loaded/.test(await ev('document.querySelector(' + JSON.stringify(sec('vdb')) + ').innerText')), 'write gate explains why');
     await ev('location.hash="#/actions"'); await waitFor('document.getElementById("adm")', 5000);
     check(await ev('[...document.querySelectorAll("#main button.danger")].every(b=>b.disabled)'), 'actions: reboot/poweroff disabled without the admin key');
-    const adminLine = fs.readFileSync(path.join(HERE, 'mock-server.py'), 'utf8') && require('crypto').createHash('sha256').update('i7lablinux-demo-admin').digest('hex');
-    await setVal('#adm', 'i7k1:admin:' + adminLine); await clickText('#main button', 'Load admin key');
+    await setVal('#adm', 'i7k1:admin:' + ADMIN_HEX); await clickText('#main button', 'Load admin key');
     check(await waitFor('/Admin key accepted/.test(document.getElementById("main").innerText)', 5000, 'admin accepted'), 'admin key loaded explicitly and verified with the host');
     check(await ev('!!sessionStorage.getItem("i7lab.admin")'), 'admin key kept in sessionStorage');
     await clickText('#main button', 'Ping'); check(await waitFor('/uptime_ms/.test(document.getElementById("main").innerText)', 4000), 'actions: ping');
@@ -143,7 +143,7 @@ async function main() {
     console.log('forged host (bad X-Lab-Proof)');
     await goto('http://127.0.0.1:' + BAD_PORT + '/');
     await waitFor('!!document.getElementById("keyline")', 5000);
-    await clickText('.login button', 'demo read-only key');
+    await setVal('#keyline', 'i7k1:ro:' + RO_HEX); await click('.login button.pri');
     check(await waitFor('/Verification failed/.test(document.body.innerText)', 5000, 'proof failure message'), 'a response with a wrong proof is rejected with a visible error');
     check(await ev('!document.getElementById("nav") || document.getElementById("nav").hidden || !sessionStorage.getItem("i7lab.ro")'), 'key not stored when the host fails verification');
     c.close();
