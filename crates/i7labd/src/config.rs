@@ -14,7 +14,13 @@ pub enum ConsoleMode {
 
 #[derive(Clone, Debug)]
 pub struct Config {
+    /// primary HTTP port (default 80; `i7lab.http=PORT|off`); the one the beacon advertises
     pub http_port: Option<u16>,
+    /// second HTTP port kept for older clients and scripts (default 8080; `i7lab.http_alt=PORT|off`). Same handler,
+    /// same limits. Setting `i7lab.http=` explicitly (dev/tests, unprivileged ports) drops it unless `http_alt` is also set.
+    pub http_alt_port: Option<u16>,
+    #[doc(hidden)]
+    pub http_alt_explicit: bool,
     pub beacon_compat: bool,
     /// unauthenticated I7LR1 address hints: OFF by default (review security F6); I7LR2 (HMAC) always accepted
     pub accept_v1_hint: bool,
@@ -44,7 +50,9 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            http_port: Some(8080),
+            http_port: Some(80),
+            http_alt_port: Some(8080),
+            http_alt_explicit: false,
             beacon_compat: true,
             accept_v1_hint: false,
             ether_allow: vec![],
@@ -68,6 +76,17 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Ports to listen on, primary first, without duplicates.
+    pub fn http_ports(&self) -> Vec<u16> {
+        let mut v: Vec<u16> = self.http_port.into_iter().collect();
+        if let Some(a) = self.http_alt_port {
+            if !v.contains(&a) {
+                v.push(a);
+            }
+        }
+        v
+    }
+
     pub fn load(etc: &Path, cmdline: &str) -> Config {
         let mut c = Config { key_dir: etc.join("keys"), ..Config::default() };
         if let Ok(t) = std::fs::read_to_string(etc.join("i7lab.conf")) {
@@ -90,7 +109,16 @@ impl Config {
     pub fn apply(&mut self, k: &str, v: &str) {
         let on = matches!(v, "1" | "on" | "yes" | "true");
         match k {
-            "http" => self.http_port = if v == "off" { None } else { v.parse().ok().or(self.http_port) },
+            "http" => {
+                self.http_port = if v == "off" { None } else { v.parse().ok().or(self.http_port) };
+                if !self.http_alt_explicit {
+                    self.http_alt_port = None;
+                }
+            }
+            "http_alt" => {
+                self.http_alt_explicit = true;
+                self.http_alt_port = if v == "off" { None } else { v.parse().ok().or(self.http_alt_port) };
+            }
             "beacon_compat" => self.beacon_compat = on,
             "accept_v1_hint" => self.accept_v1_hint = on,
             "ether_deny" => self.ether_deny = v.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect(),
@@ -127,5 +155,23 @@ mod tests {
         let c = Config::load(Path::new("/nonexistent"), "i7lab.ether=eno1,eno2 i7lab.http_bind=eno1");
         assert_eq!(c.ether_allow, vec!["eno1", "eno2"]);
         assert_eq!(c.http_bind.as_deref(), Some("eno1"));
+    }
+
+    #[test]
+    fn http_ports_default_override_and_off() {
+        let c = Config::load(Path::new("/nonexistent"), "");
+        assert_eq!((c.http_port, c.http_alt_port), (Some(80), Some(8080)));
+        assert_eq!(c.http_ports(), vec![80, 8080]);
+        // an explicit primary (dev/test, unprivileged) drops the alt unless asked for
+        let c = Config::load(Path::new("/nonexistent"), "i7lab.http=18080");
+        assert_eq!(c.http_ports(), vec![18080]);
+        let c = Config::load(Path::new("/nonexistent"), "i7lab.http=18080 i7lab.http_alt=18081");
+        assert_eq!(c.http_ports(), vec![18080, 18081]);
+        let c = Config::load(Path::new("/nonexistent"), "i7lab.http_alt=off");
+        assert_eq!(c.http_ports(), vec![80]);
+        let c = Config::load(Path::new("/nonexistent"), "i7lab.http=8080");
+        assert_eq!(c.http_ports(), vec![8080], "no duplicate listener");
+        let c = Config::load(Path::new("/nonexistent"), "i7lab.http=off i7lab.http_alt=off");
+        assert!(c.http_ports().is_empty());
     }
 }

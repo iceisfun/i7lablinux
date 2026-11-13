@@ -1258,16 +1258,61 @@ pub fn serve_state(st: Arc<HttpState>, listener: TcpListener, stop: Arc<AtomicBo
     Ok(())
 }
 
-/// Serve forever on `port` (the duty body).
-pub fn serve(daemon: Arc<Daemon>, port: u16) -> io::Result<()> {
+/// Serve forever on every port in `ports` (the duty body): one listener per port, all on the same bind address and
+/// all sharing ONE `HttpState` (one connection budget, one nonce store, one failure table), so a second port never
+/// adds DoS budget. A port that fails to bind is logged and skipped; with none bound this is an error (the
+/// supervisor retries). `daemon.flags` advertises the first port that bound (the beacon's `http=`).
+pub fn serve_ports(daemon: Arc<Daemon>, ports: &[u16]) -> io::Result<()> {
+    serve_ports_stop(daemon, ports, Arc::new(AtomicBool::new(false)))
+}
+
+/// `serve_ports` with an external stop flag (tests).
+pub fn serve_ports_stop(daemon: Arc<Daemon>, ports: &[u16], stop: Arc<AtomicBool>) -> io::Result<()> {
     let ip = resolve_bind(&daemon.config.http_bind, &*daemon.netops)?;
-    let l = TcpListener::bind(SocketAddr::new(IpAddr::V4(ip), port))?;
-    let actual = l.local_addr()?.port();
-    daemon.flags.set_http(Some(actual));
-    daemon.log(&format!("http listening on {}:{}", ip, actual));
-    let r = serve_listener(daemon.clone(), l, Arc::new(AtomicBool::new(false)));
+    let mut ls = Vec::new();
+    let mut last_err = None;
+    for &port in ports {
+        match TcpListener::bind(SocketAddr::new(IpAddr::V4(ip), port)) {
+            Ok(l) => {
+                let actual = l.local_addr()?.port();
+                daemon.log(&format!("http listening on {}:{}", ip, actual));
+                ls.push((actual, l));
+            }
+            Err(e) => {
+                daemon.log(&format!("http bind {}:{} failed: {}", ip, port, e));
+                last_err = Some(e);
+            }
+        }
+    }
+    let Some(first) = ls.first().map(|(p, _)| *p) else {
+        return Err(last_err.unwrap_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no http port configured")));
+    };
+    daemon.flags.set_http(Some(first));
+    let st = Arc::new(HttpState::new(daemon.clone())?);
+    let mut hs = Vec::new();
+    for (_, l) in ls {
+        let (st, stop) = (st.clone(), stop.clone());
+        hs.push(std::thread::spawn(move || {
+            let r = serve_state(st, l, stop.clone());
+            stop.store(true, Ordering::SeqCst); // one listener dying takes all down so the supervisor rebinds cleanly
+            r
+        }));
+    }
+    let mut res = Ok(());
+    for h in hs {
+        match h.join() {
+            Ok(Err(e)) if res.is_ok() => res = Err(e),
+            Err(_) if res.is_ok() => res = Err(io::Error::other("http listener panicked")),
+            _ => {}
+        }
+    }
     daemon.flags.set_http(None);
-    r
+    res
+}
+
+/// Serve forever on one `port`.
+pub fn serve(daemon: Arc<Daemon>, port: u16) -> io::Result<()> {
+    serve_ports(daemon, &[port])
 }
 
 #[cfg(test)]

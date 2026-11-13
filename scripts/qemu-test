@@ -99,7 +99,7 @@ run_guest() { # FIRMWARE(bios|uefi) -> sets RESULT_*, writes $EV/<fw>-*.log
       -drive "if=none,id=nv0,format=raw,file=$EV/nvme.img" -device nvme,bus=rp1,drive=nv0,serial=I7NVME0001
       -drive "if=none,id=vd0,format=raw,file=$EV/virtio.img" -device virtio-blk-pci,bus=rp2,drive=vd0,serial=I7VIRT0001
       -netdev "dgram,id=l2,remote.type=inet,remote.host=239.255.71.1,remote.port=$MP" -device "virtio-net-pci,netdev=l2,mac=$MAC1"
-      -netdev "user,id=ip0,hostfwd=tcp:127.0.0.1:$((MP+1))-:8080" -device e1000e,netdev=ip0,mac=52:54:00:17:00:02)
+      -netdev "user,id=ip0,hostfwd=tcp:127.0.0.1:$((MP+1))-:8080,hostfwd=tcp:127.0.0.1:$((MP+2))-:80" -device e1000e,netdev=ip0,mac=52:54:00:17:00:02)
   printf '%q ' "${q[@]}" > "$EV/$fw-qemu.cmd"
   timeout "$TMO" "${q[@]}" >"$EV/$fw-qemu.out" 2>&1 &
   qpid=$!

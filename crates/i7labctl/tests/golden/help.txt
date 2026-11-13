@@ -50,7 +50,7 @@ global options (accepted before or after the command; after `--` nothing is pars
   --ether MAC             use the ether transport to that NIC MAC (also the host selector)
   --cmd NAME              raw form: send wire command NAME with the remaining words as its argv (no checks);
                           NAME is a catalogue name (help ether) or a numeric id such as 0x0001
-  --http IP[:PORT]        use the http transport (port 8080)
+  --http IP[:PORT]        use the http transport (port 80)
   --ssh [USER@]IP         ssh transport (exec, sh, shell only)
   --transport auto|ether|http|ssh
   -i, --iface IF          lab-side interface (repeatable, or comma separated); default: every Ethernet NIC

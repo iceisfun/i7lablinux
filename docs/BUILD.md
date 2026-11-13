@@ -187,7 +187,7 @@ all checks and writes nothing. The in-image block-write gate is PLAN section 6.
 
 Boots on the build host with q35, a USB stick (the image, `snapshot=on`, so the original is never modified), two PCIe root
 ports with an NVMe and a virtio-blk disk (serials I7NVME0001, I7VIRT0001), a virtio NIC on a UDP multicast socket netdev
-(L2 without root: `i7labctl --link mcast:239.255.71.1:PORT`), and an e1000e on user-mode networking with port 8080 forwarded.
+(L2 without root: `i7labctl --link mcast:239.255.71.1:PORT`), and an e1000e on user-mode networking with guest ports 80 and 8080 forwarded.
 Per firmware (SeaBIOS and OVMF) it checks GRUB, `i7lab-init` on the console, no "busybox" in the log, the key overlay, and,
 when an `i7labctl` is available (`--ctl`), `discover` and `--ether MAC --cmd ping`. Evidence in `out/e2e/<timestamp>/`. At most 2
 guests at once, every guest under `timeout`. The full e2e plan is `tests/e2e` (docs/TESTING.md, lane P11).

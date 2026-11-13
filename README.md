@@ -43,7 +43,7 @@ you are not standing at to boot it: [docs/REMOTE-BOOT.md](docs/REMOTE-BOOT.md).
  |                       |  HMAC, replay-safe, |                  supervisor, watchdog)        |
  |                       |  no IP, any VLAN    |    |                                          |
  |                       |                     |    +-> i7labd  agent                          |
- |                       |  HTTP :8080         |    |     ether server  beacon  HTTP API + SPA |
+ |                       |  HTTP :80/:8080       |    |     ether server  beacon  HTTP API + SPA |
  |  browser (SPA)        |<------------------->|    |     command registry + path policy       |
  +-----------------------+  nonce-HMAC         |    |     probes (labprobe)  block write gate  |
                                                |    |     console TUI (labtui) on tty1/serial  |

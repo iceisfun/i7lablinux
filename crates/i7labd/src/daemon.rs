@@ -180,9 +180,13 @@ pub fn run(daemon: Arc<Daemon>) -> ! {
     supervise(daemon.clone(), "snapshot", crate::snapshot::run);
     supervise(daemon.clone(), "net", crate::netcfg::run);
     supervise(daemon.clone(), "ether", crate::ether::run);
-    supervise(daemon.clone(), "http", |d| match d.config.http_port {
-        Some(p) => crate::http::serve(d, p),
-        None => Ok(()),
+    supervise(daemon.clone(), "http", |d| {
+        let ports = d.config.http_ports();
+        if ports.is_empty() {
+            Ok(())
+        } else {
+            crate::http::serve_ports(d, &ports)
+        }
     });
     supervise(daemon.clone(), "localsock", crate::localsock::serve);
     if daemon.config.tui && daemon.config.console != crate::config::ConsoleMode::Off {

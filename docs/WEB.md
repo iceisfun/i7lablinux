@@ -17,8 +17,8 @@ hidden-textarea fallback for plain-HTTP origins). Light and dark follow the OS; 
 
 ## Listening
 
-`i7labd` answers HTTP on port 8080 on every address once the host has an IP (DHCP). Narrow it with the kernel argument
-`i7lab.http_bind=IFACE|ADDR` or turn it off with `i7lab.http=off` (see [PLAN.md](PLAN.md) C23). There is no TLS.
+`i7labd` answers HTTP on port 80 and on port 8080 (kept for older clients and scripts; same handler, same auth, one shared connection budget) on every address once the host has an IP (DHCP). Narrow it with the kernel argument
+`i7lab.http_bind=IFACE|ADDR` move the primary port with `i7lab.http=PORT` (an explicit value drops the 8080 listener unless `i7lab.http_alt=PORT` is also given; `i7lab.http_alt=off` drops only 8080) or turn HTTP off with `i7lab.http=off i7lab.http_alt=off`. A port that cannot bind is logged and skipped; the beacon `http=` field advertises the first port that bound (80). Every request is signed, so plain HTTP on port 80 adds no unauthenticated capability (see [PLAN.md](PLAN.md) C23). There is no TLS.
 
 ## Routes (all under `/api/v1`)
 
@@ -50,7 +50,7 @@ crosses the wire and there is no token file.
 3. The reply carries `X-Lab-Proof`, an HMAC over nonce, status and body hash. The client must verify it. Stream events carry
    a per-event `mac` and a sequence number.
 
-`i7labctl --http HOST:PORT ...` does all of this. The page does it in about 100 lines of JS (WebCrypto is unavailable on
+`i7labctl --http HOST[:PORT] ...` (port 80 unless given) does all of this. The page does it in about 100 lines of JS (WebCrypto is unavailable on
 plain-HTTP origins). The page asks for a key line and defaults to the **read-only** key; the admin key is loaded explicitly
 on the Actions page and kept in `sessionStorage` for the tab only.
 

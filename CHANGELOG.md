@@ -12,6 +12,9 @@ the wire protocol is frozen; the protocol carries its own version number.
   CI workflow and Makefile.
 
 ### Changed
+- HTTP API and web page now listen on port 80 as well as 8080 (same handler, shared connection limits; a failed bind of
+  one port is logged and skipped). The beacon advertises 80; `i7labctl --http HOST` defaults to port 80, `HOST:8080` still
+  works. `i7lab.http=PORT` sets the primary port (and drops 8080 unless `i7lab.http_alt=PORT` is given); QEMU e2e forwards both.
 - Working notes (recon, reviews, original web and expansion proposals, integration log) moved to `docs/design-history/`.
 - `docs/WEB.md` rewritten to describe the implemented HTTP API and page; the proposal is archived.
 

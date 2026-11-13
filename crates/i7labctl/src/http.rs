@@ -27,7 +27,7 @@ use labproto::Status;
 
 use crate::{jv, output, CallResult, ClientError, ClientIo, Input, Transport};
 
-pub const DEFAULT_PORT: u16 = 8080;
+pub const DEFAULT_PORT: u16 = 80;
 const MAX_BUFFERED: usize = 32 << 20;
 
 pub struct HttpTransport {
@@ -826,6 +826,10 @@ mod tests {
         assert_eq!(urlenc("/etc/a b&c"), "/etc/a%20b%26c");
         assert_eq!(host_port("10.0.0.1", 8080), "10.0.0.1:8080");
         assert_eq!(host_port("10.0.0.1:9000", 8080), "10.0.0.1:9000");
+        // the default port is 80; an explicit :port wins
+        assert_eq!(DEFAULT_PORT, 80);
+        assert_eq!(host_port("10.0.0.1", DEFAULT_PORT), "10.0.0.1:80");
+        assert_eq!(host_port("10.0.0.1:8080", DEFAULT_PORT), "10.0.0.1:8080");
     }
 
     #[test]

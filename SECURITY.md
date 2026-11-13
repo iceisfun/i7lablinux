@@ -5,8 +5,11 @@ it" works, which means some defaults are deliberately open. Read this before put
 
 ## Never expose it to the internet
 
-Do not route its Ethernet segment or its HTTP port (8080) to the internet, a guest network, a shared office network or any
-segment with hosts you do not trust. There is no TLS and no encryption: control traffic is authenticated, not secret.
+Do not route its Ethernet segment or its HTTP ports (80 and 8080) to the internet, a guest network, a shared office network or any
+segment with hosts you do not trust. There is no TLS and no encryption: control traffic is authenticated, not secret. Plain HTTP on port 80 (so
+`http://<ip>` works in a browser) is acceptable for that reason: every API request is signed with the nonce HMAC scheme and
+every response carries a proof, so a listener on :80 adds no unauthenticated capability. Port 8080 stays open too, for
+older clients and scripts; both ports share one handler, one connection limit and one failed-auth table.
 
 ## What the keys are
 

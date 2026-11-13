@@ -463,7 +463,7 @@ Same transport (dst `ff:ff:ff:ff:ff:ff`, ethertype `0x88B5`, one frame per NIC),
 | `build` | image build id (git describe or date) |
 | `kid` | key fingerprint set: `a:<8hex>,r:<8hex>` = first 4 bytes of SHA256("i7c-keyid" \| K) of admin and ro keys, so a lab tool can tell which key set to try |
 | `caps` | `caps` bits in hex |
-| `http` | HTTP port or empty |
+| `http` | primary HTTP port (80 on current images; older hosts say 8080) or empty. The host also answers on 8080; clients accept any value |
 | `ssh` | `1` if sshd is running |
 | `vlan` | the VLAN this beacon was sent on (`0`/empty = untagged) |
 | `tag` | beacon authenticity tag, see below; always the **last** line |

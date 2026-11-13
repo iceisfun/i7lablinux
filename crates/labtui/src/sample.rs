@@ -259,7 +259,7 @@ pub fn demo_data() -> ViewData {
             kline(6, 3, 3.10, "ata2.00: failed command: READ FPDMA QUEUED", &["ata-error"]),
             kline(7, 5, 3.40, "usb 1-3: new SuperSpeed USB device number 3 using xhci_hcd", &[]),
             kline(8, 7, 4.00, "debug: lab init ready", &[]),
-            kline(9, 6, 5.50, "i7labd: listening on ether 88b5 and http :8080", &[]),
+            kline(9, 6, 5.50, "i7labd: listening on ether 88b5 and http :80", &[]),
         ],
         ..Default::default()
     });

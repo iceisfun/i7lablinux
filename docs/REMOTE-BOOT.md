@@ -61,7 +61,7 @@ plain entry, take `UEFI:`). Then continue at step 4."
 2. A short burst of kernel text, then a full-screen status page titled **i7lablinux** with the machine name, coloured
    frames, tabs along the top (Overview, PCIe, Storage, Network, USB, Sensors, Log, Actions; F12 opens About). A red banner `NO KEYS` means the stick was
    not baked; `NO CONTROL PATH` means no network card works (see below).
-3. Within about 15 seconds of the GRUB menu the host sends layer-2 beacons; with an IP (DHCP) it also answers HTTP on port 8080.
+3. Within about 15 seconds of the GRUB menu the host sends layer-2 beacons; with an IP (DHCP) it also answers HTTP on port 80 (and 8080).
 
 ### How you verify it came up (from your desk, on the same Ethernet segment)
 

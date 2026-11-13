@@ -645,6 +645,16 @@ fn transport_choice_and_fallback() {
     let (k, target) = t.connects.lock().unwrap().last().cloned().unwrap();
     assert_eq!(k, i7labctl::Kind::Http);
     assert_eq!((target.ip.as_deref(), target.http_port), (Some("10.0.0.5"), Some(9000)));
+    // no explicit port: none stored in the target, the transport falls back to DEFAULT_PORT (80)
+    let tn = T::new("plan-noport");
+    assert_eq!(tn.run(&["--http", "10.0.0.5", "id"]).0, 0);
+    let (_, target) = tn.connects.lock().unwrap().last().cloned().unwrap();
+    assert_eq!((target.ip.as_deref(), target.http_port), (Some("10.0.0.5"), None));
+    assert_eq!(i7labctl::http::DEFAULT_PORT, 80);
+    // and the old port still works when asked for
+    assert_eq!(tn.run(&["--http", "10.0.0.5:8080", "id"]).0, 0);
+    let (_, target) = tn.connects.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(target.http_port, Some(8080));
     // a stale entry never uses http
     let t2 = T::new("plan2");
     t2.add_host(MAC, 100, &[("ip", "10.0.0.5/24"), ("http", "8080")]);

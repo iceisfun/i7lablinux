@@ -1216,7 +1216,7 @@ pages.about = function (root, sig) {
       card('Agent', kv([['Version', id.version], ['Build', id.build], ['Hostname', id.hostname], ['Boot id', id.boot_id], ['State', id.state], ['Your role', id.role], ['Host keys', id.kid], ['Protocol', String(id.proto)]])),
       card('This session', kv(keys.concat([['Verified responses/events', String(S.stats.ok)], ['Failed verification', String(S.stats.bad)], ['Page', 'single file; xterm.js is fetched from this host only when the Terminal tab is opened']]))),
       card('API', h('p', null, 'Everything here uses the signed JSON API; see ', h('a', { href: '/api/v1/openapi.json' }, 'openapi.json'), ' (open). Requests are authenticated and the host proves itself, but nothing is encrypted (no TLS in v0.x).'),
-        h('p', { class: 'dim' }, 'Command line: i7labctl --http HOST:8080 CMD ... or i7labctl --ether MAC --cmd CMD (no IP needed).')),
+        h('p', { class: 'dim' }, 'Command line: i7labctl --http HOST CMD ... or i7labctl --ether MAC --cmd CMD (no IP needed).')),
       h('section', { class: 'card wide' }, h('h2', null, 'Commands'), table(['Name', 'Access', 'Streams', 'Usage', 'Summary'], (cm.commands || []).map(c => [c.name + (c.planned ? ' (planned' + (c.since ? ' ' + c.since : '') + ')' : ''), c.access, c.streams ? 'yes' : '', c.usage, c.summary])))));
   }).catch(e => { if (e.name !== 'AbortError') setKids(body, errBox(e)); });
 };

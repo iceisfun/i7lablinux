@@ -27,7 +27,8 @@ i7labctl id <host> ; i7labctl inv <host>       # identity, then the full hardwar
 i7labctl blk ls <host>                         # disks; writes are refused unless --destructive AND the serial match
 ```
 The console of the booted host shows a full-screen status TUI (Tab / arrows). An HTTP API and web page also answer on
-port 8080 once the host has an IP (DHCP runs in the background).
+port 80 (`http://<ip>/`; 8080 also answers, kept for older clients) once the host has an IP (DHCP runs in the
+background). Plain HTTP is fine here: every request is signed.
 
 ## No stick? An image file
 

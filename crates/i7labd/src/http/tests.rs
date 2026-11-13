@@ -904,3 +904,69 @@ fn shell_runs_the_real_i7labsh_when_built() {
     let ex = out.until_exit();
     assert!(ex.contains("\"code\":0"), "{}", ex);
 }
+
+fn free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+}
+
+fn multi_daemon() -> Arc<Daemon> {
+    let mut cfg = crate::registry::tests_support::test_config();
+    cfg.http_bind = Some("127.0.0.1".into());
+    let daemon = Daemon::new(cfg).unwrap();
+    *daemon.keys.write().unwrap() = KeySet { admin: Some(Key { role: Role::Admin, bytes: ADMIN }), ro: Some(Key { role: Role::Ro, bytes: RO }) };
+    daemon.set_state("ready");
+    Arc::new(daemon)
+}
+
+fn wait_http(d: &Daemon) -> u16 {
+    for _ in 0..200 {
+        if let Some(p) = d.flags.http_port() {
+            return p;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("http never came up");
+}
+
+#[test]
+fn both_listeners_answer_the_same_request_and_share_limits() {
+    let (a, b) = (free_port(), free_port());
+    let d = multi_daemon();
+    let stop = Arc::new(AtomicBool::new(false));
+    let (d2, s2) = (d.clone(), stop.clone());
+    let h = std::thread::spawn(move || serve_ports_stop(d2, &[a, b], s2));
+    assert_eq!(wait_http(&d), a, "the first (primary) port is the advertised one");
+    for p in [a, b] {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), p);
+        let r = admin(addr, "GET", "/api/v1/probe/system", b"");
+        assert_eq!(r.resp.status, 200, "port {}: {}", p, r.resp.text());
+        check_proof(&r, &ADMIN);
+        assert_eq!(raw(addr, b"GET /health HTTP/1.1\r\nConnection: close\r\n\r\n").status, 200);
+        assert_eq!(ro(addr, "POST", "/api/v1/cmd/exec", b"{}").resp.status, 403, "same role enforcement on port {}", p);
+    }
+    stop.store(true, Ordering::SeqCst);
+    h.join().unwrap().unwrap();
+    assert_eq!(d.flags.http_port(), None);
+    let _ = std::fs::remove_dir_all(&d.config.run_dir);
+}
+
+#[test]
+fn one_bind_failure_is_not_fatal_but_none_bound_is() {
+    let busy = TcpListener::bind("127.0.0.1:0").unwrap();
+    let bp = busy.local_addr().unwrap().port();
+    let good = free_port();
+    let d = multi_daemon();
+    let stop = Arc::new(AtomicBool::new(false));
+    let (d2, s2) = (d.clone(), stop.clone());
+    let h = std::thread::spawn(move || serve_ports_stop(d2, &[bp, good], s2));
+    assert_eq!(wait_http(&d), good, "the port that bound is the advertised one");
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), good);
+    assert_eq!(admin(addr, "GET", "/api/v1/probe/system", b"").resp.status, 200);
+    stop.store(true, Ordering::SeqCst);
+    h.join().unwrap().unwrap();
+    // every port taken: an error for the supervisor, not a silent no-op
+    let d3 = multi_daemon();
+    assert!(serve_ports_stop(d3.clone(), &[bp], Arc::new(AtomicBool::new(false))).is_err());
+    let _ = std::fs::remove_dir_all(&d.config.run_dir);
+    let _ = std::fs::remove_dir_all(&d3.config.run_dir);
+}

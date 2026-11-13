@@ -63,7 +63,7 @@ start_guest() {
   truncate -s 256M "$D/nvme.img" "$D/virtio.img"
   # a partitioned disk with an ext4 filesystem: the gate must refuse it without the flags, and when it is mounted
   truncate -s 128M "$D/parted.img"; sgdisk -n1:0:0 "$D/parted.img" >/dev/null; mkfs.ext4 -q -F -E offset=1048576 "$D/parted.img" 100M >/dev/null 2>&1 || true
-  MP=$((PORT + 2)); HP=$((PORT + 3)); CL=("$CTL" --link "mcast:239.255.71.1:$MP"); SOCK="$D/ser.sock"; MON="$D/mon.sock"; CUR="$D"
+  MP=$((PORT + 2)); HP=$((PORT + 3)); HP80=$((PORT + 4)); CL=("$CTL" --link "mcast:239.255.71.1:$MP"); SOCK="$D/ser.sock"; MON="$D/mon.sock"; CUR="$D"
   local kacc=kvm; [ -w /dev/kvm ] || kacc=tcg
   local q=(qemu-system-x86_64 -name "i7ll-e2e-$fw" -machine "q35,accel=$kacc" -cpu max -smp 4 -m 2048 -display none -no-reboot
     -serial "unix:$SOCK,server,nowait" -monitor "unix:$MON,server,nowait" -pidfile "$D/pid"
@@ -73,7 +73,7 @@ start_guest() {
     -drive "if=none,id=vd0,format=raw,file=$D/virtio.img" -device virtio-blk-pci,bus=rp2,drive=vd0,serial=I7VIRT0001
     -drive "if=none,id=vd1,format=raw,file=$D/parted.img" -device virtio-blk-pci,bus=rp3,drive=vd1,serial=I7PART0001
     -netdev "dgram,id=l2,remote.type=inet,remote.host=239.255.71.1,remote.port=$MP" -device "virtio-net-pci,netdev=l2,mac=$MAC"
-    -netdev "user,id=ip0,hostfwd=tcp:127.0.0.1:$HP-:8080" -device e1000e,netdev=ip0,mac=52:54:00:17:00:02)
+    -netdev "user,id=ip0,hostfwd=tcp:127.0.0.1:$HP-:8080,hostfwd=tcp:127.0.0.1:$HP80-:80" -device e1000e,netdev=ip0,mac=52:54:00:17:00:02)
   if [ "$fw" = uefi ]; then
     cp "$OVMF_VARS" "$D/vars.fd"
     q+=(-drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE" -drive "if=pflash,format=raw,file=$D/vars.fd")
@@ -82,7 +82,7 @@ start_guest() {
   timeout 900 "${q[@]}" >"$D/qemu.out" 2>&1 &
   sleep 1; QPID=$(cat "$D/pid" 2>/dev/null || true)
   [ -n "$QPID" ] || die "QEMU did not start: $(cat "$D/qemu.out")"
-  log ""; log "### guest $fw entry $entry: pid $QPID, L2 segment mcast 239.255.71.1:$MP, HTTP forward 127.0.0.1:$HP"
+  log ""; log "### guest $fw entry $entry: pid $QPID, L2 segment mcast 239.255.71.1:$MP, HTTP forwards 127.0.0.1:$HP (guest 8080, kept) and 127.0.0.1:$HP80 (guest 80)"
   local i; for i in $(seq 1 30); do
     "${CL[@]}" discover --listen 3 2>/dev/null | grep -qi "$MAC" && return 0
   done
@@ -126,6 +126,11 @@ run_fw() {
   chk "exec over ether (program)" 0 'exec-ether' -- "${CL[@]}" exec $MAC -- /bin/i7labsh -c "echo exec-ether"
   chk "net ls over ether" 0 'eth1.*10\.0\.2\.' -- "${CL[@]}" net ls $MAC
   chk "logs over ether" 0 'Linux|i7lab' -- "${CL[@]}" logs $MAC --dmesg -n 20
+  chk "HTTP hello (open) on guest port 80" 0 '"name":"i7labd"' -- curl -s -m 10 "http://127.0.0.1:$HP80/api/v1/hello"
+  chk "HTTP ping (signed) on guest port 80" 0 'received' -- "$CTL" --http "127.0.0.1:$HP80" ping
+  chk "HTTP SPA on guest port 80" 0 '<title>i7lablinux' -- curl -s -m 10 "http://127.0.0.1:$HP80/"
+  chk "HTTP hello (open) on guest port 8080 (kept)" 0 '"name":"i7labd"' -- curl -s -m 10 "http://127.0.0.1:$HP/api/v1/hello"
+  chk "id reports http_port 80 (primary)" 0 "http_port +80\$" -- "${CL[@]}" id $MAC
   chk "HTTP hello (open)" 0 '"name":"i7labd"' -- curl -s -m 10 "http://127.0.0.1:$HP/api/v1/hello"
   chk "HTTP unsigned reboot -> 401" 0 '^401$' -- curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$HP/api/v1/cmd/reboot"
   chk "HTTP serves the SPA" 0 '<title>i7lablinux' -- curl -s -m 10 "http://127.0.0.1:$HP/"

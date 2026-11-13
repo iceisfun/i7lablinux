@@ -40,7 +40,7 @@ Remote boot of a host: see `docs/REMOTE-BOOT.md` (operator procedure: ask the pe
 | `-H, --host <sel>` | host selector (also positional where a command takes one) |
 | `--ether <mac>` | select the **ether** transport and the target NIC MAC; `--cmd` then names the command (2.3) |
 | `--cmd <name>` | wire command name for the raw form |
-| `--http <ip[:port]>` | select the http transport and address (port default 8080). The address is the target, so commands then take **no** `<host>` word (`--http 10.0.0.5 exec -- dmesg`, `--http 10.0.0.5 put a.bin /run/a.bin`); `sh` is the exception and still takes one (`--http 10.0.0.5 sh 10.0.0.5 "ls /"`). |
+| `--http <ip[:port]>` | select the http transport and address (port default 80; hosts still answer on 8080 too, so `--http 10.0.0.5:8080` keeps working). The address is the target, so commands then take **no** `<host>` word (`--http 10.0.0.5 exec -- dmesg`, `--http 10.0.0.5 put a.bin /run/a.bin`); `sh` is the exception and still takes one (`--http 10.0.0.5 sh 10.0.0.5 "ls /"`). |
 | `--ssh [user@]ip` | select the ssh transport (user default root) |
 | `--transport auto\|ether\|http\|ssh` | default `auto` |
 | `-i, --iface <if>` | lab-side interface (repeatable); default every physical Ethernet NIC with carrier |
