@@ -1,0 +1,10 @@
+[package]
+name = "i7labwr"
+description = "i7lablinux image writer: write an image file to a whole disk with serial, mount and boot-media checks and a read-back verify (no dd in the image)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+labproto.workspace = true

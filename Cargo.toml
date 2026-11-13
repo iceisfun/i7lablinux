@@ -8,6 +8,7 @@ members = [
     "crates/i7lab-init",
     "crates/i7labsh",
     "crates/i7labctl",
+    "crates/i7labwr",
 ]
 
 [workspace.package]
