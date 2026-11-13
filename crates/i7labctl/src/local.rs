@@ -419,6 +419,9 @@ pub fn wait_core(run: &mut Run, macs: Vec<String>, kind: WaitKind, boot: Option<
 // ---------------------------------------------------------------- key
 
 fn default_key_dir(run: &Run) -> Result<PathBuf, ClientError> {
+    if let Some(d) = run.g.keys.clone() {
+        return Ok(d);
+    }
     run.keyenv().home.map(|h| keys::default_key_dir(&h)).ok_or_else(|| ClientError::Failed("no home directory (set HOME)".into()))
 }
 
@@ -482,6 +485,7 @@ fn key_init(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     match p.opts.value("dir") {
         Some(d) => dirs.push(PathBuf::from(d)),
+        None if run.g.keys.is_some() => dirs.extend(run.g.keys.clone()),
         None => {
             dirs.push(default_key_dir(run)?);
             // the build tree's gitignored ./keys is where scripts/bake-keys looks

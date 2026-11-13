@@ -63,11 +63,14 @@ impl FakeHost {
                             Action::Send(f) => {
                                 let _ = link.send(1, &f);
                             }
-                            Action::Request { req_id, cmd, .. } => {
+                            Action::Request { req_id, cmd, body: req_body, .. } => {
                                 e2.lock().unwrap().push(cmd);
                                 let now = Instant::now();
                                 match catalog::by_id(cmd).map(|c| c.name) {
                                     Some("ping") => next.extend(srv.respond(req_id, Status::Ok, b"{\"uptime_ms\":1,\"boot_id\":\"ab\"}", now)),
+                                    Some("exec") if req_body.windows(8).any(|w| w == b"--detach") => {
+                                        next.extend(srv.respond(req_id, Status::Ok, b"{\"v\":1,\"job\":7}", now))
+                                    }
                                     Some("exec") => {
                                         let (_, o) = srv.stream_data(req_id, frame::Chan::Stdout, b"hello\n", true, now);
                                         next.extend(o);
@@ -156,6 +159,21 @@ fn ping_exec_and_refusal_over_the_real_session_engine() {
     assert_eq!(code, 7, "{}", e);
     assert!(e.contains("BootMedia"), "{}", e);
     assert!(host.executed.lock().unwrap().contains(&0x0016));
+}
+
+#[test]
+fn exec_detach_prints_the_job_id_and_exits_zero_over_ether() {
+    if !session_ready() {
+        return;
+    }
+    need_json!();
+    let t = T::new("e2");
+    let keys = KeySet::load_dir(&i7labctl::keys::default_key_dir(&t.home)).unwrap();
+    let (a, b) = MemLink::pair(CLIENT, SERVER);
+    let _host = FakeHost::start(b, keys);
+    let (code, o, e) = run(&t, a, &["exec", "--detach", "--", "sleep", "100"]);
+    assert_eq!(code, 0, "{}", e);
+    assert_eq!(o.trim(), "job 7");
 }
 
 #[test]

@@ -55,6 +55,14 @@ c0a9	Micron/Crucial Technology
 1ae0	Google, Inc.
 1bd4	Inspur
 19e5	Huawei Technologies Co., Ltd.
+1217	O2 Micro, Inc.
+1179	Toshiba Corporation
+2646	Kingston Technology Company, Inc.
+1bb1	Seagate Technology PLC
+1d97	Shenzhen Longsys Electronics Co., Ltd.
+1cc4	Union Memory (Shenzhen) Co., Ltd.
+1e4b	MAXIO Technology (Hangzhou) Ltd.
+10b7	3Com Corporation
 [devices]
 1002:164e	Raphael
 1002:15e7	Barcelo
@@ -208,3 +216,105 @@ c0a9	Micron/Crucial Technology
 8086:a352	Cannon Lake PCH SATA AHCI Controller
 8086:a36d	Cannon Lake PCH USB 3.1 xHCI Host Controller
 8086:f1a5	SSD 600P Series
+8086:4621	Alder Lake-P Host Bridge/DRAM Controller
+8086:46a6	Alder Lake-P GT2 [Iris Xe Graphics]
+8086:46a3	Alder Lake-P GT1 [UHD Graphics]
+8086:4680	AlderLake-S GT1 [UHD Graphics 770]
+8086:a780	Raptor Lake-S GT1 [UHD Graphics 770]
+8086:a7a0	Raptor Lake-P [Iris Xe Graphics]
+8086:9a49	TigerLake-LP GT2 [Iris Xe Graphics]
+8086:56a0	DG2 [Arc A770]
+8086:9bc4	CometLake-H GT2 [UHD Graphics]
+8086:5916	HD Graphics 620
+8086:3e9b	CoffeeLake-H GT2 [UHD Graphics 630]
+8086:461e	Alder Lake-P Thunderbolt 4 USB Controller
+8086:51ed	Alder Lake PCH USB 3.2 xHCI Host Controller
+8086:51c8	Alder Lake PCH-P High Definition Audio Controller
+8086:51f0	Alder Lake PCH CNVi WiFi
+8086:51f1	Alder Lake PCH CNVi WiFi
+8086:7af0	Alder Lake-S PCH CNVi WiFi
+8086:a0f0	Wi-Fi 6 AX201
+8086:272b	Wi-Fi 7 BE200 320MHz
+8086:24fd	Wireless 8265 / 8275
+8086:095a	Wireless 7265
+8086:2526	Wireless-AC 9260
+8086:125b	Ethernet Controller I226-LM
+8086:15f2	Ethernet Controller I225-LM
+8086:1528	Ethernet Controller 10-Gigabit X540-AT2
+8086:1563	Ethernet Controller 10G X550T
+8086:1572	Ethernet Controller X710 for 10GbE SFP+
+8086:1583	Ethernet Controller XL710 for 40GbE QSFP+
+8086:158b	Ethernet Controller XXV710 for 25GbE SFP28
+8086:1593	Ethernet Controller E810-C for SFP
+8086:f1a8	SSD 660P Series
+8086:a0e0	Tiger Lake-LP Management Engine Interface
+10ec:522a	RTS522A PCI Express Card Reader
+10ec:5227	RTS5227 PCI Express Card Reader
+10ec:5229	RTS5229 PCI Express Card Reader
+10ec:525a	RTS525A PCI Express Card Reader
+10ec:8821	RTL8821AE 802.11ac PCIe Wireless Network Adapter
+10ec:c821	RTL8821CE 802.11ac PCIe Wireless Network Adapter
+10ec:8852	RTL8852AE 802.11ax PCIe Wireless Network Adapter
+10ec:b852	RTL8852BE PCIe 802.11ax Wireless Network Controller
+1217:8621	SD/MMC Card Reader Controller
+1217:8520	SD/MMC Card Reader Controller
+14e4:43a0	BCM4360 802.11ac Dual Band Wireless Network Adapter
+14e4:43b1	BCM4352 802.11ac Wireless Network Adapter
+14e4:4331	BCM4331 802.11a/b/g/n
+14e4:43ba	BCM43602 802.11ac Wireless LAN SoC
+14e4:1659	NetXtreme BCM5721 Gigabit Ethernet PCI Express
+14e4:1682	NetXtreme BCM57762 Gigabit Ethernet PCIe
+17cb:1101	QCNFA765 Wireless Network Adapter
+17cb:1107	WCN785x Wi-Fi 7(802.11be) 320MHz 2x2 PCIe Wireless Network Adapter
+168c:003c	QCA986x/988x 802.11ac Wireless Network Adapter
+168c:0042	QCA9377 802.11ac Wireless Network Adapter
+168c:002b	AR9285 Wireless Network Adapter (PCI-Express)
+14c3:7922	MT7922 802.11ax PCI Express Wireless Network Adapter
+14c3:0616	MT7922 802.11ax PCI Express Wireless Network Adapter
+14c3:7925	MT7925 802.11be 160MHz Wireless Network Adapter
+1022:1639	Renoir/Cezanne USB 3.1
+1022:15e3	Family 17h/19h/1ah HD Audio Controller
+1022:43ee	500 Series Chipset USB 3.1 XHCI Controller
+1022:149c	Matisse USB 3.0 Host Controller
+1022:1487	Starship/Matisse HD Audio Controller
+1022:1480	Starship/Matisse Root Complex
+1022:15d0	Raven/Raven2 Root Complex
+1002:164c	Lucienne
+1002:1681	Rembrandt [Radeon 680M]
+1002:15bf	Phoenix1 [Radeon 780M]
+1002:73ff	Navi 23 [Radeon RX 6600/6600 XT/6600M]
+1002:7340	Navi 14 [Radeon RX 5500/5500M / Pro 5500M]
+1002:67ef	Baffin [Radeon RX 460/560D / Pro 450/455/460/555/555X/560/560X]
+1002:7480	Navi 33 [Radeon RX 7600/7600 XT/7600M XT/7600S/7700S / PRO W7600]
+1002:747e	Navi 32 [Radeon RX 7700 XT / 7800 XT]
+10de:2520	GA106M [GeForce RTX 3060 Mobile / Max-Q]
+10de:2882	AD107 [GeForce RTX 4060]
+10de:2786	AD104 [GeForce RTX 4070]
+10de:1f82	TU117 [GeForce GTX 1650]
+10de:1d01	GP108 [GeForce GT 1030]
+10de:1c03	GP106 [GeForce GTX 1060 6GB]
+10de:1b81	GP104 [GeForce GTX 1070]
+10de:0fbb	GM204 High Definition Audio Controller
+10de:228b	GA104 High Definition Audio Controller
+10de:1aef	GP104 High Definition Audio Controller
+144d:a804	NVMe SSD Controller SM951/PM951
+144d:a80c	NVMe SSD Controller SM961/PM961/SM963
+144d:a809	NVMe SSD Controller 980
+15b7:5002	WD Black 2018/PC SN720 NVMe SSD
+15b7:5003	WD Blue SN500 / PC SN520 x2 NVMe SSD
+15b7:5036	WD Black SN770 / Green SN3000 NVMe SSD (DRAM-less)
+c0a9:5404	2200S NVMe SSD
+c0a9:540a	P2/P3/P3 Plus NVMe PCIe SSD (DRAM-less)
+1e0f:0001	NVMe SSD Controller BG4 (DRAM-less)
+1987:5013	E13 NVMe Controller
+1cc1:8201	XPG SX8200 Pro / SX6000 Lite NVMe SSD
+2646:5013	KC2500 NVMe SSD
+2646:2263	A2000 NVMe SSD
+8086:51e0	Alder Lake PCH HECI Controller
+8086:51a3	Alder Lake PCH-P SMBus Host Controller
+8086:51a4	Alder Lake-P PCH SPI Controller
+8086:51e8	Alder Lake PCH Serial IO I2C Controller #0
+8086:51e9	Alder Lake PCH Serial IO I2C Controller #1
+8086:51ef	Alder Lake PCH Shared SRAM
+8086:463e	Alder Lake-P Thunderbolt 4 NHI #0
+8086:467d	Alder Lake Platform Monitoring Technology

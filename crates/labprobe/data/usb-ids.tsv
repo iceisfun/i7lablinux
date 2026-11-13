@@ -1,0 +1,84 @@
+# USB vendor / product names for ids common in the lab (curated subset in the format of usb.ids, written by hand
+# from memory, not verified against a current usb.ids; NOT a full copy and not generated). Unknown ids simply show
+# no name. The loader sorts at first use. Format: "[vendors]" then "vvvv<TAB>name"; "[devices]" then
+# "vvvv:pppp<TAB>name". Keep names ASCII.
+[vendors]
+03f0	HP, Inc
+0408	Quanta Computer, Inc.
+0424	Microchip Technology, Inc. (formerly SMSC)
+0451	Texas Instruments, Inc.
+046d	Logitech, Inc.
+0480	Toshiba America Info. Systems, Inc.
+0489	Foxconn / Hon Hai
+04ca	Lite-On Technology Corp.
+04e8	Samsung Electronics Co., Ltd
+04f2	Chicony Electronics Co., Ltd
+058f	Alcor Micro Corp.
+05ac	Apple, Inc.
+05e3	Genesys Logic, Inc.
+0781	SanDisk Corp.
+090c	Silicon Motion, Inc. - Taiwan
+0930	Toshiba Corp.
+0951	Kingston Technology
+0a5c	Broadcom Corp.
+0b05	ASUSTek Computer, Inc.
+0b95	ASIX Electronics Corp.
+0bc2	Seagate RSS LLC
+0bda	Realtek Semiconductor Corp.
+0cf3	Qualcomm Atheros Communications
+0e8d	MediaTek Inc.
+1058	Western Digital Technologies, Inc.
+13d3	IMC Networks
+13fe	Kingston Technology Company Inc.
+152d	JMicron Technology Corp. / JMicron USA Technology Corp.
+174c	ASMedia Technology Inc.
+1a40	Terminus Technology Inc.
+1d6b	Linux Foundation
+2109	VIA Labs, Inc.
+8086	Intel Corp.
+8087	Intel Corp.
+[devices]
+1d6b:0001	1.1 root hub
+1d6b:0002	2.0 root hub
+1d6b:0003	3.0 root hub
+8087:0026	AX201 Bluetooth
+8087:0029	AX200 Bluetooth
+8087:0032	AX210 Bluetooth
+8087:0033	AX211 Bluetooth
+8087:0a2b	Bluetooth wireless interface
+8087:0a2a	Bluetooth wireless interface
+0bda:8153	RTL8153 Gigabit Ethernet Adapter
+0bda:8152	RTL8152 Fast Ethernet Adapter
+0bda:8156	RTL8156 2.5G Ethernet Adapter
+0bda:0129	RTS5129 Card Reader Controller
+0bda:8771	Bluetooth Radio
+0bda:8179	RTL8188EUS 802.11n Wireless Network Adapter
+0bda:8812	RTL8812AU 802.11a/b/g/n/ac 2T2R DB WLAN Adapter
+0bda:c811	802.11ac NIC
+0a5c:21e8	BCM20702A0 Bluetooth 4.0
+0e8d:7961	Wireless_Device
+0e8d:0616	Wireless_Device
+0cf3:e300	QCA61x4 Bluetooth 4.0
+0cf3:9271	AR9271 802.11n
+04e8:61f5	Portable SSD T5
+0781:5581	Ultra
+0781:5583	Ultra Fit
+0781:5591	Ultra Flair
+05e3:0610	4-port hub
+05e3:0612	Hub
+05e3:0626	USB3.1 Hub
+05e3:0749	Card Reader
+0424:2514	USB 2.0 Hub
+0424:2517	Hub
+046d:c52b	Unifying Receiver
+046d:c534	Unifying Receiver
+046d:c077	M105 Optical Mouse
+046d:0825	Webcam C270
+046d:082d	HD Pro Webcam C920
+058f:6387	Flash Drive
+090c:1000	Flash Drive
+152d:0578	JMS578 SATA 6Gb/s bridge
+152d:0539	JMS539 SuperSpeed SATA II 3.0G Bridge
+174c:55aa	ASM1051E SATA 6Gb/s bridge, ASM1053E SATA 6Gb/s bridge, ASM1153 SATA 3Gb/s bridge
+174c:2074	ASM1074 High-Speed hub
+174c:3074	ASM1074 SuperSpeed hub

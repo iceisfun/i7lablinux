@@ -159,9 +159,15 @@ fn serve(conn: TcpStream, st: &Arc<Mutex<State>>, nonces: &Arc<Mutex<NonceStore>
     let kid = req.h("X-Lab-Key").and_then(unhex).unwrap_or_default();
     let key = keys.iter().find(|k| k.key_id().to_vec() == kid);
     let is_put = req.method == "PUT" && req.path() == "/api/v1/file";
+    // like i7labd: an upload must declare its digest up front (X-Lab-Body-Sha256); without it the answer is an
+    // unsigned 400 (the client used to report that as an authentication failure)
+    let declared: Option<[u8; 32]> = req.h("X-Lab-Body-Sha256").and_then(unhex).and_then(|v| <[u8; 32]>::try_from(v).ok());
+    if is_put && declared.is_none() {
+        return respond(&mut w, 400, &[], b"{\"error\":{\"code\":\"BAD_ARGS\",\"message\":\"PUT file needs Content-Length and X-Lab-Body-Sha256\"}}");
+    }
     let mac = |k: &Key| {
         if is_put {
-            httpauth::request_mac_hashed(&k.bytes, &nonce, &req.method, &req.target, &sha256(&req.body))
+            httpauth::request_mac_hashed(&k.bytes, &nonce, &req.method, &req.target, &declared.unwrap())
         } else {
             httpauth::request_mac(&k.bytes, &nonce, &req.method, &req.target, &req.body)
         }
@@ -199,6 +205,9 @@ fn serve(conn: TcpStream, st: &Arc<Mutex<State>>, nonces: &Arc<Mutex<NonceStore>
         };
     }
     if is_put {
+        if declared != Some(sha256(&req.body)) {
+            return signed(&mut w, 400, "{\"error\":{\"code\":\"BAD_ARGS\",\"message\":\"body does not match X-Lab-Body-Sha256\"}}");
+        }
         let path = req.query("path").unwrap_or_default();
         let n = req.body.len();
         st.lock().unwrap().files.insert(path, req.body.clone());
@@ -234,6 +243,9 @@ fn stream(w: &mut TcpStream, cmd: &str, args: &[String], nonce: &str, key: &[u8]
     w.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n")?;
     let mut events: Vec<String> = Vec::new();
     match cmd {
+        "exec" if args.iter().any(|a| a == "--detach") => {
+            events.push("{\"event\":\"result\",\"ok\":true,\"status\":0,\"data\":{\"v\":1,\"job\":7}}".into());
+        }
         "exec" => {
             events.push("{\"event\":\"stdout\",\"data\":\"hello\\n\"}".into());
             events.push("{\"event\":\"stderr\",\"data\":\"warn\\n\"}".into());

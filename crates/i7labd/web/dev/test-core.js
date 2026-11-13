@@ -6,7 +6,7 @@ const fs = require('fs'), path = require('path'), vm = require('vm'), nc = requi
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const m = /<script id="core"[^>]*>([\s\S]*?)<\/script>/.exec(html);
 assert(m, 'core script not found');
-const I7 = vm.runInNewContext(m[1] + ';I7', { TextEncoder, TextDecoder, atob, Uint8Array, Uint32Array, DataView, Math });
+const I7 = vm.runInNewContext(m[1] + ';I7', { TextEncoder, TextDecoder, atob, btoa, Uint8Array, Uint32Array, DataView, Math });
 let n = 0;
 const ok = (c, msg) => { assert(c, msg); n++; };
 const eq = (a, b, msg) => { assert.deepStrictEqual(JSON.parse(JSON.stringify(a === undefined ? null : a)), JSON.parse(JSON.stringify(b)), msg); n++; };
@@ -101,5 +101,67 @@ eq(I7.pushRing([1, 2, 3], 4, 3), [2, 3, 4]); eq(I7.rate(100, 300, 1000), 200); e
 const L = [{ level: 3, text: 'Disk ERROR', tags: ['nvme'] }, { level: 6, text: 'ok', tags: [] }, { level: 7, text: 'dbg', tags: ['usb'] }];
 eq(I7.logFilter(L, { level: 4, q: '' }).length, 1); eq(I7.logFilter(L, { level: 7, q: 'error' }).length, 1); eq(I7.logFilter(L, { level: 7, q: '', tags: new Set(['usb']) }).length, 1);
 eq(I7.decodeStdout({ data: 'x' }), 'x'); eq(I7.decodeStdout({ b64: Buffer.from('hé').toString('base64') }), 'hé');
+
+// Number formatting: never a raw float
+eq(I7.fmt1(456.7354965585054), '456.7'); eq(I7.fmt1(3), '3'); eq(I7.fmt1(0.04), '0'); eq(I7.fmt1(-0.04), '0');
+eq(I7.fmtRate(456.7354965585054), '456.7 B/s'); eq(I7.fmtRate(2048.55), '2.0 KiB/s'); eq(I7.fmtRate(5.5 * 1048576), '5.5 MiB/s'); eq(I7.fmtRate(null), '-');
+eq(I7.fmtBytes(0.3333333), '0.3 B');
+
+// NIC classification and alerts (JS side of labprobe NicKind; class/driver fields only)
+const wifi = { bdf: '0000:00:14.3', vendor: '8086', device: '51f0', class: '028000', driver: null, vendor_name: '', device_name: '' };
+const eth = { bdf: '0000:03:00.0', vendor: '10ec', device: '8126', class: '020000', driver: null, vendor_name: 'Realtek', device_name: 'RTL8126 5GbE' };
+eq([I7.nicKind(wifi), I7.nicKind(eth), I7.nicKind({ class: '020700' }), I7.nicKind({ class: '010802' }), I7.nicKind({ nic_kind: 'wifi', class: '020000' })], ['wifi', 'ethernet', 'other-network', null, 'wifi']);
+const eth0 = { name: 'eth0', driver: 'e1000e', bus_info: '0000:02:00.0', operstate: 'up', carrier: true, mac: 'a', perm_mac: 'a' };
+const dummy = { name: 'dummy0', driver: null, bus_info: null, perm_mac: null, operstate: 'down' }, sit = { name: 'sit0', driver: null, bus_info: null, perm_mac: null };
+ok(I7.isVirtualIface(dummy) && I7.isVirtualIface(sit) && !I7.isVirtualIface(eth0), 'virtual interface rule');
+ok(!I7.isVirtualIface({ name: 'lo' }) && !I7.isVirtualIface({ name: 'eth0.13', vlan_of: 'eth0' }), 'lo and VLANs stay visible'); eq([I7.ifKind({ name: 'lo' }), I7.ifKind({ name: 'e.1', vlan_of: 'e' }), I7.ifKind(dummy), I7.ifKind(eth0)], ['loopback', 'vlan', 'virtual', 'physical']);
+eq(I7.controlPath([dummy, eth0]).name, 'eth0'); eq(I7.controlPath([dummy, { name: 'e', driver: 'x', operstate: 'down' }]), null);
+const w1 = I7.nicAlerts([wifi], [eth0]);
+eq(w1.length, 1); eq(w1[0].level, 'info');
+eq(w1[0].text, 'Wi-Fi adapter 8086:51f0 (0000:00:14.3) has no Linux driver bound in this image: Wi-Fi is not a control path; the control path is eth0');
+ok(!/cannot carry control traffic/.test(w1[0].text), 'wifi with a working eth0 is not a control-path alarm');
+const w2 = I7.nicAlerts([wifi], [dummy]);
+ok(w2[0].level === 'bad' && /NO CONTROL PATH/.test(w2[0].text) && /cannot carry control traffic/.test(w2[0].text), 'no NIC with a driver up: the strong wording');
+const e1 = I7.nicAlerts([eth], [eth0]);
+ok(e1[0].level === 'warn' && /Ethernet controller Realtek RTL8126 5GbE \(10ec:8126, 0000:03:00.0\) has no Linux driver/.test(e1[0].text) && /control path is eth0/.test(e1[0].text), 'ethernet names the device');
+eq(I7.nicAlerts([Object.assign({}, eth, { driver: 'r8169' })], [eth0]).length, 0);
+
+// Markdown / JSON export
+eq(I7.mdCell('a|b\nc'), 'a\\|b c'); eq(I7.mdCell(null), '-'); eq(I7.mdCell(''), '-'); eq(I7.mdCell('x\u001b[2J'), 'x\\u{001b}[2J'); eq(I7.mdCell(0), '0');
+eq(I7.mdTable(['A', 'B'], [['1', null], ['x|y']]), '| A | B |\n| --- | --- |\n| 1 | - |\n| x\\|y | - |');
+eq(I7.mdFence('plain\n'), '```\nplain\n```'); eq(I7.mdFence('a ``` b'), '````\na ``` b\n````'); eq(I7.mdFence('x ````` y').split('\n')[0], '``````');
+const when = new Date(2026, 10, 12, 9, 5, 7);
+ok(/^2026-11-12 09:05:07 [+-]\d\d:\d\d$/.test(I7.fmtLocal(when)), 'local time format ' + I7.fmtLocal(when));
+const meta = { page: 'Network', host: 'lab-1', build: 'b42', boot_id: 'abcd', time: '2026-11-12 09:05:07 +00:00' };
+const md = I7.mdDoc(meta, [{ title: 'Attention', head: ['Level', 'Text'], rows: [], empty: 'nothing' }, { title: 'Host', pairs: [['Kernel', '6.12']] }, { title: 'Log', text: 'l1\nl2' }, { title: 'T', head: ['A'], rows: [['v']] }, { title: 'N', note: 'hello' }, null]);
+eq(md.split('\n')[0], '# Network: lab-1');
+eq(md.split('\n')[2], 'Host lab-1 | build b42 | boot id abcd | 2026-11-12 09:05:07 +00:00');
+ok(md.includes('## Attention\n\n_nothing_\n') && md.includes('| Field | Value |\n| --- | --- |\n| Kernel | 6.12 |') && md.includes('## Log\n\n```\nl1\nl2\n```') && md.includes('## T\n\n| A |\n| --- |\n| v |') && md.endsWith('hello\n'), 'document shape');
+const js = JSON.parse(I7.jsonDoc(meta, [{ title: 'Host', pairs: [['Kernel', '6.12'], ['X', undefined]] }, { title: 'T', head: ['A', 'B'], rows: [['v']] }, { title: 'Log', text: 'a' }]));
+eq(js.host, 'lab-1'); eq(js.sections[0].fields[1], { name: 'X', value: null }); eq(js.sections[1].rows, [['v', null]]); eq(js.sections[2].text, 'a');
+// per-page models
+const net = [Object.assign({ mtu: 1500, rx_bytes: 1048576, tx_bytes: 10, rx_errors: 0, tx_errors: 1, carrier_changes: 2, ipv4: ['10.0.0.2/24'], ipv6: [] }, eth0), Object.assign({ mtu: 1500, rx_bytes: 0, tx_bytes: 0, rx_errors: 0, tx_errors: 0, carrier_changes: 0 }, dummy)];
+const en = I7.expNet(net, [wifi], new Map([['eth0', { rx: 456.7354965585054, tx: null }]]));
+eq(en[0].rows.length, 1); ok(/Wi-Fi adapter/.test(en[0].rows[0][1]), 'net export carries the alert text');
+eq(en[1].head.slice(4, 10), ['MAC', 'Permanent MAC', 'Driver', 'Bus', 'MTU', 'IPv4']);
+eq(en[1].rows[0].slice(0, 2), ['eth0', 'physical']); eq(en[1].rows[0][6], 'e1000e'); eq(en[1].rows[0][7], '0000:02:00.0'); eq(en[1].rows[0][9], '10.0.0.2/24'); eq(en[1].rows[0][13], '456.7 B/s'); eq(en[1].rows[1][1], 'virtual');
+const mdn = I7.mdDoc(meta, en); ok(!/null|undefined|NaN/.test(mdn), 'no null/undefined/NaN in the markdown'); ok(mdn.includes('| eth0 | physical |'));
+const eo = I7.expOverview({ hello: { hostname: 'h' }, system: { hostname: 'h', uptime_s: 61 }, net: { ifaces: net }, block: { devices: [{ name: 'sda', size_bytes: 1048576, write_safety: { verdict: 'safe' } }] }, smart: { devices: [{ dev: 'sda', verdict: 'pass' }] } }, { att: [{ level: 'warn', text: 'w' }] });
+eq(eo.map(x => x.title), ['Attention', 'Host', 'Machine', 'CPU', 'Memory', 'Temperature', 'Network interfaces', 'Disks']); eq(eo[7].rows[0], ['sda', '', '1.0 MiB', null, 'safe', 'pass']);
+ok(!/null|undefined|NaN/.test(I7.mdDoc(meta, eo)), 'overview markdown is clean');
+const pc = I7.expPci([wifi, Object.assign({ link: { cur_gen: 3, cur_width: 2, max_gen: 3, max_width: 4 }, class_name: 'NVM', aer: { correctable: 4 } }, { bdf: '0000:01:00.0', vendor: '144d', device: 'a808', class: '010802', driver: 'nvme', parent: '0000:00:1c.0', iommu_group: 3 })], true);
+eq(pc[0].rows[0].slice(0, 3), ['0000:00:14.3', 'wifi', '8086:51f0']); ok(pc[1].title.includes('IOMMU on') && pc[1].rows[1][5] === 'Gen3 x2' && pc[1].rows[1][9] === 4);
+const stg = I7.expStorage([{ name: 'vdb', size_bytes: 8589934592, logical_block: 512, physical_block: 4096, serial: 'S', partitions: [{ index: 1, name: 'p', first_lba: 1, last_lba: 2, part_uuid: 'u' }], write_safety: { verdict: 'safe', absolute: [], overridable: [] } }], new Map([['vdb', { verdict: 'pass', temperature_c: 38.04, reasons: [], attrs: [{ id: 1, name: 'a', value: 1, worst: 1, thresh: 0, raw: 5 }] }]]));
+eq(stg.map(x => x.title), ['Disk vdb ', 'vdb partitions', 'vdb SMART', 'vdb SMART attributes']); eq(stg[2].pairs[1], ['Temperature', '38 C']);
+const se = I7.expSensors(ss2, new Map([['h/temp/c', [1, 3]]]), ['hot']); eq(se[0].title, 'Alarms'); eq(se[1].title, 'Temperatures (C)'); eq(se[1].rows.find(r => r[0] === 'h c'), ['h c', '1', '1', '3', null]);
+const lg = I7.expLog([{ level: 6, ts_us: 1500000, text: 'a`b', tags: [] }, { level: 7, text: 'dbg', tags: [] }], { level: 6, q: '', tags: new Set() }, 'Kernel');
+eq(lg[1].text, '[     1.500] a`b'); eq(lg[0].pairs[4], ['Lines shown', '1 of 2']);
+const ab = I7.expAbout({ version: 'v', proto: 1 }, { commands: [{ name: 'blk.write', access: 'admin', streams: true, planned: false, usage: 'u', summary: 's' }] }, [['Read-only key', 'ro 1']], { ok: 3, bad: 0 }); eq(ab[2].rows[0][2], 'yes');
+const usb = I7.expUsb([{ path: '1-1', vid: '0951', pid: '1666', manufacturer: 'K', product: 'P', speed_mbps: 480, drivers: ['a', 'b'] }]); eq(usb[0].rows[0], ['1-1', '0951:1666', 'K P', '480 Mb/s', undefined, 'a b']);
+
+// Terminal helpers
+eq(I7.toB64(I7.utf8('echo hé\n')), Buffer.from('echo hé\n').toString('base64')); eq(Array.from(I7.fromB64(Buffer.from([0, 1, 255]).toString('base64'))), [0, 1, 255]);
+eq(I7.toB64(new Uint8Array(20000).fill(65)), Buffer.alloc(20000, 65).toString('base64'));
+eq(I7.chunkStr('abcdef', 4), ['abcd', 'ef']); eq(I7.chunkStr('abc\ud83d\ude00z', 4), ['abc', '\ud83d\ude00z']); eq(I7.chunkStr('', 4), []);
 
 console.log('test-core: ' + n + ' checks passed');

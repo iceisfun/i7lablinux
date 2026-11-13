@@ -1,7 +1,8 @@
 //! Key discovery (PLAN.md section 5) and `key init|show|export|import|verify`. Owner: P9.
 //!
-//! Lookup order, first hit wins, per role: `--key FILE`, `$I7LABCTL_KEY`, `$I7LABCTL_KEYDIR/<role>.key`,
-//! `~/.config/i7labctl/keys/<role>.key` (under sudo: the invoking user's home), `./keys/<role>.key`.
+//! Lookup order, first hit wins, per role: `--key FILE`, `$I7LABCTL_KEY`, `$I7LABCTL_KEYDIR/<role>.key` (`--keys DIR`
+//! is the same as `$I7LABCTL_KEYDIR` and wins over it), `~/.config/i7labctl/keys/<role>.key` (under sudo: the
+//! invoking user's home), `./keys/<role>.key`.
 
 use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
@@ -20,6 +21,9 @@ pub struct KeyEnv {
     /// $HOME, or the invoking user's home under sudo (SUDO_USER)
     pub home: Option<PathBuf>,
     pub cwd: Option<PathBuf>,
+    /// $SUDO_USER and the unmodified $HOME, only to explain a missing key (sudo resets HOME to /root)
+    pub sudo_user: Option<String>,
+    pub raw_home: Option<PathBuf>,
 }
 
 impl KeyEnv {
@@ -30,6 +34,8 @@ impl KeyEnv {
             env_keydir: std::env::var_os("I7LABCTL_KEYDIR").map(PathBuf::from),
             home: real_home(),
             cwd: std::env::current_dir().ok(),
+            sudo_user: std::env::var("SUDO_USER").ok().filter(|u| !u.is_empty()),
+            raw_home: std::env::var_os("HOME").map(PathBuf::from),
         }
     }
 }
@@ -48,6 +54,37 @@ pub fn real_home() -> Option<PathBuf> {
         }
         _ => std::env::var_os("HOME").map(PathBuf::from),
     }
+}
+
+/// The "no key found" error text: every place searched, in order, and the sudo explanation when it applies.
+/// Starts with "no <role> key found" (callers match on that prefix).
+pub fn missing_message(env: &KeyEnv, role: Option<Role>) -> String {
+    let what = match role {
+        Some(r) => format!("no {} key found", r.name()),
+        None => "no admin or ro key found".to_string(),
+    };
+    let file = match role {
+        Some(r) => format!("{}.key", r.name()),
+        None => "<role>.key".to_string(),
+    };
+    let show = |p: &Option<PathBuf>, none: &str| p.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| none.to_string());
+    let mut m = format!("{}. Searched, in this order:\n", what);
+    m.push_str(&format!("  1. --key FILE                      {}\n", show(&env.flag_key, "(not given)")));
+    m.push_str(&format!("  2. $I7LABCTL_KEY                   {}\n", show(&env.env_key, "(not set)")));
+    m.push_str(&format!("  3. $I7LABCTL_KEYDIR (or --keys DIR) {}\n", env.env_keydir.as_ref().map(|d| d.join(&file).display().to_string()).unwrap_or_else(|| "(not set)".into())));
+    m.push_str(&format!("  4. ~/.config/i7labctl/keys         {}\n", env.home.as_ref().map(|h| h.join(".config/i7labctl/keys").join(&file).display().to_string()).unwrap_or_else(|| "(no home directory)".into())));
+    m.push_str(&format!("  5. ./keys                          {}\n", env.cwd.as_ref().map(|c| c.join("keys").join(&file).display().to_string()).unwrap_or_else(|| "(no current directory)".into())));
+    if let (Some(u), Some(h)) = (&env.sudo_user, &env.raw_home) {
+        if u != "root" && (h == Path::new("/root") || h.as_os_str().is_empty()) {
+            m.push_str(&format!(
+                "You are running under sudo (SUDO_USER={}) and sudo changed HOME to {}: your own keys are not in root's home. Run i7labctl without sudo (the HTTP transport needs no root), or use `sudo -E i7labctl ...`, or point --keys DIR / I7LABCTL_KEYDIR at your key directory.\n",
+                u,
+                h.display()
+            ));
+        }
+    }
+    m.push_str("Create keys with: i7labctl key init (or ./scripts/gen-keys)");
+    m
 }
 
 /// Candidate files for `role`, first hit wins.
@@ -89,7 +126,7 @@ pub fn find_key(env: &KeyEnv, role: Role) -> Result<(Key, PathBuf), KeyError> {
         }
         return Ok((k, p));
     }
-    Err(KeyError::Format(format!("no {} key found; create one with: i7labctl key init (or ./scripts/gen-keys)", role.name())))
+    Err(KeyError::Format(missing_message(env, Some(role))))
 }
 
 /// Any key at all (flag file regardless of role).
@@ -138,7 +175,10 @@ pub fn select(env: &KeyEnv, role: Option<Role>, kid: Option<(Option<String>, Opt
             Some(r) => find_key(env, r).map_err(key_err)?,
             None => match find_key(env, Role::Admin) {
                 Ok(x) => x,
-                Err(KeyError::Format(m)) if m.starts_with("no admin key found") => find_key(env, Role::Ro).map_err(|_| ClientError::Auth("no admin or ro key found; create one with: i7labctl key init (or ./scripts/gen-keys)".into()))?,
+                Err(KeyError::Format(m)) if m.starts_with("no admin key found") => find_key(env, Role::Ro).map_err(|e| match e {
+                    KeyError::Format(m) if m.starts_with("no ro key found") => ClientError::Auth(missing_message(env, None)),
+                    other => key_err(other),
+                })?,
                 Err(e) => return Err(key_err(e)),
             },
         }
@@ -298,6 +338,7 @@ mod tests {
             env_keydir: Some("/d".into()),
             home: Some("/h".into()),
             cwd: Some("/c".into()),
+            ..Default::default()
         };
         let c = candidates(&env, Role::Admin);
         assert_eq!(c, vec![PathBuf::from("/f"), "/d/admin.key".into(), "/h/.config/i7labctl/keys/admin.key".into(), "/c/keys/admin.key".into()]);
@@ -378,6 +419,35 @@ mod tests {
         let e = select(&env, Some(Role::Admin), None).unwrap_err();
         assert!(e.to_string().contains("chmod 600"), "{}", e);
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn missing_key_error_names_every_place_searched_in_order() {
+        let env = KeyEnv { env_keydir: Some("/nowhere/kd".into()), home: Some("/home/al".into()), cwd: Some("/work/x".into()), ..Default::default() };
+        let m = missing_message(&env, Some(Role::Admin));
+        assert!(m.starts_with("no admin key found"), "{}", m);
+        let at = |needle: &str| m.find(needle).unwrap_or_else(|| panic!("{} missing from: {}", needle, m));
+        let order = [at("--key FILE"), at("$I7LABCTL_KEY "), at("$I7LABCTL_KEYDIR"), at("/nowhere/kd/admin.key"), at("~/.config/i7labctl/keys"), at("/home/al/.config/i7labctl/keys/admin.key"), at("./keys"), at("/work/x/keys/admin.key")];
+        assert!(order.windows(2).all(|w| w[0] < w[1]), "places out of order: {}", m);
+        assert!(m.contains("--keys DIR") && m.contains("key init"));
+        assert!(!m.contains("sudo"), "no sudo talk without sudo: {}", m);
+        // through select: same text, exit 5
+        let e = select(&KeyEnv { env_keydir: Some("/nowhere/kd".into()), ..Default::default() }, Some(Role::Admin), None).unwrap_err();
+        assert_eq!(e.exit_code(), 5);
+        assert!(e.to_string().contains("$I7LABCTL_KEYDIR"), "{}", e);
+        let e = select(&KeyEnv { home: Some("/nonexistent-home".into()), ..Default::default() }, None, None).unwrap_err();
+        assert!(e.to_string().contains("no admin or ro key found") && e.to_string().contains("~/.config/i7labctl/keys"), "{}", e);
+    }
+
+    #[test]
+    fn under_sudo_with_root_home_the_error_explains_it() {
+        let env = KeyEnv { home: Some("/root".into()), sudo_user: Some("alice".into()), raw_home: Some("/root".into()), ..Default::default() };
+        let m = missing_message(&env, Some(Role::Ro));
+        assert!(m.contains("SUDO_USER=alice") && m.contains("sudo changed HOME to /root"), "{}", m);
+        assert!(m.contains("without sudo") && m.contains("sudo -E") && m.contains("I7LABCTL_KEYDIR"), "{}", m);
+        // sudo that kept the user's HOME is not blamed
+        let env = KeyEnv { sudo_user: Some("alice".into()), raw_home: Some("/home/alice".into()), ..Default::default() };
+        assert!(!missing_message(&env, Some(Role::Ro)).contains("sudo changed"));
     }
 
     #[test]

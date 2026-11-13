@@ -102,3 +102,29 @@ fn global_options_are_documented() {
         assert!(h.contains(o), "{} missing from the global option list", o);
     }
 }
+
+#[test]
+fn default_help_hides_what_the_image_does_not_serve_and_help_all_says_why() {
+    let h = help(&["help"]);
+    let cmd_lines: Vec<&str> = h.lines().skip_while(|l| !l.starts_with("commands")).skip(1).take_while(|l| !l.is_empty()).collect();
+    let listed = |name: &str| cmd_lines.iter().any(|l| l.trim_start().split_whitespace().next() == Some(name));
+    for hidden in ["msg", "identify", "tui", "svc", "kexec", "web"] {
+        assert!(!listed(hidden), "{} must not be in the default help:\n{}", hidden, h);
+    }
+    for shown in ["inv", "exec", "put", "get", "blk", "net", "reboot", "ping"] {
+        assert!(listed(shown), "{} missing from the default help", shown);
+    }
+    assert!(!h.contains("not available in this image yet"), "the default help has no unavailable commands to annotate");
+    // the quick start only names served commands
+    let quick: String = h.lines().skip_while(|l| !l.starts_with("quick start")).take_while(|l| !l.is_empty()).collect::<Vec<_>>().join("\n");
+    for hidden in ["i7labctl msg", "i7labctl identify", "i7labctl tui", "i7labctl svc", "i7labctl kexec"] {
+        assert!(!quick.contains(hidden), "{}", quick);
+    }
+    let all = help(&["help", "--all"]);
+    for name in ["msg", "identify", "tui", "svc", "kexec"] {
+        let line = all.lines().find(|l| l.trim_start().starts_with(&format!("{} ", name)) && l.contains("not available")).unwrap_or_else(|| panic!("{} not annotated in help --all", name));
+        assert!(line.contains("(not available in this image yet)"), "{}", line);
+    }
+    // a command's own page still works and says so
+    assert!(help(&["help", "msg"]).contains("not available in this image yet"));
+}

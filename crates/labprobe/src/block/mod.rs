@@ -103,6 +103,9 @@ pub struct BlockDevice {
 #[derive(Clone, Debug, Default)]
 pub struct BlockReport {
     pub devices: Vec<BlockDevice>,
+    /// (device name, SMART verdict "pass" | "warn" | "fail" | "unknown") for the disks `probe` could ask; filled by
+    /// `probe` on the live root only (never by `enumerate`), cached for a minute. Shown as the `smart` field of a device.
+    pub smart: Vec<(String, String)>,
 }
 
 /// Find the whole disk carrying `partuuid` (GPT unique GUID, or `<MBR signature>-<nn>`), once at daemon start; the
@@ -123,7 +126,11 @@ pub fn detect_signatures(head: &[u8]) -> Vec<Signature> {
 
 /// Enumerate /sys/block (skip loop/ram/zram/dm unless `all`).
 pub fn probe(ctx: &ProbeCtx, all: bool) -> Result<BlockReport, ProbeError> {
-    enumerate::enumerate(ctx, all)
+    let mut rep = enumerate::enumerate(ctx, all)?;
+    if !all {
+        rep.smart = smart::verdicts(ctx, &rep.devices);
+    }
+    Ok(rep)
 }
 
 /// Device names accepted from callers: `[A-Za-z0-9_-]{1,32}`, no slashes or dots (prior-art rule).
@@ -131,8 +138,9 @@ pub fn valid_dev_name(name: &str) -> bool {
     !name.is_empty() && name.len() <= 32 && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-impl ToJson for BlockDevice {
-    fn write_json(&self, w: &mut JsonWriter) {
+impl BlockDevice {
+    /// The JSON object of this disk with the SMART verdict (`None` = not asked / not available) as `smart`.
+    pub fn write_json_smart(&self, w: &mut JsonWriter, smart: Option<&str>) {
         w.begin_object();
         w.field_str("name", &self.name);
         w.field_str("devno", &format!("{}:{}", self.devno.0, self.devno.1));
@@ -166,7 +174,14 @@ impl ToJson for BlockDevice {
         w.field_bool("boot_media", self.boot_media);
         w.key("write_safety");
         self.write_safety.write_json(w);
+        w.field_opt_str("smart", smart);
         w.end_object();
+    }
+}
+
+impl ToJson for BlockDevice {
+    fn write_json(&self, w: &mut JsonWriter) {
+        self.write_json_smart(w, None);
     }
 }
 
@@ -175,7 +190,12 @@ impl ToJson for BlockReport {
         w.begin_object();
         w.field_u64("v", crate::SCHEMA_V);
         w.key("devices");
-        w.value(&self.devices);
+        w.begin_array();
+        for d in &self.devices {
+            let v = self.smart.iter().find(|(n, _)| *n == d.name).map(|(_, v)| v.as_str());
+            d.write_json_smart(w, v);
+        }
+        w.end_array();
         w.end_object();
     }
 }

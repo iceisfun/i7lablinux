@@ -25,6 +25,8 @@ pub struct Global {
     pub vlans: Vec<u16>,
     pub role: Option<Role>,
     pub key: Option<PathBuf>,
+    /// `--keys DIR`: same as $I7LABCTL_KEYDIR (wins over it)
+    pub keys: Option<PathBuf>,
     pub timeout: Option<f64>,
     pub retries: u32,
     pub json: bool,
@@ -52,6 +54,7 @@ impl Default for Global {
             vlans: Vec::new(),
             role: None,
             key: None,
+            keys: None,
             timeout: None,
             retries: 0,
             json: false,
@@ -116,6 +119,7 @@ const VALUED: &[(&str, &str)] = &[
     ("--vlan", "vlan"),
     ("--role", "role"),
     ("--key", "key"),
+    ("--keys", "keys"),
     ("--timeout", "timeout"),
     ("--retries", "retries"),
     ("--registry", "registry"),
@@ -197,6 +201,7 @@ fn apply(g: &mut Global, key: &str, v: &str) -> Result<(), String> {
         "vlan" => g.vlans.extend(parse_vlans(v)?),
         "role" => g.role = Some(Role::parse(v).ok_or_else(|| format!("--role must be admin or ro, got '{}'", v))?),
         "key" => g.key = Some(PathBuf::from(v)),
+        "keys" => g.keys = Some(PathBuf::from(v)),
         "timeout" => {
             let t: f64 = v.parse().map_err(|_| format!("--timeout needs seconds, got '{}'", v))?;
             if !(0.0..=86400.0).contains(&t) {

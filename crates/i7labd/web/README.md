@@ -3,9 +3,30 @@
 One file, vanilla JS, no build step, no external request (no CDN, no web fonts), works offline from the host itself.
 About 78 KB. Embedded by `src/web.rs` with `include_str!`. Pages: Overview, PCIe (topology tree + detail drawer),
 Storage (partition bar, write-gate verdicts, SMART, block-test launcher), Network (live rates), USB (tree), Sensors
-(live SVG graphs, polling), Log (filter, tags, follow, download), Actions (confirm dialogs), About.
+(live SVG graphs, polling), Log (filter, tags, follow, download), Terminal (admin key, xterm.js), Actions (confirm
+dialogs), About. Every data tab has Copy as Markdown / Copy as JSON.
 Dark/light follows the OS with a toggle; layout works from 390 px to wide screens; landmarks, labels, focus
 rings, `aria-live` regions, native `<dialog>` for modals, `prefers-reduced-motion` respected.
+
+## Copy as Markdown / JSON
+
+Overview, PCIe, Storage, Network, USB, Sensors, Log and About carry two buttons. Each tab registers `S.exp`, a function
+returning `{page, sections}`; the pure functions in the core script (`expOverview`, `expPci`, `expStorage`, `expNet`,
+`expUsb`, `expSensors`, `expLog`, `expAbout`, then `mdDoc` / `jsonDoc`) turn the last data the tab holds into a document:
+a header line (host, build, boot id, local time), one table per section with the same columns as the tab (the Network
+tab adds driver, bus, MAC, permanent MAC, IPv4/IPv6 per interface and the alert text) and a code fence for log text.
+Cells are sanitised like the page (control characters visible), `|`, `<` and backticks escaped. Copying uses
+`navigator.clipboard` when the origin allows it, else a hidden textarea and `document.execCommand('copy')` (plain-HTTP
+origins), else a dialog with the text selected. A "Copied" label and a toast confirm. No request is made.
+
+## Terminal tab
+
+Admin key only (the read-only key sees the tab disabled with an explanation). xterm.js 5.5.0 and the fit addon live in
+`web/vendor/` (MIT, licenses and sha256 in `vendor/README.md`), are embedded by `src/http/shell.rs` and served open at
+`/vendor/*`; the page loads them only when the Terminal tab opens, so the CSP is `script-src 'nonce-..' 'self'`. The page
+signs `POST /api/v1/shell/open`, reads the sealed SSE `GET .../out` (every event mac-checked) and sends keystrokes as
+signed `POST .../in` bodies (base64), one request in flight so order holds; resize goes to `.../resize`. A permanent red
+banner says: unencrypted HTTP, everything typed and seen is visible on the network, trusted LAN only.
 
 ## Serving contract (for `http.rs`)
 
@@ -14,6 +35,15 @@ rings, `aria-live` regions, native `<dialog>` for modals, `prefers-reduced-motio
   The page has exactly two `<script nonce=...>` blocks (`#core` pure functions, `#app`), no inline event handlers.
   Served without the replacement the scripts will not run under that CSP.
 * `GET /api/v1/hello` and `GET /api/v1/nonce` are open; everything else is signed (PLAN.md C3).
+
+## Display rules worth knowing
+
+* Never pass `null` to `replaceChildren` / `append`: Node stringifies it to the text "null". Use `setKids(el, ...)` /
+  `addKids(el, ...)` (flatten and drop null/undefined/false).
+* Numbers shown to people have at most one decimal (`fmt1`, `fmtBytes`, `fmtRate`: B/s, KiB/s, MiB/s).
+* Network alerts come from `nicAlerts(devs, ifs)`: Ethernet vs Wi-Fi vs other by `nic_kind` (or PCI class 0200 / 0280 /
+  02xx), device name or vendor:device, and "cannot carry control traffic" only when no interface with a driver is up.
+* Interfaces with no driver, bus or permanent MAC (dummy0, sit0) fold under "virtual interfaces (N)"; lo and VLANs stay.
 
 ## Auth (what the SPA does)
 
@@ -58,9 +88,9 @@ model, size and serial and needs the serial typed once more. This is UX only: `l
 
 ```
 python3 web/dev/mock-server.py --port 8080     # prints a random per-run key pair; open http://127.0.0.1:8080/
-node web/dev/test-core.js                      # 89 unit checks of the pure functions (SHA-256/HMAC vs node:crypto, RFC 4231,
+node web/dev/test-core.js                      # 159 unit checks of the pure functions (SHA-256/HMAC vs node:crypto, RFC 4231,
                                                #   MAC layouts, stream checks, sanitiser, tree/partition/gate logic)
-node web/dev/browser-check.js [chrome]         # headless Chrome over DevTools: 77 checks, drives the mock end to end
+node web/dev/browser-check.js [chrome]         # headless Chrome over DevTools: 136 checks (copy buttons, Terminal against the mock shell, no stray null), drives the mock end to end
 ```
 
 `mock-server.py` implements the real auth (single-use nonces, request check with a random per-run key pair, proof, event macs,

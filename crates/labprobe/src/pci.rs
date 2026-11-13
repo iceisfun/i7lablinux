@@ -61,6 +61,42 @@ pub struct PciDevice {
     pub config_hex: Option<String>,
 }
 
+/// What kind of network function a PCI device is (class 0x02xxxx only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NicKind {
+    /// class 0x0200
+    Ethernet,
+    /// class 0x0280 (Network controller: Wi-Fi cards report this)
+    Wifi,
+    /// any other 0x02xxxx class (InfiniBand, token ring, ...)
+    OtherNetwork,
+}
+
+impl NicKind {
+    /// Stable JSON value of the `nic_kind` field.
+    pub fn name(self) -> &'static str {
+        match self {
+            NicKind::Ethernet => "ethernet",
+            NicKind::Wifi => "wifi",
+            NicKind::OtherNetwork => "other-network",
+        }
+    }
+}
+
+impl PciDevice {
+    /// `None` for anything that is not a network-class function.
+    pub fn nic_kind(&self) -> Option<NicKind> {
+        if self.class >> 16 != 0x02 {
+            return None;
+        }
+        Some(match (self.class >> 8) & 0xff {
+            0x00 => NicKind::Ethernet,
+            0x80 => NicKind::Wifi,
+            _ => NicKind::OtherNetwork,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct PciReport {
     pub iommu_enabled: bool,
@@ -72,6 +108,27 @@ impl PciReport {
     /// `attention` list (review feasibility F34).
     pub fn unbound_nics(&self) -> Vec<&PciDevice> {
         self.devices.iter().filter(|d| d.class >> 16 == 0x02 && d.driver.is_none()).collect()
+    }
+
+    /// Ethernet (class 0x0200) functions with no bound driver: these are the ones that matter for the control path.
+    pub fn unbound_ethernet(&self) -> Vec<&PciDevice> {
+        self.devices.iter().filter(|d| d.nic_kind() == Some(NicKind::Ethernet) && d.driver.is_none()).collect()
+    }
+
+    /// Wi-Fi (class 0x0280) functions with no bound driver. Expected on the lab image (no Wi-Fi drivers or
+    /// firmware): informational, never a reason to say "this host cannot be reached".
+    pub fn unbound_wifi(&self) -> Vec<&PciDevice> {
+        self.devices.iter().filter(|d| d.nic_kind() == Some(NicKind::Wifi) && d.driver.is_none()).collect()
+    }
+
+    /// At least one Ethernet function has a bound driver and its interface (matched through the PCI address in
+    /// `bus_info`) is up with carrier.
+    pub fn control_path_available(&self, net: &crate::net::NetReport) -> bool {
+        self.devices.iter().filter(|d| d.nic_kind() == Some(NicKind::Ethernet) && d.driver.is_some()).any(|d| {
+            net.ifaces.iter().any(|i| {
+                i.bus_info.as_deref() == Some(d.bdf.as_str()) && i.driver.is_some() && (i.carrier == Some(true) || i.operstate == "up")
+            })
+        })
     }
 }
 
@@ -332,6 +389,7 @@ impl ToJson for PciReport {
             w.field_str("class", &format!("{:06x}", d.class));
             w.field_u64("revision", d.revision as u64);
             w.field_str("class_name", &d.class_name);
+            w.field_opt_str("nic_kind", d.nic_kind().map(NicKind::name));
             w.field_opt_str("vendor_name", d.vendor_name.as_deref());
             w.field_opt_str("device_name", d.device_name.as_deref());
             w.field_opt_str("driver", d.driver.as_deref());

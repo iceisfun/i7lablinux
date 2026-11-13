@@ -10,6 +10,7 @@ const ADMIN: [u8; 32] = [1; 32];
 const RO: [u8; 32] = [2; 32];
 
 struct Server {
+    st: Arc<HttpState>,
     daemon: Arc<Daemon>,
     addr: SocketAddr,
     stop: Arc<AtomicBool>,
@@ -18,6 +19,10 @@ struct Server {
 
 impl Server {
     fn start() -> Server {
+        Server::start_cfg(ShellCfg::default())
+    }
+
+    fn start_cfg(cfg: ShellCfg) -> Server {
         let daemon = test_daemon();
         *daemon.keys.write().unwrap() = KeySet { admin: Some(Key { role: Role::Admin, bytes: ADMIN }), ro: Some(Key { role: Role::Ro, bytes: RO }) };
         daemon.set_state("ready");
@@ -25,9 +30,10 @@ impl Server {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = l.local_addr().unwrap();
         let stop = Arc::new(AtomicBool::new(false));
-        let (d, s) = (daemon.clone(), stop.clone());
-        let handle = Some(std::thread::spawn(move || serve_listener(d, l, s)));
-        Server { daemon, addr, stop, handle }
+        let st = Arc::new(HttpState::with_shells(daemon.clone(), cfg).unwrap());
+        let (st2, s) = (st.clone(), stop.clone());
+        let handle = Some(std::thread::spawn(move || serve_state(st2, l, s)));
+        Server { st, daemon, addr, stop, handle }
     }
 }
 
@@ -549,4 +555,352 @@ fn stream_failure_ends_with_an_error_result() {
     assert!(last.contains("\"ok\":false") && last.contains("\"status\":6") && last.contains("\"error\":{\"code\":\"NOT_FOUND\""), "{}", last);
     // unknown command: a plain 404 before any stream starts
     assert_eq!(admin(s.addr, "POST", "/api/v1/cmd/nosuch?stream=1", b"{}").resp.status, 404);
+}
+
+// ------------------------------------------------------------------------------------------------ web terminal
+
+struct TestClock(AtomicU64);
+impl Clock for TestClock {
+    fn now_ms(&self) -> u64 {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+use std::sync::atomic::AtomicU64;
+
+fn sh_cfg(clock: Arc<TestClock>) -> ShellCfg {
+    ShellCfg { clock, argv: Some(vec!["/bin/sh".into()]), ..ShellCfg::default() }
+}
+
+fn have_pty() -> bool {
+    crate::ffi::open_pty().is_ok()
+}
+
+fn json_field(body: &str, key: &str) -> String {
+    let pat = format!("\"{}\":\"", key);
+    body.split(&pat).nth(1).map(|r| r.split('"').next().unwrap().to_string()).unwrap_or_default()
+}
+
+/// Audit lines are written a moment after the session leaves the table: poll.
+fn audit_has(s: &Server, needle: &str) -> bool {
+    let t0 = Instant::now();
+    loop {
+        if s.daemon.audit.recent(40).join("\n").contains(needle) {
+            return true;
+        }
+        if t0.elapsed() > Duration::from_secs(3) {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn open_shell(s: &Server) -> String {
+    let r = admin(s.addr, "POST", "/api/v1/shell/open?cols=100&rows=30", b"");
+    assert_eq!(r.resp.status, 200, "{}", r.resp.text());
+    check_proof(&r, &ADMIN);
+    let id = json_field(&r.resp.text(), "id");
+    assert!(shell::valid_id(&id), "{}", r.resp.text());
+    id
+}
+
+/// A live sealed SSE stream of `shell/<id>/out`.
+struct OutStream {
+    r: BufReader<TcpStream>,
+    nonce: String,
+    seq: u64,
+}
+
+impl OutStream {
+    fn open(addr: SocketAddr, id: &str) -> OutStream {
+        let nonce = get_nonce(addr);
+        let target = format!("/api/v1/shell/{}/out", id);
+        let mac = hex(&httpauth::request_mac(&ADMIN, &nonce, "GET", &target, b""));
+        let mut s = TcpStream::connect(addr).unwrap();
+        write!(s, "GET {} HTTP/1.1\r\nHost: t\r\nX-Lab-Key: {}\r\nX-Lab-Nonce: {}\r\nX-Lab-Auth: {}\r\n\r\n", target, kid(&ADMIN, Role::Admin), nonce, mac).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(15))).unwrap();
+        let mut r = BufReader::new(s);
+        assert!(read_line(&mut r).contains("200"));
+        while !read_line(&mut r).is_empty() {}
+        OutStream { r, nonce, seq: 0 }
+    }
+
+    /// Next verified event as (event name, full JSON); None at end of stream.
+    fn next(&mut self) -> Option<(String, String)> {
+        loop {
+            let mut l = String::new();
+            if self.r.read_line(&mut l).ok()? == 0 {
+                return None;
+            }
+            let Some(d) = l.trim_end().strip_prefix("data: ") else { continue };
+            let (seq, json) = verify_event(&ADMIN, &self.nonce, d).expect("event mac");
+            assert_eq!(seq, self.seq, "sequence");
+            self.seq += 1;
+            return Some((json_field(&json, "event"), json));
+        }
+    }
+
+    /// Collect output until `needle` appears (or the stream ends); returns everything decoded so far.
+    fn until(&mut self, needle: &str) -> String {
+        let mut all = Vec::new();
+        let t0 = Instant::now();
+        while t0.elapsed() < Duration::from_secs(30) {
+            let Some((ev, j)) = self.next() else { break };
+            if ev == "out" {
+                all.extend(shell::unbase64(&json_field(&j, "b64")).unwrap());
+                if String::from_utf8_lossy(&all).contains(needle) {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        String::from_utf8_lossy(&all).into_owned()
+    }
+
+    fn until_exit(&mut self) -> String {
+        while let Some((ev, j)) = self.next() {
+            if ev == "exit" {
+                return j;
+            }
+        }
+        panic!("stream ended without an exit event");
+    }
+}
+
+#[test]
+fn shell_open_in_out_resize_close() {
+    if !have_pty() {
+        return;
+    }
+    let s = Server::start_cfg(sh_cfg(Arc::new(TestClock(AtomicU64::new(0)))));
+    let id = open_shell(&s);
+    let mut out = OutStream::open(s.addr, &id);
+    // keystrokes as base64 (default)
+    let r = admin(s.addr, "POST", &format!("/api/v1/shell/{}/in", id), base64(b"echo hello-$((40+2))\n").as_bytes());
+    assert_eq!(r.resp.status, 200, "{}", r.resp.text());
+    check_proof(&r, &ADMIN);
+    assert!(out.until("hello-42\r\n").contains("hello-42"));
+    // raw octets
+    let r = signed_with(s.addr, &ADMIN, Role::Admin, "POST", &format!("/api/v1/shell/{}/in", id), b"echo raw-$((5*5))\n", "Content-Type: application/octet-stream\r\n");
+    assert_eq!(r.resp.status, 200, "{}", r.resp.text());
+    assert!(out.until("raw-25\r\n").contains("raw-25"));
+    // resize reaches the tty
+    assert_eq!(admin(s.addr, "POST", &format!("/api/v1/shell/{}/resize?cols=120&rows=40", id), b"").resp.status, 200);
+    assert_eq!(admin(s.addr, "POST", &format!("/api/v1/shell/{}/resize", id), b"{\"cols\":132,\"rows\":50}").resp.status, 200);
+    admin(s.addr, "POST", &format!("/api/v1/shell/{}/in", id), base64(b"stty size\n").as_bytes());
+    assert!(out.until("50 132").contains("50 132"));
+    assert_eq!(admin(s.addr, "POST", &format!("/api/v1/shell/{}/resize?cols=0&rows=5", id), b"").resp.status, 400);
+    // close ends the stream with an exit event and frees the id
+    assert_eq!(admin(s.addr, "POST", &format!("/api/v1/shell/{}/close", id), b"").resp.status, 200);
+    let ex = out.until_exit();
+    assert!(ex.contains("\"reason\":\"closed\""), "{}", ex);
+    assert_eq!(admin(s.addr, "POST", &format!("/api/v1/shell/{}/in", id), b"eA==").resp.status, 404);
+    assert_eq!(s.st.shells.len(), 0);
+    assert!(audit_has(&s, "cmd=shell.close") && audit_has(&s, "cmd=shell.open"), "{}", s.daemon.audit.recent(20).join("\n"));
+    assert!(s.daemon.audit.recent(20).join("\n").contains(&id));
+}
+
+#[test]
+fn shell_exit_by_itself_drains_output_and_frees_the_slot() {
+    if !have_pty() {
+        return;
+    }
+    let s = Server::start_cfg(sh_cfg(Arc::new(TestClock(AtomicU64::new(0)))));
+    let id = open_shell(&s);
+    let mut out = OutStream::open(s.addr, &id);
+    admin(s.addr, "POST", &format!("/api/v1/shell/{}/in", id), base64(b"echo last-words; exit 7\n").as_bytes());
+    assert!(out.until("last-words").contains("last-words"));
+    let ex = out.until_exit();
+    assert!(ex.contains("\"code\":7"), "{}", ex);
+    assert_eq!(s.st.shells.len(), 0);
+}
+
+#[test]
+fn shell_concurrency_cap() {
+    if !have_pty() {
+        return;
+    }
+    let s = Server::start_cfg(sh_cfg(Arc::new(TestClock(AtomicU64::new(0)))));
+    let (a, b) = (open_shell(&s), open_shell(&s));
+    let r = admin(s.addr, "POST", "/api/v1/shell/open", b"");
+    assert_eq!(r.resp.status, 503, "{}", r.resp.text());
+    assert!(r.resp.text().contains("too many open shells"));
+    assert_eq!(admin(s.addr, "POST", &format!("/api/v1/shell/{}/close", a), b"").resp.status, 200);
+    let c = open_shell(&s);
+    assert_ne!(b, c);
+    assert_eq!(s.st.shells.len(), 2);
+}
+
+#[test]
+fn shell_idle_timeout_uses_the_injected_clock() {
+    if !have_pty() {
+        return;
+    }
+    let clock = Arc::new(TestClock(AtomicU64::new(0)));
+    let s = Server::start_cfg(sh_cfg(clock.clone()));
+    let id = open_shell(&s);
+    let mut out = OutStream::open(s.addr, &id);
+    // activity restarts the idle timer
+    clock.0.store(9 * 60 * 1000, Ordering::SeqCst);
+    assert_eq!(admin(s.addr, "POST", &format!("/api/v1/shell/{}/in", id), base64(b"true\n").as_bytes()).resp.status, 200);
+    clock.0.store(18 * 60 * 1000, Ordering::SeqCst);
+    std::thread::sleep(Duration::from_millis(1200));
+    assert_eq!(s.st.shells.len(), 1, "9 minutes since the last keystroke is not idle");
+    clock.0.store(19 * 60 * 1000 + 1, Ordering::SeqCst);
+    let ex = out.until_exit();
+    assert!(ex.contains("\"reason\":\"idle\""), "{}", ex);
+    assert_eq!(admin(s.addr, "POST", &format!("/api/v1/shell/{}/in", id), b"eA==").resp.status, 404);
+    assert!(audit_has(&s, "idle"));
+    // the slot is free again
+    open_shell(&s);
+}
+
+#[test]
+fn shell_unattached_session_is_reaped() {
+    if !have_pty() {
+        return;
+    }
+    let clock = Arc::new(TestClock(AtomicU64::new(0)));
+    let s = Server::start_cfg(sh_cfg(clock.clone()));
+    open_shell(&s);
+    clock.0.store(shell::UNATTACHED_MS + 1, Ordering::SeqCst);
+    s.st.shells.reap();
+    assert_eq!(s.st.shells.len(), 0);
+}
+
+#[test]
+fn shell_closes_when_the_out_stream_disconnects() {
+    if !have_pty() {
+        return;
+    }
+    let s = Server::start_cfg(sh_cfg(Arc::new(TestClock(AtomicU64::new(0)))));
+    let id = open_shell(&s);
+    let out = OutStream::open(s.addr, &id);
+    assert_eq!(s.st.shells.len(), 1);
+    drop(out);
+    let t = Instant::now();
+    while s.st.shells.len() > 0 && t.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert_eq!(s.st.shells.len(), 0, "a dead stream must not leave a shell behind");
+    assert!(audit_has(&s, "disconnect"), "{}", s.daemon.audit.recent(20).join("\n"));
+}
+
+#[test]
+fn shell_second_out_stream_is_refused() {
+    if !have_pty() {
+        return;
+    }
+    let s = Server::start_cfg(sh_cfg(Arc::new(TestClock(AtomicU64::new(0)))));
+    let id = open_shell(&s);
+    let _first = OutStream::open(s.addr, &id);
+    let r = admin(s.addr, "GET", &format!("/api/v1/shell/{}/out", id), b"");
+    assert_eq!(r.resp.status, 503, "{}", r.resp.text());
+}
+
+#[test]
+fn shell_output_buffer_is_capped_with_backpressure() {
+    if !have_pty() {
+        return;
+    }
+    let clock = Arc::new(TestClock(AtomicU64::new(0)));
+    let cfg = ShellCfg { clock, argv: Some(vec!["/bin/sh".into(), "-c".into(), "yes".into()]), ..ShellCfg::default() };
+    let s = Server::start_cfg(cfg);
+    let id = open_shell(&s);
+    let sess = s.st.shells.get(&id).unwrap();
+    let t0 = Instant::now();
+    while sess.buffered() <= shell::OUT_CAP / 2 && t0.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(sess.buffered() <= shell::OUT_CAP, "{}", sess.buffered());
+    assert!(sess.buffered() > shell::OUT_CAP / 2, "the reader fills the buffer then waits: {}", sess.buffered());
+    let mut out = OutStream::open(s.addr, &id);
+    assert!(out.until("y\r\ny\r\n").contains("y\r\n"), "draining resumes");
+}
+
+#[test]
+fn shell_auth_failures() {
+    if !have_pty() {
+        return;
+    }
+    let s = Server::start_cfg(sh_cfg(Arc::new(TestClock(AtomicU64::new(0)))));
+    let id = open_shell(&s);
+    // read-only key: 403 on every route, with a proof, and nothing is started
+    for (m, t) in [("POST", "/api/v1/shell/open".to_string()), ("GET", format!("/api/v1/shell/{}/out", id)), ("POST", format!("/api/v1/shell/{}/in", id)), ("POST", format!("/api/v1/shell/{}/resize?cols=9&rows=9", id)), ("POST", format!("/api/v1/shell/{}/close", id))] {
+        let r = ro(s.addr, m, &t, b"eA==");
+        assert_eq!(r.resp.status, 403, "{} {}: {}", m, t, r.resp.text());
+        check_proof(&r, &RO);
+        assert!(r.resp.text().contains("admin key"));
+    }
+    assert_eq!(s.st.shells.len(), 1, "the ro key could not close the admin's shell");
+    // no authentication at all
+    let r = raw(s.addr, b"POST /api/v1/shell/open HTTP/1.1\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+    assert_eq!(r.status, 401);
+    let r = raw(s.addr, format!("GET /api/v1/shell/{}/out HTTP/1.1\r\nConnection: close\r\n\r\n", id).as_bytes());
+    assert_eq!(r.status, 401);
+    // forged MAC: admin key id, MAC made with another key
+    let nonce = get_nonce(s.addr);
+    let forged = hex(&httpauth::request_mac(&[9; 32], &nonce, "POST", "/api/v1/shell/open", b""));
+    let req = format!("POST /api/v1/shell/open HTTP/1.1\r\nConnection: close\r\nX-Lab-Key: {}\r\nX-Lab-Nonce: {}\r\nX-Lab-Auth: {}\r\nContent-Length: 0\r\n\r\n", kid(&ADMIN, Role::Admin), nonce, forged);
+    assert_eq!(raw(s.addr, req.as_bytes()).status, 401);
+    // a MAC for another target (replay onto a different route) fails too
+    let nonce = get_nonce(s.addr);
+    let mac = hex(&httpauth::request_mac(&ADMIN, &nonce, "POST", &format!("/api/v1/shell/{}/resize?cols=9&rows=9", id), b""));
+    let req = format!("POST /api/v1/shell/{}/close HTTP/1.1\r\nConnection: close\r\nX-Lab-Key: {}\r\nX-Lab-Nonce: {}\r\nX-Lab-Auth: {}\r\nContent-Length: 0\r\n\r\n", id, kid(&ADMIN, Role::Admin), nonce, mac);
+    assert_eq!(raw(s.addr, req.as_bytes()).status, 401);
+    assert_eq!(s.st.shells.len(), 1);
+    // the denied attempts are in the audit log
+    assert!(s.daemon.audit.recent(40).join("\n").contains("denied:"));
+}
+
+#[test]
+fn shell_bad_requests() {
+    if !have_pty() {
+        return;
+    }
+    let s = Server::start_cfg(sh_cfg(Arc::new(TestClock(AtomicU64::new(0)))));
+    let id = open_shell(&s);
+    assert_eq!(admin(s.addr, "POST", "/api/v1/shell/open?cols=5000&rows=1", b"").resp.status, 400);
+    assert_eq!(admin(s.addr, "POST", &format!("/api/v1/shell/{}/in", id), b"!!not base64!!").resp.status, 400);
+    let big = vec![b'A'; shell::IN_MAX * 2];
+    assert_eq!(admin(s.addr, "POST", &format!("/api/v1/shell/{}/in", id), &big).resp.status, 413);
+    assert_eq!(admin(s.addr, "POST", &format!("/api/v1/shell/{}/in", "0".repeat(32)), b"eA==").resp.status, 404);
+    assert_eq!(admin(s.addr, "POST", "/api/v1/shell/..%2f..%2fetc/in", b"eA==").resp.status, 404);
+    assert_eq!(admin(s.addr, "GET", "/api/v1/shell/open", b"").resp.status, 404);
+}
+
+#[test]
+fn vendor_assets_are_served_open() {
+    let s = Server::start();
+    let r = raw(s.addr, b"GET /vendor/xterm.js HTTP/1.1\r\nConnection: close\r\n\r\n");
+    assert_eq!(r.status, 200);
+    assert!(r.h("content-type").unwrap().starts_with("text/javascript"));
+    assert!(r.body.len() > 100_000);
+    assert_eq!(raw(s.addr, b"GET /vendor/xterm.css HTTP/1.1\r\nConnection: close\r\n\r\n").status, 200);
+    assert_eq!(raw(s.addr, b"GET /vendor/addon-fit.js HTTP/1.1\r\nConnection: close\r\n\r\n").status, 200);
+    assert_eq!(raw(s.addr, b"GET /vendor/passwd HTTP/1.1\r\nConnection: close\r\n\r\n").status, 404);
+    let r = raw(s.addr, b"GET / HTTP/1.1\r\nConnection: close\r\n\r\n");
+    assert!(r.h("content-security-policy").unwrap().contains("'self'"));
+}
+
+/// The real in-image shell on the pty, when `cargo build -p i7labsh` has been run (otherwise skipped).
+#[test]
+fn shell_runs_the_real_i7labsh_when_built() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    let Some(bin) = ["debug", "release", "x86_64-unknown-linux-musl/release"].iter().map(|d| root.join(d).join("i7labsh")).find(|p| p.exists()) else { return };
+    if !have_pty() {
+        return;
+    }
+    let cfg = ShellCfg { argv: Some(vec![bin.to_string_lossy().into_owned()]), ..ShellCfg::default() };
+    let s = Server::start_cfg(cfg);
+    let id = open_shell(&s);
+    let mut out = OutStream::open(s.addr, &id);
+    admin(s.addr, "POST", &format!("/api/v1/shell/{}/in", id), base64(b"echo web-ok\n").as_bytes());
+    let got = out.until("\r\nweb-ok\r\n");
+    assert!(got.contains("\r\nweb-ok\r\n"), "{:?}", got);
+    admin(s.addr, "POST", &format!("/api/v1/shell/{}/in", id), base64(b"exit\n").as_bytes());
+    let ex = out.until_exit();
+    assert!(ex.contains("\"code\":0"), "{}", ex);
 }

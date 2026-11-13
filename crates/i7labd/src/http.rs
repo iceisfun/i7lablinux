@@ -10,6 +10,8 @@
 //! Routes (all under /api/v1 unless noted):
 //!   open:    GET /  GET /api/v1/hello  GET /api/v1/nonce  GET /api/v1/openapi.json  (aliases GET /health /nonce)
 //!   signed:  POST cmd/<name>[?stream=1]  GET probe[/<section>]  GET overview  GET events (SSE)
+//!            POST shell/open  GET shell/<id>/out  POST shell/<id>/in|resize|close  (admin, web terminal, http/shell.rs)
+//!   open static: GET /vendor/xterm.js|xterm.css|addon-fit.js (embedded xterm.js, loaded by the Terminal tab only)
 //!            GET|PUT file?path=..  GET inventory|pcie|blk|usb|net|thermal|log (?a=ARG..)
 
 use std::collections::HashMap;
@@ -60,7 +62,16 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/v1/file?path=P[&offset=N&len=N]", "raw download, proof as trailer"),
     ("PUT", "/api/v1/file?path=P[&mode=0644&mkdirs=1&offset=N]", "raw upload, X-Lab-Body-Sha256 required"),
     ("GET", "/api/v1/openapi.json", "generated from the catalogue (open)"),
+    ("POST", "/api/v1/shell/open[?cols=N&rows=N]", "admin: start i7labsh on a pty -> {id}; max 2 shells, 10 min idle"),
+    ("GET", "/api/v1/shell/<id>/out", "admin: sealed SSE of base64 pty output, ends with an exit event"),
+    ("POST", "/api/v1/shell/<id>/in", "admin: keystrokes, base64 body (or application/octet-stream raw)"),
+    ("POST", "/api/v1/shell/<id>/resize?cols=N&rows=N", "admin: TIOCSWINSZ"),
+    ("POST", "/api/v1/shell/<id>/close", "admin: end the shell"),
+    ("GET", "/vendor/<file>", "embedded xterm.js, xterm.css, addon-fit.js (open)"),
 ];
+
+mod shell;
+pub use shell::{Clock, ShellCfg, ShellTable};
 
 /// Per-address failure tracking: 20 failures within a minute lock the address for 60 s.
 #[derive(Default)]
@@ -108,12 +119,24 @@ pub struct HttpState {
     nonces: Mutex<NonceStore>,
     fails: Mutex<FailTable>,
     csp_nonce: String,
+    pub shells: Arc<ShellTable>,
     active: AtomicUsize,
     sse: AtomicUsize,
 }
 
 impl HttpState {
     pub fn new(daemon: Arc<Daemon>) -> io::Result<HttpState> {
+        HttpState::with_shells(daemon, ShellCfg::default())
+    }
+
+    pub fn with_shells(daemon: Arc<Daemon>, cfg: ShellCfg) -> io::Result<HttpState> {
+        let hook_d = daemon.clone();
+        let hook: shell::AuditHook = Arc::new(move |cmd, s, detail, status| {
+            let line = hook_d.audit.record(&Source::Http { peer: s.peer }, &s.actor, cmd, &[s.id.clone(), detail.to_string()], status);
+            hook_d.events.publish(Event::Audit(line));
+        });
+        let shells = ShellTable::new(cfg, hook);
+        shell::spawn_reaper(&shells);
         let mut b = [0u8; 16];
         labproto::crypto::random_bytes(&mut b)?;
         Ok(HttpState {
@@ -121,6 +144,7 @@ impl HttpState {
             nonces: Mutex::new(NonceStore::new(NONCE_CAP, NONCE_TTL)),
             fails: Mutex::new(FailTable::default()),
             csp_nonce: hex(&b),
+            shells,
             active: AtomicUsize::new(0),
             sse: AtomicUsize::new(0),
         })
@@ -745,7 +769,7 @@ fn handle_one(st: &Arc<HttpState>, c: &mut Conn, served: usize) -> Result<Next, 
     match (head.method.as_str(), path.as_str()) {
         ("GET" | "HEAD", "/") => {
             let html = crate::web::INDEX_HTML.replace(crate::web::NONCE_TOKEN, &st.csp_nonce);
-            let csp = format!("default-src 'self'; script-src 'nonce-{}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'", st.csp_nonce);
+            let csp = format!("default-src 'self'; script-src 'nonce-{}' 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'", st.csp_nonce);
             let body = if head.method == "HEAD" { &[][..] } else { html.as_bytes() };
             let etag = format!("\"{}\"", st.daemon.config.image_build);
             write_response(&mut c.w, 200, &[("Content-Type", "text/html; charset=utf-8".into()), ("Content-Security-Policy", csp), ("ETag", etag), ("X-Frame-Options", "DENY".into())], body, keep)?;
@@ -760,6 +784,16 @@ fn handle_one(st: &Arc<HttpState>, c: &mut Conn, served: usize) -> Result<Next, 
         ("GET", "/api/v1/openapi.json") => {
             // the command catalogue is public (it is in the source tree); the SPA links to it as a plain href
             send_json(&mut c.w, 200, openapi(&st.daemon).as_bytes(), None, keep)?;
+            return Ok(if keep { Next::KeepAlive } else { Next::Close });
+        }
+        ("GET" | "HEAD", p) if p.starts_with("/vendor/") => {
+            let Some((ctype, body)) = shell::vendor(&p["/vendor/".len()..]) else {
+                send_error(&mut c.w, 404, Status::NotFound, "not found", keep)?;
+                return Ok(if keep { Next::KeepAlive } else { Next::Close });
+            };
+            let body = if head.method == "HEAD" { &[][..] } else { body.as_bytes() };
+            let etag = format!("\"{}\"", st.daemon.config.image_build);
+            write_response(&mut c.w, 200, &[("Content-Type", ctype.into()), ("ETag", etag), ("Cache-Control", "public, max-age=3600".into()), ("X-Content-Type-Options", "nosniff".into())], body, keep)?;
             return Ok(if keep { Next::KeepAlive } else { Next::Close });
         }
         ("GET", "/api/v1/nonce" | "/nonce") => {
@@ -809,6 +843,7 @@ fn handle_one(st: &Arc<HttpState>, c: &mut Conn, served: usize) -> Result<Next, 
                 sse(st, c, &auth)?;
                 return Ok(Next::Close);
             }
+            (_, r) if r.starts_with("shell/") => return shell::route(st, c, &head, &auth, &body, r, keep, &mut status_logged),
             ("GET", "file") => return get_file(st, c, &head, &auth),
             ("GET", "probe") => {
                 let mut w = JsonWriter::new();
@@ -1153,7 +1188,11 @@ pub fn resolve_bind(bind: &Option<String>, ops: &dyn crate::netcfg::NetOps) -> i
 
 /// Accept loop on an existing listener until `stop`.
 pub fn serve_listener(daemon: Arc<Daemon>, listener: TcpListener, stop: Arc<AtomicBool>) -> io::Result<()> {
-    let st = Arc::new(HttpState::new(daemon)?);
+    serve_state(Arc::new(HttpState::new(daemon)?), listener, stop)
+}
+
+/// Same with a prepared state (tests keep a handle on it).
+pub fn serve_state(st: Arc<HttpState>, listener: TcpListener, stop: Arc<AtomicBool>) -> io::Result<()> {
     listener.set_nonblocking(true)?;
     while !stop.load(Ordering::SeqCst) {
         match listener.accept() {

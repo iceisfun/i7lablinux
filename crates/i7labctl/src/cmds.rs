@@ -349,6 +349,9 @@ impl<'a> Run<'a> {
         if self.g.key.is_some() {
             k.flag_key = self.g.key.clone();
         }
+        if self.g.keys.is_some() {
+            k.env_keydir = self.g.keys.clone();
+        }
         k
     }
 
@@ -586,6 +589,10 @@ impl<'a> Run<'a> {
     pub fn remote_failure(&mut self, wire: &str, done: &Done, info: &HostInfo, body: &str) -> i32 {
         let st = done.res.status;
         let (mut text, reasons) = remote_error_text(st.name(), body);
+        if st == labproto::Status::Unsupported && !catalog::served_by_image(wire) {
+            // one friendly line instead of the raw "UNSUPPORTED: not implemented in this build"
+            text = format!("'{}' is not available in this image yet (the host does not serve it)", wire.replace('.', " "));
+        }
         if st == labproto::Status::Eperm && done.role == Some(Role::Ro) {
             text.push_str(" (your key is read-only; this needs the admin key: --role admin)");
         }
@@ -819,11 +826,11 @@ fn wire_command(run: &mut Run, name: &str, args: &[String]) -> Result<i32, Clien
     }
 }
 
-fn filter_usb(body: &str, id: &str) -> String {
-    // keep the original JSON shape; drop devices that do not match vid:pid (decimal ids in the JSON)
+pub(crate) fn filter_usb(body: &str, id: &str) -> String {
+    // keep the original JSON shape; drop devices that do not match vid:pid (hex strings in the JSON)
     let Some(v) = crate::jv::parse(body) else { return body.to_string() };
     let Some((vid, pid)) = id.split_once(':').and_then(|(a, b)| Some((u64::from_str_radix(a, 16).ok()?, u64::from_str_radix(b, 16).ok()?))) else { return body.to_string() };
-    let devs: Vec<labproto::json::Value> = crate::jv::arr(&v, "devices").iter().filter(|d| crate::jv::u(d, "vid") == Some(vid) && crate::jv::u(d, "pid") == Some(pid)).cloned().collect();
+    let devs: Vec<labproto::json::Value> = crate::jv::arr(&v, "devices").iter().filter(|d| crate::jv::hex_u(d, "vid") == Some(vid) && crate::jv::hex_u(d, "pid") == Some(pid)).cloned().collect();
     format!("{{\"devices\":{}}}", crate::jv::to_json(&labproto::json::Value::Arr(devs)))
 }
 
@@ -905,9 +912,10 @@ fn net(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
     let rest = rest.to_vec();
     match verb.as_str() {
         "ls" => {
-            let p = run.parse(&rest, &Spec::new("net ls <host> [IFACE]").pos(0, 1))?;
+            let p = run.parse(&rest, &Spec::new("net ls <host> [IFACE] [--all]").flags(&["all"]).pos(0, 1))?;
+            let all = p.opts.flag("all") || !p.pos.is_empty();
             let (d, info) = run.simple_call(p.host.as_deref(), "net.ls", &p.pos)?;
-            Ok(run.finish("net.ls", &d, &info, &render::net_ls))
+            Ok(run.finish("net.ls", &d, &info, &move |b, pt| render::net_ls_all(b, all, pt)))
         }
         "set" => {
             let p = run.parse(&rest, &Spec::new("net set <host> IFACE (--dhcp | --ip A.B.C.D/N [--gw A.B.C.D] [--dns A,B]) [--mtu N] [--confirm SEC]").flags(&["dhcp"]).valued(&["ip", "gw", "dns", "mtu", "confirm"]).pos(1, 1))?;

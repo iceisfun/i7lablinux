@@ -350,7 +350,9 @@ fn ms(t: Instant) -> f64 {
 }
 
 fn finish(cmd: &CmdSpec, status: Status, body: Vec<u8>, sent_at: Instant) -> CallResult {
-    let (exit_code, body) = if matches!(cmd.name, "exec" | "shell") && status == Status::Ok && body.len() >= 4 {
+    // exec/shell answer with a 4-byte big-endian exit status then JSON; `exec --detach` answers with plain JSON
+    // (`{"v":1,"job":N}`), whose first bytes must not be read as an exit status (it used to give exit 254)
+    let (exit_code, body) = if matches!(cmd.name, "exec" | "shell") && status == Status::Ok && body.len() >= 4 && body[0] != b'{' {
         (Some(i32::from_be_bytes([body[0], body[1], body[2], body[3]])), body[4..].to_vec())
     } else {
         (None, body)
@@ -539,6 +541,16 @@ mod tests {
         assert_eq!(s.borrow().reqs[0].0, 0x0001);
         assert_eq!(labproto::args::decode_argv(&s.borrow().reqs[0].1).unwrap(), vec!["hello"]);
         assert_eq!(t.role(), Some(Role::Admin));
+    }
+
+    #[test]
+    fn detached_exec_reply_is_json_not_an_exit_status() {
+        let r = finish(by_name("exec").unwrap(), Status::Ok, b"{\"v\":1,\"job\":7}".to_vec(), Instant::now());
+        assert_eq!(r.exit_code, None);
+        assert_eq!(r.body, b"{\"v\":1,\"job\":7}");
+        let mut with_code = 3i32.to_be_bytes().to_vec();
+        with_code.extend_from_slice(b"{}");
+        assert_eq!(finish(by_name("exec").unwrap(), Status::Ok, with_code, Instant::now()).exit_code, Some(3));
     }
 
     #[test]

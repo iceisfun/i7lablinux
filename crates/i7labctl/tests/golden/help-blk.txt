@@ -5,8 +5,8 @@ usage: i7labctl blk ls|smart|read|write|verify <host> ...
 transports: ether, http   role: read-only key for reads, admin key for changes
 
 Block devices: enumeration, SMART, read test, write test.
-  blk ls <host> [--all]       name, size, model, SERIAL, table, filesystems, mounted, boot media, and the write-safety verdict (WRITE-SAFE or UNSAFE: reasons)
-  blk smart <host> DEV [--attrs] [--selftest short|long]
+  blk ls <host> [--all]       name, size, model, SERIAL, table, filesystems, mounted, boot media, SMART verdict, and the write-safety verdict (WRITE-SAFE or UNSAFE: reasons)
+  blk smart <host> DEV [--attrs]   PASSED / WARNING / FAILED / UNKNOWN with reasons, temperature, hours, NVMe wear and error counters, SATA attributes (exit 3 on FAILED); USB disks may answer 'not available (bridge)'
   blk read <host> DEV [--mb N] [--regions start,mid,end | --offset B --len B] [--bs 1m] [--direct]   READ-ONLY (default 256 MiB in three regions)
   blk write <host> DEV --destructive --serial SERIAL [--mb N] [--regions ..] [--offset B --len B] [--seed N]
   blk verify <host> DEV --seed N [--mb N] [--regions ..]   read-only compare against a seeded pattern

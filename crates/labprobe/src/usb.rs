@@ -13,6 +13,9 @@ pub struct UsbDevice {
     pub devnum: u32,
     pub vid: u16,
     pub pid: u16,
+    /// names from the embedded id table (`usbids`); `None` for ids it does not know
+    pub vendor_name: Option<String>,
+    pub product_name: Option<String>,
     pub class: u8,
     pub speed_mbps: Option<u32>,
     pub manufacturer: Option<String>,
@@ -96,11 +99,15 @@ pub fn probe(ctx: &ProbeCtx) -> Result<UsbReport, ProbeError> {
         }
         let class = hx("bDeviceClass") as u8;
         let shown_class = if class == 0 { first_iface_class.unwrap_or(0) } else { class };
+        let (vid, pid) = (hx("idVendor") as u16, hx("idProduct") as u16);
+        let (vn, pn) = crate::usbids::lookup(vid, pid);
         rep.devices.push(UsbDevice {
+            vendor_name: vn.map(str::to_string),
+            product_name: pn.map(str::to_string),
             busnum: r("busnum").and_then(|v| v.parse().ok()).unwrap_or(0),
             devnum: r("devnum").and_then(|v| v.parse().ok()).unwrap_or(0),
-            vid: hx("idVendor") as u16,
-            pid: hx("idProduct") as u16,
+            vid,
+            pid,
             class,
             speed_mbps: r("speed").and_then(|v| v.parse::<f64>().ok()).map(|v| v as u32),
             manufacturer: r("manufacturer"),
@@ -132,6 +139,8 @@ impl ToJson for UsbReport {
             w.field_u64("devnum", d.devnum as u64);
             w.field_str("vid", &format!("{:04x}", d.vid));
             w.field_str("pid", &format!("{:04x}", d.pid));
+            w.field_opt_str("vendor_name", d.vendor_name.as_deref());
+            w.field_opt_str("product_name", d.product_name.as_deref());
             w.field_u64("class", d.class as u64);
             w.field_opt_u64("speed_mbps", d.speed_mbps.map(u64::from));
             w.field_opt_str("manufacturer", d.manufacturer.as_deref());

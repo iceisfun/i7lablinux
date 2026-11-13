@@ -1,14 +1,15 @@
- i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.1… attention: 7
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.1… attention: 8
 [Overview]  PCIe   Storage   Network   USB   Sensors   Log   Actions
 ┌─ Overview ───────────────────────────────────────────────────────────────────┐
 │Attention                                                                    █│
 │!! NIC 0000:03:00.0 has no driver (RTL8126 5GbE)                             █│
 │!  PCIe 0000:01:00.0 AER correctable errors: 3                               █│
 │!  PCIe 0000:03:00.0 link degraded: x1 Gen1 (max x4 Gen3)                    █│
+│!  Wi-Fi adapter Alder Lake PCH CNVi WiFi (8086:51f0) has no Linux driver bo…█│
 │!  SMART sdb: warning reallocated sectors: 12                                █│
 │!  coretemp Core 1 at 88 C (over max)                                        █│
 │!  kernel log: 1 x pcie-aer                                                  █│
-│!  kernel log: 1 x ata-error                                                 █│
+│!  kernel log: 1 x ata-error                                                 ░│
 │                                                                             ░│
 │System                                                                       ░│
 │Product:       LENOVO ThinkCentre M720q                                      ░│
@@ -20,6 +21,5 @@
 │Uptime:        01:02:05                                                      ░│
 │Load:          0.42 0.30 0.21                                                ░│
 │Image:         i7lablinux 0.1.0 2026-11-12                                   ░│
-│                                                                             ░│
 └──────────────────────────────────────────────────────────────────────────────┘
 F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit

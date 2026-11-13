@@ -7,6 +7,9 @@ use crate::ctx::{ProbeCtx, ProbeError};
 #[derive(Clone, Debug, Default)]
 pub struct NetIface {
     pub name: String,
+    /// "ethernet" | "wifi" | "vlan" | "virtual" (bridge, veth, wg, ...) | "virtual/kernel" (dummy0, sit0, tunl0 ...:
+    /// devices the kernel makes by itself; `i7labctl net` hides these unless --all)
+    pub kind: String,
     pub mac: Option<String>,
     pub perm_mac: Option<String>,
     pub driver: Option<String>,
@@ -124,6 +127,35 @@ fn mac_ok(s: &str) -> Option<String> {
     (s.len() == 17 && s != "00:00:00:00:00:00").then(|| s.to_string())
 }
 
+/// Interface kind: a VLAN sub-interface, a wireless interface (`wireless/` or `phy80211`), a physical NIC (has a
+/// `device` link to its bus function), anything else is a kernel virtual device (dummy0 and sit0 exist on every
+/// boot of the lab kernel, plus tunnels, bridges, veth pairs).
+pub fn iface_kind(ctx: &ProbeCtx, name: &str, base: &str, is_vlan: bool) -> String {
+    if is_vlan {
+        return "vlan".into();
+    }
+    if ctx.exists(&format!("{}/wireless", base)) || ctx.exists(&format!("{}/phy80211", base)) {
+        return "wifi".into();
+    }
+    if ctx.exists(&format!("{}/device", base)) {
+        return "ethernet".into();
+    }
+    if is_kernel_default(name) {
+        "virtual/kernel".into()
+    } else {
+        "virtual".into()
+    }
+}
+
+/// Fallback/test devices the kernel creates by itself when the module is built in or loaded (nobody configured
+/// them): dummy0, sit0 and the other tunnel "base" devices, ifb0/1.
+pub fn is_kernel_default(name: &str) -> bool {
+    const BASES: &[&str] = &["dummy", "sit", "tunl", "ip6tnl", "ip6gre", "gre", "gretap", "erspan", "ip_vti", "ip6_vti", "ifb", "teql"];
+    let stem = name.trim_end_matches(|c: char| c.is_ascii_digit());
+    let digits = &name[stem.len()..];
+    !digits.is_empty() && digits.len() <= 2 && BASES.contains(&stem)
+}
+
 pub fn probe(ctx: &ProbeCtx) -> Result<NetReport, ProbeError> {
     let live = ctx.root == std::path::Path::new("/");
     let vlans = ctx.read_trim("/proc/net/vlan/config").map(|t| parse_vlan_config(&t)).unwrap_or_default();
@@ -138,6 +170,7 @@ pub fn probe(ctx: &ProbeCtx) -> Result<NetReport, ProbeError> {
         let n = |f: &str| r(f).and_then(|v| v.parse::<u64>().ok());
         let mac = r("address").and_then(|a| mac_ok(&a));
         let mut i = NetIface {
+            kind: iface_kind(ctx, &name, &base, vlans.iter().any(|(d, _, _)| *d == name)),
             perm_mac: if r("addr_assign_type").as_deref() == Some("0") { mac.clone() } else { None },
             mac,
             driver: ctx.link_name(&format!("{}/device/driver", base)),
@@ -187,6 +220,7 @@ impl ToJson for NetReport {
         for i in &self.ifaces {
             w.begin_object();
             w.field_str("name", &i.name);
+            w.field_str("kind", &i.kind);
             w.field_opt_str("mac", i.mac.as_deref());
             w.field_opt_str("perm_mac", i.perm_mac.as_deref());
             w.field_opt_str("driver", i.driver.as_deref());

@@ -4,7 +4,7 @@
 use crate::cli::SUBS;
 
 const GLOBAL_LONG: &[&str] = &[
-    "--host", "--ether", "--cmd", "--http", "--ssh", "--transport", "--iface", "--vlan", "--role", "--key", "--timeout", "--retries", "--json", "--quiet", "--no-color", "--registry", "--no-registry", "--yes", "--link", "--help", "--version",
+    "--host", "--ether", "--cmd", "--http", "--ssh", "--transport", "--iface", "--vlan", "--role", "--key", "--keys", "--timeout", "--retries", "--json", "--quiet", "--no-color", "--registry", "--no-registry", "--yes", "--link", "--help", "--version",
 ];
 
 fn all_names() -> String {

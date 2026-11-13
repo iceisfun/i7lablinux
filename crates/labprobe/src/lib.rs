@@ -21,6 +21,7 @@ pub mod serial;
 pub mod system;
 pub mod thermal;
 pub mod usb;
+pub mod usbids;
 
 pub use ctx::{ProbeCtx, ProbeError};
 pub use inventory::{inventory, Inventory, Section};

@@ -10,7 +10,7 @@ use labprobe::firmware::FirmwareInfo;
 use labprobe::kmsg::KmsgReport;
 use labprobe::mem::MemInfo;
 use labprobe::net::NetReport;
-use labprobe::pci::PciReport;
+use labprobe::pci::{NicKind, PciReport};
 use labprobe::system::SystemInfo;
 use labprobe::thermal::ThermalReport;
 use labprobe::usb::UsbReport;
@@ -112,8 +112,19 @@ impl ViewData {
                     }
                 }
             }
-            for d in pci.unbound_nics() {
+            for d in pci.unbound_ethernet() {
                 add(Severity::Bad, format!("NIC {} has no driver ({})", d.bdf, d.device_name.as_deref().unwrap_or("unknown")));
+            }
+            for d in pci.unbound_wifi() {
+                add(
+                    Severity::Warn,
+                    format!(
+                        "Wi-Fi adapter {} ({:04x}:{:04x}) has no Linux driver bound in this image",
+                        d.device_name.as_deref().unwrap_or("unknown"),
+                        d.vendor,
+                        d.device
+                    ),
+                );
             }
         }
         if let Some(s) = &self.smart {
@@ -169,16 +180,20 @@ impl ViewData {
         v
     }
 
-    /// F34: the host has NICs but none works for us. Text for the banner, None when a NIC has a driver.
+    /// F34: the host has PCI NICs but no Ethernet works as the control path (bound driver, link up). Unbound Wi-Fi
+    /// alone never raises this when Ethernet is usable; it is a warning line in `attention()`.
     pub fn no_control_path(&self) -> Option<String> {
         let pci = self.pci.as_ref()?;
-        let unbound = pci.unbound_nics();
-        if unbound.is_empty() {
+        if !pci.devices.iter().any(|d| matches!(d.nic_kind(), Some(NicKind::Ethernet) | Some(NicKind::Wifi))) {
             return None;
         }
-        let have_link = self.net.as_ref().map(|n| n.ifaces.iter().any(|i| i.name != "lo" && i.driver.is_some())).unwrap_or(false);
-        if have_link {
+        let empty = labprobe::net::NetReport::default();
+        if pci.control_path_available(self.net.as_ref().unwrap_or(&empty)) {
             return None;
+        }
+        let unbound = pci.unbound_ethernet();
+        if unbound.is_empty() {
+            return Some("NO CONTROL PATH: no Ethernet with a bound driver and link up".into());
         }
         let names: Vec<String> = unbound.iter().map(|d| format!("{} {}", d.bdf, d.device_name.as_deref().unwrap_or("?"))).collect();
         Some(format!("NO CONTROL PATH: no NIC driver for {}", names.join(", ")))
@@ -195,7 +210,8 @@ impl ViewData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use labprobe::pci::{AerCounters, PciDevice, PcieLink};
+    use labprobe::net::{NetIface, NetReport};
+    use labprobe::pci::{AerCounters, NicKind, PciDevice, PcieLink};
 
     #[test]
     fn attention_collects_and_sorts() {
@@ -221,6 +237,59 @@ mod tests {
         assert!(d.no_control_path().unwrap().contains("RTL8126"));
         assert_eq!(d.banners().len(), 1);
     }
+    fn darter(eth_up: bool, eth_driver: bool) -> ViewData {
+        let mut d = ViewData::default();
+        d.pci = Some(PciReport {
+            iommu_enabled: true,
+            devices: vec![
+                PciDevice { bdf: "0000:00:14.3".into(), vendor: 0x8086, device: 0x51f0, class: 0x028000, device_name: Some("Alder Lake PCH CNVi WiFi".into()), ..Default::default() },
+                PciDevice {
+                    bdf: "0000:2e:00.0".into(),
+                    vendor: 0x10ec,
+                    device: 0x8168,
+                    class: 0x020000,
+                    device_name: Some("RTL8111/8168".into()),
+                    driver: eth_driver.then(|| "r8169".to_string()),
+                    ..Default::default()
+                },
+            ],
+        });
+        d.net = Some(NetReport {
+            ifaces: vec![NetIface {
+                name: "enp46s0".into(),
+                driver: Some("r8169".into()),
+                bus_info: Some("0000:2e:00.0".into()),
+                operstate: if eth_up { "up".into() } else { "down".into() },
+                carrier: Some(eth_up),
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+        d
+    }
+
+    #[test]
+    fn unbound_wifi_is_a_warning_and_no_banner_with_working_ethernet() {
+        let d = darter(true, true);
+        assert_eq!(d.pci.as_ref().unwrap().devices[0].nic_kind(), Some(NicKind::Wifi));
+        let a = d.attention();
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0].severity, Severity::Warn);
+        assert!(a[0].text.contains("Wi-Fi adapter Alder Lake PCH CNVi WiFi (8086:51f0) has no Linux driver bound in this image"), "{}", a[0].text);
+        assert!(!a[0].text.contains("control traffic"));
+        assert!(d.no_control_path().is_none());
+        assert!(d.banners().is_empty());
+    }
+
+    #[test]
+    fn ethernet_without_link_raises_banner_and_unbound_ethernet_is_bad() {
+        let d = darter(false, true);
+        assert!(d.no_control_path().unwrap().contains("no Ethernet"));
+        let d = darter(true, false);
+        assert!(d.attention().iter().any(|a| a.severity == Severity::Bad && a.text.contains("0000:2e:00.0 has no driver")));
+        assert!(d.no_control_path().unwrap().contains("0000:2e:00.0"));
+    }
+
     #[test]
     fn hostname_fallback() {
         let mut d = ViewData::default();

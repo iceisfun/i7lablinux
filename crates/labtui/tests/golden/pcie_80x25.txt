@@ -1,4 +1,4 @@
- i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.1… attention: 7
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.1… attention: 8
  Overview  [PCIe]  Storage   Network   USB   Sensors   Log   Actions
 ┌─ PCIe devices ───────────────────────────────────────────────────────────────┐
 │Device               Name                            Driver         Link      │
@@ -12,7 +12,7 @@
 │      01:00.0        Samsung NVMe SSD Controller 980 nvme           x4 Gen3   │
 │  ▾ 00:1d.0          Intel Cannon Lake PCH PCIe Roo… pcieport       x4 Gen3   │
 │      02:00.0        Intel Ethernet Connection (7) … e1000e         x4 Gen3   │
-│                                                                              │
+│    00:14.3          Intel Alder Lake PCH CNVi WiFi  -              x4 Gen3   │
 │                                                                              │
 │                                                                              │
 │                                                                              │

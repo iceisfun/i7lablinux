@@ -40,6 +40,9 @@ pub struct HttpTransport {
     pub trace: Option<Box<dyn FnMut(&str)>>,
 }
 
+/// Declares the SHA-256 (hex) of a PUT body before the body is sent (see `httpauth::request_mac_hashed`).
+pub const H_BODY_SHA256: &str = "X-Lab-Body-Sha256";
+
 pub fn host_port(s: &str, default_port: u16) -> String {
     if s.contains(':') && !s.contains('/') {
         s.to_string()
@@ -472,6 +475,8 @@ impl HttpTransport {
         let mac = httpauth::request_mac_hashed(&self.key.bytes, &nonce, "PUT", &target, &sha);
         let mut h = self.auth_headers(&nonce, &mac);
         h.push(("Content-Type".into(), "application/octet-stream".into()));
+        // the host needs the digest up front: the request MAC covers it, and the body is checked against it
+        h.push((H_BODY_SHA256.into(), hex(&sha)));
         let mut s = self.connect()?;
         let req = build_request("PUT", &self.addr, &target, &h, Some(len as usize));
         s.write_all(req.as_bytes()).map_err(io_err)?;
@@ -503,6 +508,12 @@ impl HttpTransport {
         br.read_to_end(&mut body).map_err(io_err)?;
         if head.status == 401 {
             return Err(ClientError::Auth(format!("{} rejected the request signature", self.addr)));
+        }
+        if head.status == 400 && head.header(H_PROOF).is_none() && br.trailer(H_PROOF).is_none() {
+            // the host refused before it authenticated anything (malformed request): not an authentication problem
+            let msg = String::from_utf8_lossy(&body);
+            let msg = jv::scan_str_field(&msg, "message").unwrap_or_else(|| msg.trim().chars().take(200).collect());
+            return Err(ClientError::Failed(format!("the host rejected the upload request (HTTP 400, unsigned reply, not verified): {}", labproto::text::sanitize(&msg))));
         }
         let expect = httpauth::response_mac(&self.key.bytes, &nonce, head.status, &body);
         self.check_proof(&head, br.trailer(H_PROOF), &expect)?;

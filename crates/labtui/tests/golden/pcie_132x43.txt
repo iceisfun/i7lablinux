@@ -1,4 +1,4 @@
- i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.141  mac 3c:ec:ef:12:34:56                             attention: 7
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.141  mac 3c:ec:ef:12:34:56                             attention: 8
  Overview  [PCIe]  Storage   Network   USB   Sensors   Log   Actions
 ┌─ PCIe devices ──────────────────────────────────────┐┌─ Device ──────────────────────────────────────────────────────────────────┐
 │Device               Name                  Link      ││Address:       0000:00:00.0                                                │
@@ -12,7 +12,7 @@
 │      01:00.0        Samsung NVMe SSD Con… x4 Gen3   ││AER:           not reported                                                │
 │  ▾ 00:1d.0          Intel Cannon Lake PC… x4 Gen3   ││                                                                           │
 │      02:00.0        Intel Ethernet Conne… x4 Gen3   ││BARs                                                                       │
-│                                                     ││(none listed; verbose probe adds BARs)                                     │
+│    00:14.3          Intel Alder Lake PCH… x4 Gen3   ││(none listed; verbose probe adds BARs)                                     │
 │                                                     ││                                                                           │
 │                                                     ││Capabilities                                                               │
 │                                                     ││(none listed)                                                              │

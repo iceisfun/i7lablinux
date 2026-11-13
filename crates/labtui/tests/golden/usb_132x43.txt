@@ -1,4 +1,4 @@
- i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.141  mac 3c:ec:ef:12:34:56                             attention: 7
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.141  mac 3c:ec:ef:12:34:56                             attention: 8
  Overview   PCIe   Storage   Network  [USB]  Sensors   Log   Actions
 ┌─ USB devices ───────────────────────────────────────────┐┌─ Device ──────────────────────────────────────────────────────────────┐
 │Device               Name               ID          Speed││Path:          usb1                                                    │

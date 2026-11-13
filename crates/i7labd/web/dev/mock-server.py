@@ -79,13 +79,17 @@ PCI = {'v': 1, 'iommu_enabled': True, 'devices': [
     pci('0000:00:1c.2', None, '8086', 'a33a', '060400', 'PCI bridge', 'Intel', 'Root Port #3', 'pcieport', {'cur_gen': 1, 'cur_width': 1, 'max_gen': 1, 'max_width': 1, 'degraded': False}),
     pci('0000:02:00.0', '0000:00:1c.2', '8086', '15b8', '020000', 'Ethernet controller', 'Intel', 'I219-V', 'e1000e'),
     pci('0000:03:00.0', '0000:00:1c.2', '10ec', '8126', '020000', 'Ethernet controller', 'Realtek', 'RTL8126 5GbE', None),
+    pci('0000:00:14.3', None, '8086', '51f0', '028000', 'Network controller', None, None, None),
 ]}
 NET = {'v': 1, 'ifaces': [
     {'name': 'lo', 'mac': None, 'perm_mac': None, 'driver': None, 'bus_info': None, 'operstate': 'unknown', 'carrier': True, 'speed_mbps': None, 'duplex': None, 'mtu': 65536, 'ipv4': ['127.0.0.1/8'], 'ipv6': [], 'vlan_of': None, 'vlan_id': None, 'rx_bytes': 1, 'tx_bytes': 1, 'rx_errors': 0, 'tx_errors': 0, 'carrier_changes': 0},
     {'name': 'eth0', 'mac': '52:54:00:17:00:02', 'perm_mac': '52:54:00:17:00:02', 'driver': 'e1000e', 'bus_info': '0000:02:00.0', 'operstate': 'up', 'carrier': True, 'speed_mbps': 1000, 'duplex': 'full', 'mtu': 1500,
      'ipv4': ['10.0.2.15/24'], 'ipv6': ['fe80::5054:ff:fe17:2/64'], 'vlan_of': None, 'vlan_id': None, 'rx_bytes': 0, 'tx_bytes': 0, 'rx_errors': 0, 'tx_errors': 0, 'carrier_changes': 1},
     {'name': 'eth0.13', 'mac': '52:54:00:17:00:02', 'perm_mac': None, 'driver': None, 'bus_info': None, 'operstate': 'up', 'carrier': True, 'speed_mbps': None, 'duplex': None, 'mtu': 1500,
-     'ipv4': [], 'ipv6': [], 'vlan_of': 'eth0', 'vlan_id': 13, 'rx_bytes': 0, 'tx_bytes': 0, 'rx_errors': 0, 'tx_errors': 0, 'carrier_changes': 0}]}
+     'ipv4': [], 'ipv6': [], 'vlan_of': 'eth0', 'vlan_id': 13, 'rx_bytes': 0, 'tx_bytes': 0, 'rx_errors': 0, 'tx_errors': 0, 'carrier_changes': 0}]
+    + [{'name': n, 'mac': m, 'perm_mac': None, 'driver': None, 'bus_info': None, 'operstate': 'down', 'carrier': False, 'speed_mbps': None, 'duplex': None, 'mtu': mtu,
+        'ipv4': [], 'ipv6': [], 'vlan_of': None, 'vlan_id': None, 'rx_bytes': 0, 'tx_bytes': 0, 'rx_errors': 0, 'tx_errors': 0, 'carrier_changes': 0}
+       for n, m, mtu in (('dummy0', '5e:11:22:33:44:55', 1500), ('sit0', None, 1480))]}
 USB = {'v': 1, 'devices': [
     {'path': '1-0', 'parent': None, 'busnum': 1, 'devnum': 1, 'vid': '1d6b', 'pid': '0002', 'class': 9, 'speed_mbps': 480, 'manufacturer': 'Linux', 'product': 'xHCI Host Controller', 'serial': None, 'drivers': ['hub']},
     {'path': '1-1', 'parent': '1-0', 'busnum': 1, 'devnum': 2, 'vid': '0951', 'pid': '1666', 'class': 0, 'speed_mbps': 480, 'manufacturer': 'Kingston', 'product': HOSTILE, 'serial': '\x1b]0;pwn\x07', 'drivers': ['usb-storage']},
@@ -207,16 +211,21 @@ class H(BaseHTTPRequestHandler):
         u = urlsplit(self.path); p = u.path
         if p == '/' or p == '/index.html':
             html = open(INDEX, encoding='utf-8').read().replace('__I7LAB_NONCE__', SERVER_NONCE).encode()
-            return self.send(200, html, 'text/html; charset=utf-8', {'Content-Security-Policy': "default-src 'self'; script-src 'nonce-%s'; style-src 'self' 'unsafe-inline'" % SERVER_NONCE})
+            return self.send(200, html, 'text/html; charset=utf-8', {'Content-Security-Policy': "default-src 'self'; script-src 'nonce-%s' 'self'; style-src 'self' 'unsafe-inline'" % SERVER_NONCE})
         if p == '/api/v1/hello':
             return self.reply(200, {'v': 1, 'hostname': sysinfo()['hostname'], 'version': '0.1.0-mock', 'build': 'mock-1', 'boot_id': 'abcd', 'state': 'ready', 'proto': 1})
         if p == '/api/v1/nonce':
             n = secrets.token_hex(16)
             with NLOCK: NONCES[n] = time.time() + 30
             return self.reply(200, {'nonce': n})
+        if p.startswith('/vendor/'):
+            f = os.path.join(HERE, '..', 'vendor', os.path.basename(p))
+            if not os.path.isfile(f): return self.send(404, b'{}')
+            return self.send(200, open(f, 'rb').read(), 'text/css' if f.endswith('.css') else 'text/javascript')
         a = self.auth(body)
         if a is None: return
         role, key, nonce = a
+        if p.startswith('/api/v1/shell/'): return self.shell(p, u, body, role, key, nonce)
         q = parse_qs(u.query)
         if p.startswith('/api/v1/probe/'):
             return self.reply(200, probes(p[len('/api/v1/probe/'):].split(',')), key, nonce)
@@ -229,6 +238,54 @@ class H(BaseHTTPRequestHandler):
             try: args = json.loads(body or b'{}').get('args', [])
             except Exception: return self.err(400, 'BAD_ARGS', 'body must be {"args":[..]}', key, nonce)
             return self.cmd(name, args, role, key, nonce, q.get('stream') == ['1'])
+        self.err(404, 'NOT_FOUND', 'no such route', key, nonce)
+
+    # --- web terminal mock: echoes keystrokes, "runs" a line on CR. STATE['shells'] id -> dict
+    def shell(self, p, u, body, role, key, nonce):
+        import base64, queue
+        q = parse_qs(u.query)
+        parts = p[len('/api/v1/shell/'):].split('/')
+        if role != 'admin': return self.err(403, 'EPERM', 'the terminal needs the admin key', key, nonce)
+        shells = STATE.setdefault('shells', {})
+        if parts == ['open'] and self.command == 'POST':
+            if len(shells) >= 2: return self.err(503, 'BUSY', 'too many open shells', key, nonce)
+            sid = secrets.token_hex(16)
+            shells[sid] = {'q': queue.Queue(), 'size': (int(q.get('cols', ['80'])[0]), int(q.get('rows', ['24'])[0])), 'closed': False, 'log': []}
+            return self.reply(200, {'v': 1, 'id': sid}, key, nonce)
+        sh = shells.get(parts[0]) if len(parts) == 2 else None
+        if sh is None: return self.err(404, 'NOT_FOUND', 'no such shell', key, nonce)
+        act = parts[1]
+        if act == 'in' and self.command == 'POST':
+            try: data = base64.b64decode(body)
+            except Exception: return self.err(400, 'BAD_ARGS', 'body is not base64', key, nonce)
+            sh['log'].append(data); sh['q'].put(data)
+            return self.reply(200, {'v': 1, 'n': len(data)}, key, nonce)
+        if act == 'resize' and self.command == 'POST':
+            sh['size'] = (int(q['cols'][0]), int(q['rows'][0])); sh['q'].put(('size',))
+            return self.reply(200, {'v': 1}, key, nonce)
+        if act == 'close' and self.command == 'POST':
+            sh['closed'] = True; sh['q'].put(None)
+            return self.reply(200, {'v': 1}, key, nonce)
+        if act == 'out' and self.command == 'GET':
+            self.send_response(200); self.send_header('Content-Type', 'text/event-stream'); self.send_header('Transfer-Encoding', 'chunked'); self.end_headers()
+            seq = 0
+            def emit(ev):
+                nonlocal seq
+                self.chunk(('event: %s\ndata: %s\n\n' % (ev['event'], event_line(key, nonce, seq, ev))).encode()); seq += 1
+            def out(b): emit({'event': 'out', 'b64': base64.b64encode(b).decode()})
+            try:
+                out(b'mock shell ready\r\n$ ')
+                while True:
+                    item = sh['q'].get()
+                    if item is None: break
+                    if item == ('size',): out(('[size %dx%d]\r\n$ ' % sh['size']).encode()); continue
+                    out(item.replace(b'\r', b'\r\n[ran]\r\n$ '))
+                emit({'event': 'exit', 'reason': 'closed', 'code': None})
+                self.wfile.write(b'0\r\n\r\n'); self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            shells.pop(parts[0], None); self.close_connection = True
+            return
         self.err(404, 'NOT_FOUND', 'no such route', key, nonce)
 
     def sse(self, key, nonce):

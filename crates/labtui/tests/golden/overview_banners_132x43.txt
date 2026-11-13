@@ -1,4 +1,4 @@
- i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.141  mac 3c:ec:ef:12:34:56                             attention: 7
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.141  mac 3c:ec:ef:12:34:56                             attention: 8
 [Overview]  PCIe   Storage   Network   USB   Sensors   Log   Actions
  NO KEYS: the host cannot be controlled remotely (bake keys with scripts/bake-keys)
  NO CONTROL PATH: no NIC driver for 0000:03:00.0 RTL8126 5GbE
@@ -6,21 +6,21 @@
 │Product:       LENOVO ThinkCentre M720q                         ││!! NIC 0000:03:00.0 has no driver (RTL8126 5GbE)                │
 │Serial:        MJ0AB1CD                                         ││!  PCIe 0000:01:00.0 AER correctable errors: 3                  │
 │Board:         LENOVO 3110                                      ││!  PCIe 0000:03:00.0 link degraded: x1 Gen1 (max x4 Gen3)       │
-│BIOS:          LENOVO M1UKT47A 05/14/2019                       ││!  SMART sdb: warning reallocated sectors: 12                   │
-│Boot:          uefi (secure boot off)                           ││!  coretemp Core 1 at 88 C (over max)                           │
-│Kernel:        Linux 6.12.8-i7lab x86_64                        ││!  kernel log: 1 x pcie-aer                                     │
-│Uptime:        01:02:05                                         ││!  kernel log: 1 x ata-error                                    │
-│Load:          0.42 0.30 0.21                                   │└────────────────────────────────────────────────────────────────┘
-│Image:         i7lablinux 0.1.0 2026-11-12                      │┌─ Network ──────────────────────────────────────────────────────┐
-└────────────────────────────────────────────────────────────────┘│no network interfaces                                           │
-┌─ CPU ──────────────────────────────────────────────────────────┐└────────────────────────────────────────────────────────────────┘
-│Intel(R) Core(TM) i7-8700T CPU @ 2.40GHz                        │┌─ Storage ──────────────────────────────────────────────────────┐
-│Cores:         1 sockets, 6 cores, 12 threads                   ││Disks:         3                                                │
-│Frequency:     2400 MHz                                         ││nvme0n1   500.1 GB idle       smart ok                          │
-│Microcode:     0xf6                                             ││sda        31.9 GB boot media smart -                           │
-│Hottest:       88 C  coretemp/Core 1                            ││sdb         1.0 TB idle       SMART WARN                        │
-└────────────────────────────────────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
-┌─ Memory ───────────────────────────────────────────────────────┐
+│BIOS:          LENOVO M1UKT47A 05/14/2019                       ││!  Wi-Fi adapter Alder Lake PCH CNVi WiFi (8086:51f0) has no Li…│
+│Boot:          uefi (secure boot off)                           ││!  SMART sdb: warning reallocated sectors: 12                   │
+│Kernel:        Linux 6.12.8-i7lab x86_64                        ││!  coretemp Core 1 at 88 C (over max)                           │
+│Uptime:        01:02:05                                         ││!  kernel log: 1 x pcie-aer                                     │
+│Load:          0.42 0.30 0.21                                   ││!  kernel log: 1 x ata-error                                    │
+│Image:         i7lablinux 0.1.0 2026-11-12                      │└────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────┘┌─ Network ──────────────────────────────────────────────────────┐
+┌─ CPU ──────────────────────────────────────────────────────────┐│no network interfaces                                           │
+│Intel(R) Core(TM) i7-8700T CPU @ 2.40GHz                        │└────────────────────────────────────────────────────────────────┘
+│Cores:         1 sockets, 6 cores, 12 threads                   │┌─ Storage ──────────────────────────────────────────────────────┐
+│Frequency:     2400 MHz                                         ││Disks:         3                                                │
+│Microcode:     0xf6                                             ││nvme0n1   500.1 GB idle       smart ok                          │
+│Hottest:       88 C  coretemp/Core 1                            ││sda        31.9 GB boot media smart -                           │
+└────────────────────────────────────────────────────────────────┘│sdb         1.0 TB idle       SMART WARN                        │
+┌─ Memory ───────────────────────────────────────────────────────┐└────────────────────────────────────────────────────────────────┘
 │[██████░░░░░░░░░░░░░░] 5.0 GiB / 16.0 GiB                       │
 │DIMMs:         2x 8.0 GiB DDR4 @2666                            │
 │ECC:           none                                             │

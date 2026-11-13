@@ -43,7 +43,7 @@ pub static SUBS: &[Sub] = &[
     s!("usb", "EH", "R", "usb <host> [--tree] [--id VVVV:PPPP]", "USB devices", &["--tree", "--id"], &[], None, Some("usb")),
     s!("thermal", "EH", "R", "thermal <host> [--follow] [--interval S]", "temperatures, fans", &["--follow", "--interval"], &[], None, Some("thermal")),
     s!("logs", "EH", "R", "logs <host> [--dmesg|--init|--daemon|--http|--audit] [-n N] [-f]", "logs", &["--dmesg", "--init", "--daemon", "--http", "--audit", "-n", "-f"], &[], None, Some("logs")),
-    s!("net", "EH", "R/W", "net ls|set|vlan|link|confirm <host> ...", "NICs and configuration", &["--dhcp", "--ip", "--gw", "--dns", "--mtu", "--confirm"], &["ls", "set", "vlan", "link", "confirm"], None, Some("net.ls")),
+    s!("net", "EH", "R/W", "net ls|set|vlan|link|confirm <host> ...", "NICs and configuration", &["--dhcp", "--ip", "--gw", "--dns", "--mtu", "--confirm", "--all"], &["ls", "set", "vlan", "link", "confirm"], None, Some("net.ls")),
     s!("blk", "EH", "R/W", "blk ls|smart|read|write|verify <host> ...", "block devices and tests (write: --destructive --serial S)", &["--all", "--attrs", "--selftest", "--mb", "--regions", "--offset", "--len", "--bs", "--direct", "--destructive", "--serial", "--seed"], &["ls", "smart", "read", "write", "verify"], None, Some("blk.ls")),
     s!("exec", "EHS", "W", "exec <host> [--timeout S] [--env K=V].. [--cwd D] [--stdin F|-] [--tty] [--detach] -- CMD..", "run a program (no shell)", &["--timeout", "--env", "--cwd", "--stdin", "--tty", "--detach"], &[], None, Some("exec")),
     s!("sh", "EHS", "W", "sh <host> '<command line>'", "run a command line through i7labsh (alias of exec -- i7labsh -c)", &["--timeout", "--env", "--cwd"], &[], None, Some("exec")),
@@ -81,6 +81,15 @@ pub fn find(name: &str) -> Option<&'static Sub> {
 pub fn planned(s: &Sub) -> Option<&'static str> {
     s.planned.or_else(|| s.wire.and_then(catalog::by_name).filter(|c| c.planned()).map(|c| c.since))
 }
+
+/// A front the current image cannot serve yet: planned in the catalogue, or its wire command is in
+/// `catalog::NOT_YET_SERVED`. Hidden from the default help, listed under `help --all` with a note.
+pub fn not_available(s: &Sub) -> bool {
+    planned(s).is_some() || s.wire.is_some_and(|w| !catalog::served_by_image(w))
+}
+
+/// The note printed next to such a command.
+pub const NOT_AVAILABLE_NOTE: &str = "(not available in this image yet)";
 
 pub fn real_env() -> Env {
     use std::io::IsTerminal;
@@ -177,8 +186,8 @@ pub fn run_with(args: Vec<String>, env: &mut Env) -> i32 {
 }
 
 pub fn planned_exit(env: &mut Env, g: &Global, name: &str, since: &str) -> i32 {
-    let msg = format!("'{}' is planned for {} and is not served by this build (UNSUPPORTED)", name, since);
-    emit_error(env, g, name, &ClientError::Unsupported(msg.clone()), 10)
+    let msg = format!("'{}' is not available in this image yet (planned for {}); nothing was sent", name, since);
+    emit_error(env, g, name, &ClientError::Unsupported(msg), 10)
 }
 
 /// Print a client-side error (human on stderr, or the JSON envelope on stdout) and return `exit`.
@@ -234,6 +243,13 @@ mod tests {
         assert!(planned(find("svc").unwrap()).is_some());
         assert!(planned(find("web").unwrap()).is_some());
         assert!(planned(find("inv").unwrap()).is_none());
+        // hidden from the default help: planned commands and the console commands the host answers UNSUPPORTED to
+        for n in ["msg", "identify", "tui", "svc", "kexec", "web"] {
+            assert!(not_available(find(n).unwrap()), "{}", n);
+        }
+        for n in ["inv", "exec", "put", "blk", "net", "reboot", "time-set", "key", "shell"] {
+            assert!(!not_available(find(n).unwrap()), "{}", n);
+        }
         assert!(planned(find("blk").unwrap()).is_none());
     }
 

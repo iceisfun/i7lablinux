@@ -169,6 +169,7 @@ pub fn demo_data() -> ViewData {
         pci("0000:01:00.0", Some("0000:00:1c.0"), (0x144d, 0xa808), 0x010802, "Non-Volatile memory controller", "Samsung", "NVMe SSD Controller 980", Some("nvme")),
         pci("0000:02:00.0", Some("0000:00:1d.0"), (0x8086, 0x15bc), 0x020000, "Ethernet controller", "Intel", "Ethernet Connection (7) I219-V", Some("e1000e")),
         pci("0000:03:00.0", Some("0000:00:01.0"), (0x10ec, 0x8126), 0x020000, "Ethernet controller", "Realtek", "RTL8126 5GbE", None),
+        pci("0000:00:14.3", Some("0000:00:00.0"), (0x8086, 0x51f0), 0x028000, "Network controller", "Intel", "Alder Lake PCH CNVi WiFi", None),
     ];
     devs[0].link = None;
     devs[2].link = None;
@@ -287,7 +288,7 @@ pub fn demo_data_with_test() -> ViewData {
     d
 }
 
-/// A host where the only NIC has no driver and no keys are baked: red banners.
+/// A host where the only Ethernet has no driver and no keys are baked: red banners.
 pub fn demo_data_no_control_path() -> ViewData {
     let mut d = demo_data();
     if let Some(n) = d.net.as_mut() {

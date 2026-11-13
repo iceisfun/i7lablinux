@@ -100,6 +100,17 @@ pub static CATALOG: &[CmdSpec] = &[
     c!(0x00A0, "jobs", 3, Admin, true, "[ls | kill ID | out ID]", "detached jobs"),
 ];
 
+/// Wire commands the catalogue lists but the current image does not serve (the host answers UNSUPPORTED or
+/// "planned"). Operator-facing front ends (`i7labctl help`, the web page) hide them from default listings and
+/// explain a call to one instead of printing a raw error. Shrinks as the host learns the commands; the
+/// `brief_coverage` test of i7labd pins the same list from the host side.
+pub const NOT_YET_SERVED: &[&str] = &["msg", "identify", "tui", "tui.dump", "svc", "kexec", "key.set"];
+
+/// False for the commands in [`NOT_YET_SERVED`] and for catalogue entries marked planned.
+pub fn served_by_image(name: &str) -> bool {
+    !NOT_YET_SERVED.contains(&name) && by_name(name).map(|c| !c.planned()).unwrap_or(true)
+}
+
 pub fn by_name(name: &str) -> Option<&'static CmdSpec> {
     CATALOG.iter().find(|c| c.name == name)
 }
@@ -129,6 +140,11 @@ mod tests {
         assert_eq!(by_id(1).unwrap().name, "ping");
         assert!(by_name("key.set").unwrap().planned() && by_name("kexec").unwrap().planned());
         assert!(!by_name("tui.dump").unwrap().planned());
+        assert!(!served_by_image("tui.dump") && !served_by_image("msg") && !served_by_image("kexec") && !served_by_image("key.set"));
+        assert!(served_by_image("ping") && served_by_image("exec") && served_by_image("blk.smart") && served_by_image("not-in-the-catalogue"));
+        for n in NOT_YET_SERVED {
+            assert!(by_name(n).is_some(), "{} is not a catalogue command", n);
+        }
         assert_eq!(by_name("get").unwrap().path_op(), Some(PathOp::Read));
         assert_eq!(by_name("fs.rm").unwrap().path_op(), Some(PathOp::Write));
     }

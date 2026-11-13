@@ -34,6 +34,20 @@ pub fn u(v: &Value, p: &str) -> Option<u64> {
     path(v, p).and_then(Value::as_u64)
 }
 
+/// A PCI/USB id field: the probes write `"8086"` (hex string, optionally 0x-prefixed); older bodies and tests
+/// carry plain numbers.
+pub fn hex_u(v: &Value, p: &str) -> Option<u64> {
+    match path(v, p)? {
+        Value::Str(s) => u64::from_str_radix(s.trim().trim_start_matches("0x"), 16).ok(),
+        other => other.as_u64(),
+    }
+}
+
+/// `vvvv` of `hex_u`, `0000` when absent or unparsable.
+pub fn hex4(v: &Value, p: &str) -> String {
+    format!("{:04x}", hex_u(v, p).unwrap_or(0))
+}
+
 pub fn b(v: &Value, p: &str) -> Option<bool> {
     match path(v, p) {
         Some(Value::Bool(x)) => Some(*x),

@@ -145,6 +145,37 @@ fn tampered_streams_are_rejected() {
 }
 
 #[test]
+fn exec_detach_prints_the_job_id_and_exits_zero_over_http() {
+    need_json!();
+    let t = T::new("h10");
+    let (admin, ro) = keys_of(&t);
+    let srv = FakeHttp::start(vec![admin, ro]);
+    let (code, o, e) = run_http(&t, &srv, &["exec", "--detach", "--", "sleep", "100"]);
+    assert_eq!(code, 0, "{} {}", o, e);
+    assert_eq!(o.trim(), "job 7");
+}
+
+#[test]
+fn put_sends_the_body_digest_header_the_host_requires() {
+    // the fake host (like i7labd) answers an unsigned 400 when X-Lab-Body-Sha256 is missing; the client must send
+    // it, and must not call a 400 without proof an authentication problem
+    need_json!();
+    let t = T::new("h11");
+    let (admin, ro) = keys_of(&t);
+    let srv = FakeHttp::start(vec![admin, ro]);
+    let src = t.dir.join("small.bin");
+    std::fs::write(&src, b"abc").unwrap();
+    let (code, o, e) = run_http(&t, &srv, &["put", src.to_str().unwrap(), "/run/small.bin"]);
+    assert_eq!(code, 0, "{} {}", o, e);
+    assert_eq!(srv.state.lock().unwrap().files.get("/run/small.bin").unwrap(), b"abc");
+    // an empty file too (digest of nothing)
+    let empty = t.dir.join("empty.bin");
+    std::fs::write(&empty, b"").unwrap();
+    let (code, o, e) = run_http(&t, &srv, &["put", empty.to_str().unwrap(), "/run/empty.bin"]);
+    assert_eq!(code, 0, "{} {}", o, e);
+}
+
+#[test]
 fn put_and_get_use_the_raw_file_endpoints_with_streamed_hashes() {
     need_json!();
     let t = T::new("h9");
@@ -223,4 +254,24 @@ fn nonces_are_not_reused_between_requests() {
     }
     let reqs = srv.state.lock().unwrap().requests.clone();
     assert_eq!(reqs.iter().filter(|r| r.as_str() == "GET /api/v1/nonce").count(), 3);
+}
+
+#[test]
+fn a_command_the_host_does_not_serve_gets_a_friendly_one_line_error() {
+    need_json!();
+    let t = T::new("h12");
+    let (admin, ro) = keys_of(&t);
+    let srv = FakeHttp::start(vec![admin, ro]);
+    // the fake host answers 501 UNSUPPORTED "no such command" to anything it has no handler for
+    for args in [&["msg", "hello"][..], &["identify"][..], &["tui", "dump"][..]] {
+        let (code, o, e) = run_http(&t, &srv, args);
+        assert_eq!(code, 10, "{:?}: {} {}", args, o, e);
+        assert!(e.contains("is not available in this image yet"), "{:?}: {}", args, e);
+        assert!(!e.contains("no such command") && !e.contains("UNSUPPORTED"), "no raw error text: {}", e);
+        assert_eq!(e.trim().lines().count(), 1, "one line: {}", e);
+    }
+    // planned commands are answered locally, with the same wording
+    let (code, _, e) = run_http(&t, &srv, &["svc", "http", "status"]);
+    assert_eq!(code, 10);
+    assert!(e.contains("not available in this image yet") && e.trim().lines().count() == 1, "{}", e);
 }

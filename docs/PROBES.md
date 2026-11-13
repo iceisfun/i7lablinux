@@ -84,7 +84,30 @@ Walk `/sys/bus/pci/devices/<domain:bus:dev.fn>`. Per device:
 - Power: `power_state` (D0..D3hot), `power/runtime_status`, `power/control`.
 - Resizable BAR and ATS only listed as capabilities in v0.1.
 
-Name table: `data/pci.ids.subset` generated at build time from the public pci-ids file filtered to
+Implemented tables (current): `crates/labprobe/data/pci-ids.tsv` and `data/usb-ids.tsv`, curated subsets in
+the pci.ids/usb.ids vendor + device format, written by hand, embedded with `include_str!` and sorted at first
+use (`pciids::lookup`, `usbids::lookup`); they cover the common Intel, Realtek, Broadcom, Qualcomm, MediaTek,
+AMD, NVIDIA, Samsung, WD/SanDisk, Micron, Kioxia and O2 Micro ids seen in the lab. Names were typed from
+memory, not checked against a current pci.ids; an unknown id shows no name and keeps its hex id (`vvvv:dddd`).
+Wire format: `vendor`, `device`, `subsys_vendor`, `subsys_device` are 4-digit lower-case **hex strings**
+(`"8086"`), never numbers; `i7labctl` reads them as such (an old client that parsed numbers printed every id
+as `0000:0000`). USB devices carry `vid`/`pid` the same way plus `vendor_name`/`product_name` from the table
+(the device's own `manufacturer`/`product` strings win in the text output).
+
+`nic_kind` (pci report, additive): `"ethernet"` (class 0x0200), `"wifi"` (0x0280), `"other-network"` (any other
+0x02xxxx), `null` for everything else. `PciReport::unbound_ethernet()` / `unbound_wifi()` split the old
+`unbound_nics()` (kept, still every unbound network-class function). `PciReport::control_path_available(&NetReport)`
+is true when at least one Ethernet function has a bound driver and its interface (matched by PCI address) is
+up with carrier: an unbound Wi-Fi card is expected on this image and is not a "no control path" condition.
+
+Net report (additive): each interface has `kind`: `ethernet`, `wifi`, `vlan`, `virtual` (bridge, veth, wg, ...)
+or `virtual/kernel` (the devices the kernel creates by itself: dummy0, sit0, tunl0, ip6tnl0, ip6gre0, gre0,
+gretap0, erspan0, ip_vti0, ip6_vti0, ifb0..). `i7labctl net ls` hides `virtual/kernel` unless `--all`.
+
+Fixture: `crates/labprobe/tests/fixtures/system76-darter-pro/` (real ids of the Darter Pro lab host, see
+`tests/darter_pro.rs`).
+
+Original design note: `data/pci.ids.subset` generated at build time from the public pci-ids file filtered to
 vendors/devices we have seen in the lab (plus all class codes). Format is the pci.ids text format;
 `labprobe::pciids::lookup(vendor, device)` does a binary search over a pre-sorted binary blob
 built by `build.rs`. Size target under 300 KB. The full file is a build option
@@ -132,8 +155,30 @@ Enumerate `/sys/block/*` (skip `loop*`, `ram*`, `zram*`, `dm-*` unless `--all`).
   Get Log Page 0x02 (SMART/Health): critical warning, composite temperature, available spare,
   percentage used, data units read/written, power cycles, power on hours, unsafe shutdowns, media
   errors, error log entries. Also Get Log Page 0x01 (error log) last 8 entries.
-- USB bridges: try SAT pass-through; if it fails report `smart: "unsupported"` (never an error).
-- Verdict field: `pass` / `warn` / `fail` / `unknown` with the reasons listed.
+- USB bridges: try SAT pass-through; if it fails report `kind: "usb-bridge"`, verdict `unknown` and the reason
+  `not available (bridge)` (never an error).
+- Verdict field: `pass` / `warn` / `fail` / `unknown` with the reasons listed (`i7labctl` prints PASSED / WARNING /
+  FAILED / UNKNOWN).
+
+Implemented (`labprobe::block::smart`, only read commands are ever sent, no external tool):
+
+- NVMe: Identify Controller (model, serial, firmware, WCTEMP/CCTEMP) and Get Log Page 0x02 through
+  `NVME_IOCTL_ADMIN_CMD` on `/dev/<name>`. Verdict: `fail` on critical-warning bits 0 (spare below threshold),
+  2 (reliability degraded), 3 (read-only), 4 (volatile backup failed), spare below the threshold, temperature at
+  or above CCTEMP; `warn` on the temperature bit, temperature at or above WCTEMP, any media error, endurance used
+  at 90% or more.
+- SATA, and USB bridges that implement SAT: ATA PASS-THROUGH(16) through `SG_IO`: SMART READ DATA (attribute
+  table, 30 entries of 12 bytes), SMART READ THRESHOLDS, SMART RETURN STATUS (taken from the ATA Status Return
+  descriptor in the sense data). Verdict: `fail` when the drive says threshold exceeded or an attribute's
+  normalised value is at or below its threshold; `warn` for non-zero reallocated (5/196), reported uncorrectable
+  (187), pending (197), offline uncorrectable (198), a wear indicator (177/202/231/233) at 10% or less, or 70 C and
+  up.
+- `blk ls` carries a `smart` field per disk (NVMe and SATA only, cached for 60 s; USB disks are asked by
+  `blk smart`, because a bridge can stall); other kinds show `-`.
+- The raw-buffer parsers are pure functions tested with buffers in `crates/labprobe/tests/fixtures/smart/*.hex`.
+  Those buffers are **synthetic** (built to the NVMe 1.4 / ATA8 layouts, with the real model and serial of the
+  Darter Pro disk in the Identify page); no recording from physical drives exists yet, so parsing of vendor quirks
+  (attribute raw encodings, USB bridges) is unproven on hardware.
 
 ### Read/write/verify tests
 

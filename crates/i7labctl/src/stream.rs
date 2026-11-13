@@ -460,6 +460,14 @@ pub fn dispatch(run: &mut Run, name: &str, args: &[String]) -> Result<i32, Clien
     }
 }
 
+/// `exec --detach` result text: the job id.
+fn detach_text(body: &str, _p: Paint) -> String {
+    match crate::jv::parse(body).and_then(|v| crate::jv::u(&v, "job")) {
+        Some(id) => format!("job {}\n", id),
+        None => format!("started (unexpected reply: {})\n", labproto::text::sanitize(body.trim())),
+    }
+}
+
 fn exec_exit(run: &mut Run, o: &StreamOutcome, argv0: Option<&str>) -> i32 {
     let st = o.done.res.status;
     let builtin = argv0.filter(|a| SH_BUILTINS.contains(a));
@@ -548,6 +556,10 @@ fn exec(run: &mut Run, args: &[String], via_sh: bool) -> Result<i32, ClientError
     let spec = catalog::by_name("exec").unwrap();
     let prep = run.prepare(p.host.as_deref(), 0.0)?;
     let o = run_stream(run, prep, spec, &wire, input, None, false)?;
+    if detach && o.done.res.status == Status::Ok {
+        // the host answers {"v":1,"job":N}: say which job, exit 0 (jobs ls / jobs out N / jobs kill N follow up)
+        return Ok(end_stream(run, "exec", &o, Some(&detach_text), 0));
+    }
     let argv0 = words.first().map(String::as_str);
     Ok(exec_exit(run, &o, argv0))
 }

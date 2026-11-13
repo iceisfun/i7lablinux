@@ -47,6 +47,7 @@ Remote boot of a host: see `docs/REMOTE-BOOT.md` (operator procedure: ask the pe
 | `--vlan <id>` | send/listen with 802.1Q tag `id` (repeatable for listening; ether) |
 | `--role admin\|ro` | which key to use; default `admin` if its file exists else `ro` |
 | `--key <file>` | explicit key file (overrides `--role`) |
+| `--keys <dir>` | key directory holding `admin.key` / `ro.key`; same as `$I7LABCTL_KEYDIR` and wins over it (`key init` and `key import` write there too) |
 | `--timeout <sec>` | whole-command timeout (default 30; commands that stream default to none) |
 | `--retries <n>` | extra full handshake attempts after the session engine's own retries (default 0) |
 | `--json` | machine output, see section 4 |
@@ -153,14 +154,14 @@ Default `--dmesg -n 200`. `-f` follows until Ctrl-C (sends CANCEL).
 #### `net`
 
 ```
-i7labctl net ls <host> [<iface>]
+i7labctl net ls <host> [<iface>] [--all]
 i7labctl net set <host> <iface> (--dhcp | --ip A.B.C.D/N [--gw A.B.C.D] [--dns A,B]) [--mtu N] [--confirm SEC]
 i7labctl net vlan add <host> <iface> <vid> [--ip A.B.C.D/N]
 i7labctl net vlan del <host> <iface> <vid>
 i7labctl net link <host> <iface> up|down
 i7labctl net confirm <host>
 ```
-`net ls` is R; the rest W. `--confirm SEC` makes the change revert automatically unless confirmed: `net set` over http or ssh uses it by default (30 s) to avoid cutting yourself off; over ether it is not needed (ether works with any IP state) and not applied by default. After `net vlan add` the host sends beacons on that VLAN.
+`net ls` is R; the rest W. `net ls` has a KIND column (`ethernet`, `wifi`, `vlan`, `virtual`, `virtual/kernel`) and hides the kernel's own `virtual/kernel` devices (`dummy0`, `sit0`, tunnel base devices) unless `--all` (or an explicit `<iface>`). `--confirm SEC` makes the change revert automatically unless confirmed: `net set` over http or ssh uses it by default (30 s) to avoid cutting yourself off; over ether it is not needed (ether works with any IP state) and not applied by default. After `net vlan add` the host sends beacons on that VLAN.
 
 #### `blk`
 
@@ -171,8 +172,8 @@ i7labctl blk read <host> <dev> [--mb N] [--regions start,mid,end] [--offset BYTE
 i7labctl blk write <host> <dev> --destructive --serial SERIAL [--mb N] [--regions ...] [--offset B --len B] [--seed N]
 i7labctl blk verify <host> <dev> --seed N [--regions ...]
 ```
-* `blk ls`: name, size, model, serial, transport, rotational, partition table, filesystems, mounted, boot media, and the **write-safety verdict** (`WRITE-SAFE` or `UNSAFE: mounted | partition table | filesystem sdb1 ext4 | boot media | ...`).
-* `blk smart`: verdict (PASSED/FAILED), temperature, power-on hours, reallocated and pending sectors, NVMe percentage used, media errors; `--selftest` starts a SMART self test (W) and returns at once; run again to read the result.
+* `blk ls`: name, size, model, serial, transport, rotational, partition table, filesystems, mounted, boot media, the SMART verdict (PASSED / WARNING / FAILED / UNKNOWN; `-` when not asked), and the **write-safety verdict** (`WRITE-SAFE` or `UNSAFE: mounted | partition table | filesystem sdb1 ext4 | boot media | ...`).
+* `blk smart`: verdict (PASSED/WARNING/FAILED/UNKNOWN) with reasons, model/serial/firmware, temperature, power-on hours; NVMe: critical warning, spare, percentage used, data read/written, power cycles, unsafe shutdowns, media errors; SATA: the attribute table with `--attrs` (reallocated, pending, wear, ...). A USB-attached disk answers `UNKNOWN: not available (bridge)` when its bridge does not pass SMART through. Exit 3 on FAILED. `--selftest` (not implemented by the host yet) starts a SMART self test (W) and returns at once; run again to read the result.
 * `blk read`: **read-only**. Default `--mb 256` as three regions (start, middle, end) read with `O_DIRECT` and `--bs 1m`; per-region MiB/s, I/O errors, latency max. Exit 3 on any error. Runs for minutes on large `--mb`; progress streams.
 * `blk write`: **destructive**. Requires `--destructive` and the device's real `--serial` (taken from `blk ls`), checked by the host. The host refuses (exit 7) if the device is mounted, has any mounted partition, has a partition table or a filesystem/RAID/LUKS signature, backs the running system, or is the boot media. There is no flag to override the boot media rule. The test writes a seeded pseudo-random pattern into the regions, syncs, reads it back and reports mismatches. `--seed` defaults to a random value that is printed so `blk verify` can re-check it later (for example after a reboot or power cut test).
 * `blk verify`: read-only compare against a seeded pattern from an earlier `blk write`.
@@ -196,7 +197,7 @@ i7labctl exec <host> [--timeout SEC] [--env K=V]... [--cwd DIR] [--stdin FILE|-]
 ```
 * Runs `<command>` directly (no shell). For shell syntax: `i7labctl exec H -- i7labsh -c 'dmesg | tail'` (the in-image shell, see HOST-SHELL docs; builtins ls cat cp mv rm mkdir mount umount ip dmesg ps kill ...).
 * stdout and stderr go to the matching local streams as they arrive. `--stdin -` forwards local stdin. `--tty` allocates a pty (window size and `^C` forwarded).
-* Default timeout 300 s, `--timeout 0` none. `--detach` starts it as a job (output in `/run/i7lab/jobs/<id>`, see `jobs`) and prints the job id.
+* Default timeout 300 s, `--timeout 0` none. `--detach` starts it as a job (output in `/run/i7lab/jobs/<id>`, see `jobs`), prints `job <id>` and exits 0 (with `--json`: the result event with `data.job`).
 * **Exit status is the remote command's status** (0 to 254); i7labctl's own errors (transport, auth, ...) exit 255 for `exec`, `shell` and `ssh`, with the reason on stderr and, under `--json`, in the envelope (section 5).
 
 #### `shell`
@@ -246,7 +247,7 @@ i7labctl msg <host> <text...>
 * `reboot`/`poweroff` ask for confirmation on a tty (`--yes` skips). `--uefi` reboots into firmware setup. `--wait` is shorthand for a following `wait --state reboot`.
 * `wait`: listens for beacons (needs no session). `up`: host seen (default); `down`: no beacon for 15 s or `state=shutdown`; `ready`: `state=ready`; `reboot`: the `boot` id changed from the one seen at start (or `--boot-id`). Exit 4 on timeout (default 300 s).
 * `identify` blinks the keyboard LEDs and NIC LED and fills the console with the host name for `N` seconds (default 30) so you can find a machine in a rack; `msg` puts a line on the console: `i7labctl msg H "Remove the USB stick now, then press the power button"`.
-  **Not served yet:** the v0.1 `i7labd` has no handler for `identify`, `msg`, `tui` or `tui.dump`; they answer `UNSUPPORTED` (exit 10). Pinned by `crates/i7labd/tests/brief_coverage.rs`; tracked in `docs/BRIEF-CHECKLIST.md`.
+  **Not served yet:** the v0.1 `i7labd` has no handler for `identify`, `msg`, `tui` or `tui.dump` (nor `svc`, `kexec`, `key.set`, which are planned). `i7labctl` hides these from `help` and the quick start (`help --all` lists them marked `(not available in this image yet)`), and a call prints one line, `'msg' is not available in this image yet (the host does not serve it)`, exit 10, instead of the raw host error. The list is `labproto::catalog::NOT_YET_SERVED`; pinned from the host side by `crates/i7labd/tests/brief_coverage.rs`; tracked in `docs/BRIEF-CHECKLIST.md`.
 * **Remote boot procedure** (the full text, with checks for a BIOS boot order, is `docs/REMOTE-BOOT.md`): (1) the user inserts the stick; (2) `i7labctl msg` or an instruction, "remove the OS drive's boot path / select USB in the boot menu, power cycle"; (3) `i7labctl discover --watch` or `wait` until the host's beacon shows `state=ready`; (4) `i7labctl id <host>`.
 
 ### 3.4 Services, SSH, interactive
@@ -361,6 +362,8 @@ Envelope:
 | `~/.cache/i7labctl/hosts.json` | registry |
 | `~/.cache/i7labctl/known_hosts` | pinned host keys for ssh |
 | `./keys/` (build tree, gitignored) | keys generated by `scripts/gen-keys` / `key init`, source for the image |
+
+Key lookup order (first hit wins, per role): `--key`, `$I7LABCTL_KEY`, `--keys` / `$I7LABCTL_KEYDIR`, `~/.config/i7labctl/keys`, `./keys`. When nothing is found the error lists every place it looked, in that order. Under `sudo` HOME is `/root` and your keys are not there: i7labctl then says so and suggests running without sudo (the HTTP transport needs no root; only raw Ethernet needs `cap_net_raw`, see `setcap` above), `sudo -E`, or `--keys DIR`.
 
 Environment: `I7LABCTL_KEYDIR`, `I7LABCTL_KEY` (a key file), `I7LABCTL_ROLE`, `I7LABCTL_REGISTRY`, `I7LABCTL_IFACE` (comma separated), `I7LABCTL_TRANSPORT`, `NO_COLOR`. Under `sudo`, the invoking user's home is used.
 

@@ -32,20 +32,14 @@ commands   (transports: E ether, H http, S ssh, L local; role: R read-only key, 
   jobs         EH.. W   detached jobs
   reboot       EH.. W   reboot
   poweroff     EH.. W   power off
-  kexec        EH.. W   boot another kernel (planned v0.4)
   wait         E... -   wait for a host state (beacons)
-  identify     EH.. W   blink LEDs, banner on the console
-  msg          EH.. W   message on the host console
   time-set     EH.. W   set the host clock
-  svc          EH.. W   agent services (planned v0.2)
-  tui          EH.. R/W console TUI of the host: switch tab, text screenshot
   key          ...L -   key management
   ether        E... -   raw protocol tools
   api          .H.. -   raw authenticated HTTP request
   ssh          ..S. W   ssh to a host that runs sshd (system ssh, pinned host keys)
   lab-boot     ...L -   boot a host from lab linux via JetKVM virtual media (through hwlabd)
   image        ...L -   wrappers around scripts/ (build, write a stick, bake keys)
-  web          ...L R/W local web UI gateway (planned v0.5)
   completions  ...L -   shell completion script
   help         ...L -   help
   version      ...L -   versions
@@ -63,6 +57,7 @@ global options (accepted before or after the command; after `--` nothing is pars
   --vlan ID[,ID|A-B]      802.1Q tag to send with / listen on (repeatable)
   --role admin|ro         key role (default: admin if its key file exists, else ro)
   --key FILE              explicit key file (wins over --role)
+  --keys DIR              key directory holding admin.key / ro.key (same as $I7LABCTL_KEYDIR; wins over it)
   --timeout SEC           whole-command timeout (default 30; streaming commands: none; 0 = none)
   --retries N             extra full handshake attempts after the session engine's own retries (default 0)
   --json                  machine output (envelope / NDJSON), see: i7labctl help json

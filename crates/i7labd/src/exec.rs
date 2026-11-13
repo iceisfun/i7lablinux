@@ -198,24 +198,32 @@ fn exit_code(st: &std::process::ExitStatus) -> (i32, Option<i32>) {
     }
 }
 
+/// Start `cmd` as session leader on a fresh pty of `cols` x `rows`; returns the child and the pty master.
+/// Used by `run` and by the web terminal (`http/shell.rs`).
+pub fn spawn_tty(mut cmd: Command, cols: u16, rows: u16) -> std::io::Result<(Child, std::fs::File)> {
+    let (master, slave) = ffi::open_pty()?;
+    ffi::set_winsize(master.as_raw_fd(), cols, rows)?;
+    cmd.stdin(Stdio::from(slave.try_clone()?)).stdout(Stdio::from(slave.try_clone()?)).stderr(Stdio::from(slave));
+    // SAFETY: pre_exec runs between fork and exec: only async-signal-safe calls (setsid, ioctl).
+    unsafe {
+        cmd.pre_exec(|| {
+            ffi::setsid()?;
+            ffi::set_ctty(0)
+        });
+    }
+    let child = cmd.spawn()?;
+    drop(cmd); // closes the parent's copies of the slave
+    Ok((child, master))
+}
+
 /// Run to completion, streaming to `sink`. `Err` only when the program could not be started.
 pub fn run(spec: &ExecSpec, sink: &mut dyn Sink, cancel: &AtomicBool) -> std::io::Result<Outcome> {
     let mut cmd = build_command(spec);
     let (tx, rx) = sync_channel::<(Chan, Vec<u8>)>(8);
     let child;
     if let Some((cols, rows)) = spec.tty {
-        let (master, slave) = ffi::open_pty()?;
-        ffi::set_winsize(master.as_raw_fd(), cols, rows)?;
-        cmd.stdin(Stdio::from(slave.try_clone()?)).stdout(Stdio::from(slave.try_clone()?)).stderr(Stdio::from(slave));
-        // SAFETY: pre_exec runs between fork and exec: only async-signal-safe calls (setsid, ioctl).
-        unsafe {
-            cmd.pre_exec(|| {
-                ffi::setsid()?;
-                ffi::set_ctty(0)
-            });
-        }
-        child = cmd.spawn()?;
-        drop(cmd); // closes the parent's copies of the slave
+        let (c, master) = spawn_tty(cmd, cols, rows)?;
+        child = c;
         pump(master.try_clone()?, Chan::Stdout, tx);
         if spec.stdin {
             if let Some(input) = sink.input() {

@@ -4,7 +4,7 @@ i7labctl key
 usage: i7labctl key init|show|verify|import|export ...
 transports: local   role: none
 
-Key management. Keys are `i7k1:<role>:<64 hex>` files, mode 0600. They are found without flags in this order: --key, $I7LABCTL_KEY, $I7LABCTL_KEYDIR/<role>.key, ~/.config/i7labctl/keys/<role>.key, ./keys/<role>.key.
+Key management. Keys are `i7k1:<role>:<64 hex>` files, mode 0600. They are found without flags in this order: --key, $I7LABCTL_KEY, $I7LABCTL_KEYDIR/<role>.key (or --keys DIR), ~/.config/i7labctl/keys/<role>.key, ./keys/<role>.key.
   key init [--dir DIR] [--force]   create admin.key, ro.key, KEYSET-ID in ~/.config/i7labctl/keys and ./keys (or DIR only); refuses to overwrite without --force, then keeps the old set in old/<date>-<ts>/
   key show [--role R] [--secret]            fingerprints and paths; --secret prints the key line after asking
   key verify <host>                         authenticate to the host and print the granted role

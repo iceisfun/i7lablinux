@@ -52,19 +52,19 @@ commands   (transports: E ether, H http, S ssh, L local; role: R read-only key, 
                usage: i7labctl reboot <host> [--force] [--delay S] [--uefi] [--to-os] [--wait [S]]
   poweroff     EH.. W   power off
                usage: i7labctl poweroff <host> [--delay S]
-  kexec        EH.. W   boot another kernel (planned v0.4)
+  kexec        EH.. W   boot another kernel (planned v0.4) (not available in this image yet)
                usage: i7labctl kexec <host> --kernel P [--initrd P] [--cmdline S] [--wait [S]]
   wait         E... -   wait for a host state (beacons)
                usage: i7labctl wait <host> [--timeout S] [--state up|down|ready|reboot] [--boot-id ID]
-  identify     EH.. W   blink LEDs, banner on the console
+  identify     EH.. W   blink LEDs, banner on the console (not available in this image yet)
                usage: i7labctl identify <host> [--seconds N] [--stop]
-  msg          EH.. W   message on the host console
+  msg          EH.. W   message on the host console (not available in this image yet)
                usage: i7labctl msg <host> <text..>
   time-set     EH.. W   set the host clock
                usage: i7labctl time-set <host> [UNIX_SECONDS|now]
-  svc          EH.. W   agent services (planned v0.2)
+  svc          EH.. W   agent services (planned v0.2) (not available in this image yet)
                usage: i7labctl svc <host> http|beacon|ether start|stop|status [--port N] [--force]
-  tui          EH.. R/W console TUI of the host: switch tab, text screenshot
+  tui          EH.. R/W console TUI of the host: switch tab, text screenshot (not available in this image yet)
                usage: i7labctl tui tab NAME|reset|dump <host>
   key          ...L -   key management
                usage: i7labctl key init|show|verify|import|export ...
@@ -78,7 +78,7 @@ commands   (transports: E ether, H http, S ssh, L local; role: R read-only key, 
                usage: i7labctl lab-boot --jetkvm HOST --image PATH [--mode cdrom|disk] [--wait S]
   image        ...L -   wrappers around scripts/ (build, write a stick, bake keys)
                usage: i7labctl image build|write|bake|keys|test|info|verify ...
-  web          ...L R/W local web UI gateway (planned v0.5)
+  web          ...L R/W local web UI gateway (planned v0.5) (not available in this image yet)
                usage: i7labctl web [--listen 127.0.0.1:8081]
   completions  ...L -   shell completion script
                usage: i7labctl completions bash|zsh|fish
@@ -100,6 +100,7 @@ global options (accepted before or after the command; after `--` nothing is pars
   --vlan ID[,ID|A-B]      802.1Q tag to send with / listen on (repeatable)
   --role admin|ro         key role (default: admin if its key file exists, else ro)
   --key FILE              explicit key file (wins over --role)
+  --keys DIR              key directory holding admin.key / ro.key (same as $I7LABCTL_KEYDIR; wins over it)
   --timeout SEC           whole-command timeout (default 30; streaming commands: none; 0 = none)
   --retries N             extra full handshake attempts after the session engine's own retries (default 0)
   --json                  machine output (envelope / NDJSON), see: i7labctl help json
@@ -317,7 +318,7 @@ usage: i7labctl net ls|set|vlan|link|confirm <host> ...
 transports: ether, http   role: read-only key for reads, admin key for changes
 
 Network interfaces and configuration.
-  net ls <host> [IFACE]                       R: NICs, addresses, VLANs, counters
+  net ls <host> [IFACE] [--all]               R: NICs with kind, addresses, VLANs; kernel-made virtual devices (dummy0, sit0, ..) are hidden unless --all
   net set <host> IFACE (--dhcp | --ip A.B.C.D/N [--gw A.B.C.D] [--dns A,B]) [--mtu N] [--confirm SEC]   W
   net vlan add <host> IFACE VID [--ip A.B.C.D/N]   |   net vlan del <host> IFACE VID    W
   net link <host> IFACE up|down               W
@@ -339,8 +340,8 @@ usage: i7labctl blk ls|smart|read|write|verify <host> ...
 transports: ether, http   role: read-only key for reads, admin key for changes
 
 Block devices: enumeration, SMART, read test, write test.
-  blk ls <host> [--all]       name, size, model, SERIAL, table, filesystems, mounted, boot media, and the write-safety verdict (WRITE-SAFE or UNSAFE: reasons)
-  blk smart <host> DEV [--attrs] [--selftest short|long]
+  blk ls <host> [--all]       name, size, model, SERIAL, table, filesystems, mounted, boot media, SMART verdict, and the write-safety verdict (WRITE-SAFE or UNSAFE: reasons)
+  blk smart <host> DEV [--attrs]   PASSED / WARNING / FAILED / UNKNOWN with reasons, temperature, hours, NVMe wear and error counters, SATA attributes (exit 3 on FAILED); USB disks may answer 'not available (bridge)'
   blk read <host> DEV [--mb N] [--regions start,mid,end | --offset B --len B] [--bs 1m] [--direct]   READ-ONLY (default 256 MiB in three regions)
   blk write <host> DEV --destructive --serial SERIAL [--mb N] [--regions ..] [--offset B --len B] [--seed N]
   blk verify <host> DEV --seed N [--mb N] [--regions ..]   read-only compare against a seeded pattern
@@ -524,13 +525,13 @@ wire command: poweroff (0x0041) [--delay S]
 global options and exit codes: i7labctl help
 
 ----------------------------------------------------------------------
-i7labctl kexec  (planned v0.4: answers UNSUPPORTED, exit 10)
+i7labctl kexec  (planned v0.4, not available in this image yet: answers with a one-line explanation, exit 10)
   boot another kernel
 
 usage: i7labctl kexec <host> --kernel P [--initrd P] [--cmdline S] [--wait [S]]
 transports: ether, http   role: admin key
 
-Load and exec another kernel from uploaded files. Planned for v0.4: answers UNSUPPORTED.
+Load and exec another kernel from uploaded files. Planned for v0.4: not available in this image yet (exit 10).
 
 examples
   i7labctl kexec m900 --kernel /run/k --initrd /run/i
@@ -557,11 +558,13 @@ examples
 global options and exit codes: i7labctl help
 
 ----------------------------------------------------------------------
-i7labctl identify
+i7labctl identify  (not available in this image yet: answers with a one-line explanation, exit 10)
   blink LEDs, banner on the console
 
 usage: i7labctl identify <host> [--seconds N] [--stop]
 transports: ether, http   role: admin key
+
+Not available in this image yet: the host does not serve it, so the command answers with a one-line explanation (exit 10).
 
 Find a machine in a rack: blink the keyboard LEDs and the NIC LED and fill the console with the host name for N seconds (default 30). --stop ends it.
 
@@ -573,11 +576,13 @@ wire command: identify (0x0080) [--seconds N] [--stop]
 global options and exit codes: i7labctl help
 
 ----------------------------------------------------------------------
-i7labctl msg
+i7labctl msg  (not available in this image yet: answers with a one-line explanation, exit 10)
   message on the host console
 
 usage: i7labctl msg <host> <text..>
 transports: ether, http   role: admin key
+
+Not available in this image yet: the host does not serve it, so the command answers with a one-line explanation (exit 10).
 
 Show a message on the host's console TUI for the person standing there (for example during a remote boot).
 
@@ -606,13 +611,13 @@ wire command: time.set (0x0005) UNIX_SECONDS
 global options and exit codes: i7labctl help
 
 ----------------------------------------------------------------------
-i7labctl svc  (planned v0.2: answers UNSUPPORTED, exit 10)
+i7labctl svc  (planned v0.2, not available in this image yet: answers with a one-line explanation, exit 10)
   agent services
 
 usage: i7labctl svc <host> http|beacon|ether start|stop|status [--port N] [--force]
 transports: ether, http   role: admin key
 
-Start/stop agent services (http, beacon, ether). Planned for v0.2: answers UNSUPPORTED.
+Start/stop agent services (http, beacon, ether). Planned for v0.2: not available in this image yet (exit 10).
 
 examples
   i7labctl svc m900 http status
@@ -622,11 +627,13 @@ wire command: svc (0x0060) http|beacon|ether start|stop|status [--port N] [--for
 global options and exit codes: i7labctl help
 
 ----------------------------------------------------------------------
-i7labctl tui
+i7labctl tui  (not available in this image yet: answers with a one-line explanation, exit 10)
   console TUI of the host: switch tab, text screenshot
 
 usage: i7labctl tui tab NAME|reset|dump <host>
 transports: ether, http   role: read-only key for reads, admin key for changes
+
+Not available in this image yet: the host does not serve it, so the command answers with a one-line explanation (exit 10).
 
 Control the TUI on the host's console.
   tui tab <host> NAME     switch the tab (Overview, Storage, ..)
@@ -646,7 +653,7 @@ i7labctl key
 usage: i7labctl key init|show|verify|import|export ...
 transports: local   role: none
 
-Key management. Keys are `i7k1:<role>:<64 hex>` files, mode 0600. They are found without flags in this order: --key, $I7LABCTL_KEY, $I7LABCTL_KEYDIR/<role>.key, ~/.config/i7labctl/keys/<role>.key, ./keys/<role>.key.
+Key management. Keys are `i7k1:<role>:<64 hex>` files, mode 0600. They are found without flags in this order: --key, $I7LABCTL_KEY, $I7LABCTL_KEYDIR/<role>.key (or --keys DIR), ~/.config/i7labctl/keys/<role>.key, ./keys/<role>.key.
   key init [--dir DIR] [--force]   create admin.key, ro.key, KEYSET-ID in ~/.config/i7labctl/keys and ./keys (or DIR only); refuses to overwrite without --force, then keeps the old set in old/<date>-<ts>/
   key show [--role R] [--secret]            fingerprints and paths; --secret prints the key line after asking
   key verify <host>                         authenticate to the host and print the granted role
@@ -761,13 +768,13 @@ examples
 global options and exit codes: i7labctl help
 
 ----------------------------------------------------------------------
-i7labctl web  (planned v0.5: answers UNSUPPORTED, exit 10)
+i7labctl web  (planned v0.5, not available in this image yet: answers with a one-line explanation, exit 10)
   local web UI gateway
 
 usage: i7labctl web [--listen 127.0.0.1:8081]
 transports: local   role: read-only key for reads, admin key for changes
 
-Local web UI gateway. Planned for v0.5: answers UNSUPPORTED (the host serves its own SPA on its HTTP port today).
+Local web UI gateway. Planned for v0.5: not available in this image yet (the host serves its own SPA on its HTTP port today).
 
 examples
   i7labctl web --listen 127.0.0.1:8081

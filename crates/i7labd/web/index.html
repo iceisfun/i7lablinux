@@ -102,6 +102,9 @@ dialog::backdrop{background:rgba(0,0,0,.55)}
 .toast.bad{border-left-color:var(--bad)}.toast.ok{border-left-color:var(--ok)}.toast.warn{border-left-color:var(--warn)}
 .danger-zone{border:1px solid var(--bad);border-radius:8px;padding:8px 12px;background:var(--badbg)}
 .login{max-width:560px;margin:24px auto}
+.copybtn{white-space:nowrap}
+.term-box{background:#0f1216;padding:6px;border-radius:6px;height:60vh;min-height:280px;overflow:hidden}
+details.virt{margin-top:12px}details.virt>summary{cursor:pointer;color:var(--dim);margin-bottom:8px}
 @media(max-width:700px){main{padding:10px}header#top{padding:6px 10px}nav#nav{top:84px}dl.kv{grid-template-columns:1fr}dl.kv dt{margin-top:4px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 </style>
@@ -236,7 +239,7 @@ function fmtBytes(n) {
   if (n === null || n === undefined || isNaN(n)) return '-';
   const u = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']; let i = 0, v = Number(n);
   while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-  return (i === 0 ? String(v) : v.toFixed(v >= 100 ? 0 : 1)) + ' ' + u[i];
+  return (i === 0 ? fmt1(v) : v.toFixed(v >= 100 ? 0 : 1)) + ' ' + u[i];
 }
 function fmtKib(k) { return fmtBytes(k * 1024); }
 function fmtRate(bps) { return bps === null || isNaN(bps) ? '-' : fmtBytes(bps) + '/s'; }
@@ -318,11 +321,7 @@ function attention(d) {
   const out = [], add = (level, text) => out.push({ level, text });
   const pci = d.pci && !d.pci.error ? d.pci.devices || [] : [];
   const nics = d.net && !d.net.error ? (d.net.ifaces || []).filter(i => i.name !== 'lo') : [];
-  const unbound = pci.filter(x => isNic(x) && !x.driver);
-  if (unbound.length) {
-    const nonet = !nics.length;
-    add(nonet ? 'bad' : 'warn', (nonet ? 'NO CONTROL PATH: ' : '') + 'NIC without a driver: ' + unbound.map(x => (x.vendor + ':' + x.device) + ' at ' + x.bdf).join(', '));
-  }
+  for (const a of nicAlerts(pci, d.net && !d.net.error ? d.net.ifaces || [] : [])) add(a.level, a.text);
   const deg = pci.filter(degraded);
   if (deg.length) add('warn', 'PCIe link below maximum: ' + deg.map(x => x.bdf + ' ' + fmtLink(x.link)).join(', '));
   const aer = pci.filter(x => aerTotal(x) > 0);
@@ -363,7 +362,188 @@ function decodeStdout(ev) {
   if (typeof ev.b64 === 'string') { try { return new TextDecoder().decode(Uint8Array.from(atob(ev.b64), c => c.charCodeAt(0))); } catch (e) { return ''; } }
   return '';
 }
-return { utf8, hex, unhex, ctEq, sha256, hmac, keyId, parseKey, requestMac, responseMac, eventMac, checkEvent, feedLines, feedSSE,
+/* ---------- numbers ---------- */
+function fmt1(v) { return String(Math.round(Number(v) * 10) / 10); }
+
+/* ---------- network classification (same rule as labprobe pci NicKind; falls back to the class code) ---------- */
+function nicKind(d) {
+  if (d.nic_kind === 'ethernet' || d.nic_kind === 'wifi' || d.nic_kind === 'other-network') return d.nic_kind;
+  const c = String(d.class || '');
+  return /^0200/.test(c) ? 'ethernet' : /^0280/.test(c) ? 'wifi' : /^02/.test(c) ? 'other-network' : null;
+}
+/* kernel-virtual interface (dummy0, sit0, ...): no driver, no bus, no permanent MAC. lo and VLAN sub-interfaces are not
+   collapsed: lo is the one every host has, a VLAN carries real traffic. */
+function isVirtualIface(i) { return i.name !== 'lo' && !i.vlan_of && !i.driver && !i.bus_info && !i.perm_mac; }
+function ifKind(i) { return i.name === 'lo' ? 'loopback' : i.vlan_of ? 'vlan' : isVirtualIface(i) ? 'virtual' : 'physical'; }
+function controlPath(ifs) { return (ifs || []).find(i => !isVirtualIface(i) && i.driver && i.operstate === 'up' && i.carrier !== false) || null; }
+function devName(d) { return [d.vendor_name, d.device_name].filter(Boolean).join(' ').trim(); }
+/* One alert per network-class PCI function without a bound driver. */
+function nicAlerts(devs, ifs) {
+  const cp = controlPath(ifs), out = [];
+  for (const d of devs || []) {
+    const k = nicKind(d); if (!k || d.driver) continue;
+    const name = devName(d), ids = d.vendor + ':' + d.device;
+    const who = (name ? name + ' (' + ids : ids + ' (') + (name ? ', ' : '') + d.bdf + ')';
+    const label = k === 'wifi' ? 'Wi-Fi adapter' : k === 'ethernet' ? 'Ethernet controller' : 'Network controller';
+    if (cp) out.push({ level: k === 'wifi' ? 'info' : 'warn', text: label + ' ' + who + ' has no Linux driver bound in this image' + (k === 'wifi' ? ': Wi-Fi is not a control path; the control path is ' + cp.name : '; the control path is ' + cp.name) });
+    else out.push({ level: 'bad', text: 'NO CONTROL PATH: ' + label + ' ' + who + ' has no Linux driver bound in this image, and no network interface with a driver is up: this host cannot carry control traffic' });
+  }
+  return out;
+}
+
+/* ---------- base64 (keystrokes for the terminal) ---------- */
+function toB64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 8192) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192)); return btoa(s); }
+function fromB64(s) { return Uint8Array.from(atob(s), c => c.charCodeAt(0)); }
+/* Cut a string into pieces of at most n UTF-16 units without splitting a surrogate pair. */
+function chunkStr(s, n) {
+  const out = [];
+  while (s.length > n) { let k = n; const c = s.charCodeAt(k - 1); if (c >= 0xd800 && c < 0xdc00) k--; out.push(s.slice(0, k)); s = s.slice(k); }
+  if (s.length) out.push(s);
+  return out;
+}
+
+/* ---------- "Copy as Markdown / JSON" ----------
+   A report is {page, sections}; a section is one of
+     {title, pairs:[[k,v]..]}  {title, head:[..], rows:[[..]..], empty?}  {title, text}  {title, note} */
+function fmtLocal(d) {
+  const p = n => (n < 10 ? '0' : '') + n, off = -d.getTimezoneOffset(), a = Math.abs(off);
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + ' ' + (off < 0 ? '-' : '+') + p(Math.floor(a / 60)) + ':' + p(a % 60);
+}
+function mdCell(v) {
+  let s = v === null || v === undefined ? '' : String(v);
+  s = clean(s.replace(/\r?\n/g, ' ')).replace(/[|<`]/g, c => '\\' + c).trim();
+  return s === '' ? '-' : s;
+}
+function mdTable(head, rows) {
+  const line = cells => '| ' + cells.join(' | ') + ' |';
+  const out = [line(head.map(x => (x === '' || x === null || x === undefined ? ' ' : mdCell(x)))), line(head.map(() => '---'))];
+  for (const r of rows) out.push(line(head.map((_, i) => mdCell(r[i]))));
+  return out.join('\n');
+}
+function mdFence(text) {
+  let run = 0; for (const m of String(text).match(/`+/g) || []) run = Math.max(run, m.length);
+  const f = '`'.repeat(Math.max(3, run + 1));
+  return f + '\n' + String(text).replace(/\n+$/, '') + '\n' + f;
+}
+function mdLine(v) { return mdCell(v).replace(/\\\|/g, '|'); }
+function mdDoc(meta, sections) {
+  const out = ['# ' + mdLine(meta.page || 'i7lablinux') + ': ' + mdLine(meta.host || 'unknown host'), '',
+    'Host ' + mdLine(meta.host) + ' | build ' + mdLine(meta.build) + ' | boot id ' + mdLine(meta.boot_id) + ' | ' + mdLine(meta.time), ''];
+  for (const s of sections) {
+    if (!s) continue;
+    out.push('## ' + mdLine(s.title), '');
+    if (s.pairs) out.push(s.pairs.length ? mdTable(['Field', 'Value'], s.pairs) : '_none_');
+    else if (s.head) out.push(s.rows.length ? mdTable(s.head, s.rows) : '_' + (s.empty || 'none') + '_');
+    else if (s.text !== undefined) out.push(s.text === '' ? '_empty_' : mdFence(s.text));
+    else if (s.note !== undefined) out.push(clean(s.note));
+    out.push('');
+  }
+  return out.join('\n').replace(/\n+$/, '\n');
+}
+function jsonDoc(meta, sections) {
+  const raw = v => (v === undefined ? null : v);
+  return JSON.stringify({
+    page: meta.page, host: meta.host, build: meta.build, boot_id: meta.boot_id, time: meta.time,
+    sections: sections.filter(Boolean).map(s => s.pairs ? { title: s.title, fields: s.pairs.map(([k, v]) => ({ name: k, value: raw(v) })) }
+      : s.head ? { title: s.title, columns: s.head, rows: s.rows.map(r => s.head.map((_, i) => raw(r[i]))) }
+      : s.text !== undefined ? { title: s.title, text: s.text } : { title: s.title, note: s.note })
+  }, null, 2) + '\n';
+}
+
+const num = (v, f) => (v === null || v === undefined || isNaN(v) ? null : f(v));
+function expOverview(d, o) {
+  o = o || {};
+  const hello = d.hello || {}, sys = d.system || {}, cpu = d.cpu || {}, mem = d.mem || {}, dmi = d.dmi || {};
+  const memUsed = mem.total_kib ? mem.total_kib - mem.available_kib : 0;
+  const nics = (d.net && d.net.ifaces || []).filter(i => i.name !== 'lo');
+  const smart = new Map((d.smart && d.smart.devices || []).map(s => [s.dev, s]));
+  const temps = sensorSamples(d.thermal || {}).filter(s => s.group === 'temp').map(s => s.value);
+  return [
+    { title: 'Attention', head: ['Level', 'Text'], rows: (o.att || []).map(a => [a.level, a.text]), empty: 'nothing needs attention' },
+    { title: 'Host', pairs: [['Hostname', sys.hostname || hello.hostname], ['State', o.state || hello.state], ['Kernel', sys.kernel], ['Uptime', sys.uptime_s != null ? fmtDur(sys.uptime_s) : null],
+      ['Boot mode', sys.boot_mode], ['Image build', sys.image_build || hello.build], ['Load', sys.load ? sys.load.map(x => x.toFixed(2)).join(' ') : null], ['Agent', hello.version]] },
+    { title: 'Machine', pairs: [['Vendor', dmi.sys_vendor], ['Product', dmi.product_name], ['Serial', dmi.product_serial], ['Board', [dmi.board_vendor, dmi.board_name].filter(Boolean).join(' ')], ['BIOS', [dmi.bios_vendor, dmi.bios_version, dmi.bios_date].filter(Boolean).join(' ')]] },
+    { title: 'CPU', pairs: [['Model', cpu.model_name], ['Sockets/cores/threads', cpu.sockets != null ? cpu.sockets + ' / ' + cpu.cores + ' / ' + cpu.threads : null], ['Frequency', cpu.freq_mhz != null ? Math.round(cpu.freq_mhz) + ' MHz' : null], ['Microcode', cpu.microcode]] },
+    { title: 'Memory', pairs: mem.total_kib ? [['Used', fmtKib(memUsed)], ['Total', fmtKib(mem.total_kib)], ['ECC', mem.ecc]] : [] },
+    { title: 'Temperature', pairs: temps.length ? [['Hottest now', fmt1(Math.max(...temps)) + ' C'], ['Sensors', String(temps.length)]] : [] },
+    { title: 'Network interfaces', head: ['Name', 'MAC', 'State', 'Speed', 'Addresses'], rows: nics.map(i => [i.name, i.mac, i.operstate + (i.carrier === false ? ' (no carrier)' : ''), i.speed_mbps ? i.speed_mbps + ' Mb/s' : null, (i.ipv4 || []).join(', ')]) },
+    { title: 'Disks', head: ['Device', 'Model', 'Size', 'Serial', 'Write gate', 'SMART'], rows: (d.block && d.block.devices || []).map(x => { const sm = smart.get(x.name), v = x.write_safety && x.write_safety.verdict;
+      return [x.name, [x.vendor, x.model].filter(Boolean).join(' '), fmtBytes(x.size_bytes), x.serial, (x.boot_media ? 'boot media, ' : '') + (v || '?'), sm ? sm.verdict : null]; }) },
+  ];
+}
+function expPci(devs, iommu) {
+  const unb = devs.filter(d => nicKind(d) && !d.driver);
+  return [
+    unb.length ? { title: 'Network controllers without a driver', head: ['BDF', 'Kind', 'ID', 'Name'], rows: unb.map(d => [d.bdf, nicKind(d), d.vendor + ':' + d.device, devName(d)]) } : null,
+    { title: 'PCI devices (' + devs.length + ', IOMMU ' + (iommu ? 'on' : 'off') + ')', head: ['BDF', 'Class', 'Device', 'ID', 'Driver', 'Link', 'Max link', 'Parent', 'IOMMU group', 'AER errors'],
+      rows: devs.map(d => [d.bdf, d.class_name, devName(d), d.vendor + ':' + d.device, d.driver, fmtLink(d.link), d.link ? fmtLink({ cur_gen: d.link.max_gen, cur_width: d.link.max_width }) : null, d.parent, d.iommu_group, aerTotal(d) || 0]) },
+  ];
+}
+function expStorage(disks, smartMap) {
+  const out = [];
+  for (const d of disks) {
+    const ws = d.write_safety || {}, sm = smartMap.get(d.name);
+    const flags = [d.kind, d.rotational ? 'rotational' : 'solid state', d.removable ? 'removable' : null, d.read_only ? 'read-only' : null].filter(Boolean);
+    out.push({ title: 'Disk ' + d.name + ' ' + [d.vendor, d.model].filter(Boolean).join(' '), pairs: [
+      ['Size', fmtBytes(d.size_bytes) + ' (' + d.size_bytes + ' B), ' + d.logical_block + '/' + d.physical_block + ' B sectors'], ['Serial', (d.serial || '') + (d.serial_source ? ' [' + d.serial_source + ']' : '')], ['WWID', d.wwid], ['Firmware', d.firmware_rev],
+      ['Flags', flags.join(', ')], ['Boot media', d.boot_media ? 'yes' : 'no'], ['Partition table', d.partition_table ? d.partition_table.kind + (d.partition_table.header_crc_ok === false ? ' (header CRC bad)' : '') : 'none'],
+      ['Mounted', (d.mounts || []).join(', ')], ['Holders', (d.holders || []).join(', ')], ['Write gate', ws.verdict || '?'],
+      ['Write gate reasons', [].concat(ws.absolute || [], ws.overridable || []).map(r => r.code + (r.detail ? ': ' + r.detail : '')).join('; ')]] });
+    if ((d.partitions || []).length) out.push({ title: d.name + ' partitions', head: ['#', 'Name', 'First LBA', 'Last LBA', 'UUID'], rows: d.partitions.map(p => [p.index, p.name, p.first_lba, p.last_lba, p.part_uuid]) });
+    if ((d.signatures || []).length) out.push({ title: d.name + ' signatures', head: ['Kind', 'Label', 'Offset'], rows: d.signatures.map(s => [s.kind, s.label, s.offset]) });
+    if (sm) {
+      out.push({ title: d.name + ' SMART', pairs: [['Verdict', sm.verdict], ['Temperature', sm.temperature_c != null ? fmt1(sm.temperature_c) + ' C' : null], ['Power-on hours', sm.power_on_hours], ['Reasons', (sm.reasons || []).join('; ')]]
+        .concat(sm.nvme ? Object.keys(sm.nvme).map(k => [k.replace(/_/g, ' '), sm.nvme[k]]) : []) });
+      if ((sm.attrs || []).length) out.push({ title: d.name + ' SMART attributes', head: ['ID', 'Name', 'Value', 'Worst', 'Thresh', 'Raw', 'Failing'], rows: sm.attrs.map(a => [a.id, a.name, a.value, a.worst, a.thresh, a.raw, a.failing_now ? 'yes' : 'no']) });
+    }
+  }
+  return out.length ? out : [{ title: 'Disks', head: ['Device'], rows: [], empty: 'no block devices' }];
+}
+/* rates: Map name -> {rx, tx} bytes/s (or null) */
+function expNet(ifs, devs, rates) {
+  rates = rates || new Map();
+  const alerts = nicAlerts(devs || [], ifs || []);
+  const rows = (ifs || []).map(i => { const r = rates.get(i.name) || {};
+    return [i.name + (i.vlan_of ? ' (VLAN ' + i.vlan_id + ' on ' + i.vlan_of + ')' : ''), ifKind(i), i.operstate + (i.carrier === false ? ' (no carrier)' : ''), i.speed_mbps ? i.speed_mbps + ' Mb/s ' + (i.duplex || '') : null,
+      i.mac, i.perm_mac, i.driver, i.bus_info, i.mtu, (i.ipv4 || []).join(', '), (i.ipv6 || []).join(', '),
+      fmtBytes(i.rx_bytes), fmtBytes(i.tx_bytes), num(r.rx, fmtRate), num(r.tx, fmtRate), i.rx_errors + ' / ' + i.tx_errors, i.carrier_changes]; });
+  return [
+    { title: 'Alerts', head: ['Level', 'Text'], rows: alerts.map(a => [a.level, a.text]), empty: 'none' },
+    { title: 'Interfaces', head: ['Name', 'Kind', 'State', 'Speed', 'MAC', 'Permanent MAC', 'Driver', 'Bus', 'MTU', 'IPv4', 'IPv6', 'RX total', 'TX total', 'RX rate', 'TX rate', 'Errors rx / tx', 'Carrier changes'], rows },
+  ];
+}
+function expUsb(devs) {
+  return [{ title: 'USB devices (' + devs.length + ')', head: ['Path', 'ID', 'Name', 'Speed', 'Serial', 'Drivers'],
+    rows: devs.map(d => [d.path, d.vid + ':' + d.pid, [d.manufacturer, d.product].filter(Boolean).join(' ') || '(unnamed)', d.speed_mbps ? d.speed_mbps + ' Mb/s' : null, d.serial, (d.drivers || []).join(' ')]) }];
+}
+/* items: sensorSamples entries; rings: Map key -> number[] */
+function expSensors(items, rings, alarms) {
+  const groups = [['temp', 'Temperatures', 'C'], ['fan', 'Fans', 'rpm'], ['volt', 'Voltages', 'mV'], ['power', 'Power', 'mW']];
+  const out = [];
+  if ((alarms || []).length) out.push({ title: 'Alarms', head: ['Alarm'], rows: alarms.map(a => [a]) });
+  for (const [g, title, unit] of groups) {
+    const rows = items.filter(m => m.group === g).sort((a, b) => b.value - a.value).map(m => { const rg = rings.get(m.key) || [m.value];
+      return [m.label, fmt1(m.value), fmt1(Math.min(...rg)), fmt1(Math.max(...rg)), m.crit != null ? (m.value >= m.crit ? 'over ' + m.crit : 'crit ' + m.crit) : null]; });
+    if (rows.length) out.push({ title: title + ' (' + unit + ')', head: ['Sensor', 'Now', 'Min', 'Max', 'Limit'], rows });
+  }
+  return out.length ? out : [{ title: 'Sensors', head: ['Sensor'], rows: [], empty: 'this host reports no sensors' }];
+}
+function expLog(lines, f, srcLabel) {
+  const shown = logFilter(lines, f);
+  const txt = shown.map(l => (l.ts_us != null ? '[' + (l.ts_us / 1e6).toFixed(3).padStart(10) + '] ' : '') + clean(l.text)).join('\n');
+  return [{ title: 'Filter', pairs: [['Source', srcLabel], ['Minimum level', f.level], ['Search', f.q || ''], ['Tags', [...(f.tags || [])].join(', ')], ['Lines shown', shown.length + ' of ' + lines.length]] },
+    { title: 'Log', text: txt }];
+}
+function expAbout(id, cm, keys, stats) {
+  return [
+    { title: 'Agent', pairs: [['Version', id.version], ['Build', id.build], ['Hostname', id.hostname], ['Boot id', id.boot_id], ['State', id.state], ['Your role', id.role], ['Host keys', id.kid], ['Protocol', id.proto]] },
+    { title: 'This session', pairs: keys.concat([['Verified responses/events', stats.ok], ['Failed verification', stats.bad]]) },
+    { title: 'Commands', head: ['Name', 'Access', 'Streams', 'Usage', 'Summary'], rows: (cm.commands || []).map(c => [c.name + (c.planned ? ' (planned' + (c.since ? ' ' + c.since : '') + ')' : ''), c.access, c.streams ? 'yes' : 'no', c.usage, c.summary]) },
+  ];
+}
+
+return { fmt1, nicKind, isVirtualIface, ifKind, controlPath, devName, nicAlerts, toB64, fromB64, chunkStr, fmtLocal, mdCell, mdTable, mdFence, mdDoc, jsonDoc,
+  expOverview, expPci, expStorage, expNet, expUsb, expSensors, expLog, expAbout, utf8, hex, unhex, ctEq, sha256, hmac, keyId, parseKey, requestMac, responseMac, eventMac, checkEvent, feedLines, feedSSE,
   clean, fmtBytes, fmtKib, fmtRate, fmtDur, fmtLink, buildTree, buildUsbTree, isNic, degraded, aerTotal, partLayout, diskId, writeGate, blkArgs,
   attention, sensorSamples, pushRing, rate, logFilter, decodeStdout };
 })();
@@ -375,8 +555,8 @@ return { utf8, hex, unhex, ctEq, sha256, hmac, keyId, parseKey, requestMac, resp
 const $ = s => document.querySelector(s);
 const t = s => I7.clean(s);
 const PAGES = [['overview', 'Overview'], ['pcie', 'PCIe'], ['storage', 'Storage'], ['network', 'Network'], ['usb', 'USB'],
-  ['sensors', 'Sensors'], ['log', 'Log'], ['actions', 'Actions'], ['about', 'About']];
-const S = { ro: null, admin: null, hello: null, ctl: null, cmds: null, stats: { ok: 0, bad: 0 }, cleanup: null, conn: 'connecting' };
+  ['sensors', 'Sensors'], ['log', 'Log'], ['terminal', 'Terminal'], ['actions', 'Actions'], ['about', 'About']];
+const S = { ro: null, admin: null, hello: null, ctl: null, cmds: null, stats: { ok: 0, bad: 0 }, cleanup: null, conn: 'connecting', exp: null };
 
 /* ---------- storage (per tab; every access guarded) ---------- */
 function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
@@ -409,6 +589,10 @@ function svg(tag, attrs, ...kids) {
   for (const c of kids) if (c) e.append(c.nodeType ? c : document.createTextNode(String(c)));
   return e;
 }
+/* Node.replaceChildren/append stringify null: these never do. */
+function kidsOf(kids) { return kids.flat(Infinity).filter(c => c !== null && c !== undefined && c !== false); }
+function setKids(el, ...kids) { el.replaceChildren(...kidsOf(kids)); }
+function addKids(el, ...kids) { el.append(...kidsOf(kids)); }
 const badge = (text, kind) => h('span', { class: 'badge ' + (kind || '') }, t(text));
 const card = (title, ...kids) => h('section', { class: 'card' }, title ? h('h2', null, title) : null, ...kids);
 function kv(pairs) {
@@ -523,8 +707,40 @@ function poll(fn, ms, signal) {
   run();
   return () => { stop = true; clearTimeout(timer); };
 }
+const EXPORTABLE = new Set(['Overview', 'PCIe topology', 'Storage', 'Network', 'USB', 'Sensors', 'Log', 'About']);
 function pageShell(title, extra) {
-  return h('div', null, h('div', { class: 'row between' }, h('h1', null, title), h('div', { class: 'row' }, extra || null)));
+  return h('div', null, h('div', { class: 'row between' }, h('h1', null, title), h('div', { class: 'row' }, extra || null, EXPORTABLE.has(title) ? exportBar() : null)));
+}
+/* Copy as Markdown / JSON: navigator.clipboard when the origin allows it, else a hidden textarea + execCommand
+   (plain-HTTP origins have no Clipboard API), else a dialog with the text selected. */
+async function copyText(text) {
+  try { if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext !== false) { await navigator.clipboard.writeText(text); return 'clipboard'; } } catch (e) { /* fall through */ }
+  const prev = document.activeElement, ta = h('textarea', { readonly: true, 'aria-hidden': 'true', tabindex: '-1', style: 'position:fixed;left:-9999px;top:0;opacity:0' });
+  ta.value = text; document.body.append(ta); ta.focus({ preventScroll: true }); ta.select(); ta.setSelectionRange(0, text.length);
+  let ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  ta.remove(); if (prev && prev.focus) prev.focus({ preventScroll: true });
+  return ok ? 'execCommand' : null;
+}
+function copyDialog(text, what) {
+  const ta = h('textarea', { readonly: true, rows: 12, style: 'width:100%', 'aria-label': what + ' to copy' }); ta.value = text;
+  const dlg = h('dialog', { 'aria-labelledby': 'cpt' }, h('h2', { id: 'cpt' }, 'Copy ' + what), h('p', null, 'This browser blocked automatic copying. The text is selected: press Ctrl+C (or Cmd+C), then close.'), ta,
+    h('div', { class: 'row', style: 'margin-top:12px;justify-content:flex-end' }, h('button', { type: 'button', class: 'pri', onclick: () => dlg.close() }, 'Close')));
+  dlg.addEventListener('close', () => dlg.remove()); document.body.append(dlg); dlg.showModal(); ta.focus(); ta.select();
+}
+async function doExport(kind, btn) {
+  const m = S.exp && S.exp();
+  if (!m) { toast('Nothing to copy yet: wait for the data to load.', 'warn'); return; }
+  const hello = S.hello || {};
+  const meta = { page: m.page, host: hello.hostname, build: hello.build, boot_id: hello.boot_id, time: I7.fmtLocal(new Date()) };
+  const text = kind === 'md' ? I7.mdDoc(meta, m.sections) : I7.jsonDoc(meta, m.sections), what = (kind === 'md' ? 'Markdown' : 'JSON');
+  const how = await copyText(text);
+  if (!how) { copyDialog(text, what); return; }
+  const old = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = old; }, 1500);
+  toast('Copied ' + what + ' (' + text.split('\n').length + ' lines, ' + text.length + ' characters)', 'ok');
+}
+function exportBar() {
+  const mk = (kind, label) => { const b = h('button', { type: 'button', class: 'copybtn', 'data-copy': kind }, label); b.addEventListener('click', () => doExport(kind, b)); return b; };
+  return h('span', { class: 'row' }, mk('md', 'Copy as Markdown'), mk('json', 'Copy as JSON'));
 }
 function confirmDialog(o) {
   return new Promise(res => {
@@ -587,7 +803,8 @@ pages.overview = function (root, sig) {
     const nics = (d.net && d.net.ifaces || []).filter(i => i.name !== 'lo');
     const disks = d.block && d.block.devices || [];
     const smart = new Map((d.smart && d.smart.devices || []).map(s => [s.dev, s]));
-    body.replaceChildren(
+    S.exp = () => ({ page: 'Overview', sections: I7.expOverview(d, { att: uniq, state: lastSnap && lastSnap.state }) });
+    setKids(body,
       uniq.length ? h('div', { role: 'region', 'aria-label': 'Attention' }, uniq.map(a => h('div', { class: 'alert ' + a.level }, h('strong', null, a.level === 'bad' ? 'Problem: ' : a.level === 'warn' ? 'Warning: ' : 'Note: '), t(a.text)))) : h('div', { class: 'alert info' }, 'Nothing needs attention.'),
       h('div', { class: 'grid' },
         card('Host', kv([['Hostname', sys.hostname || hello.hostname], ['State', lastSnap && lastSnap.state || hello.state], ['Kernel', sys.kernel], ['Uptime', sys.uptime_s != null ? I7.fmtDur(sys.uptime_s) : null],
@@ -601,8 +818,8 @@ pages.overview = function (root, sig) {
           disks.map(x => { const sm = smart.get(x.name), v = x.write_safety && x.write_safety.verdict; return [x.name, [x.vendor, x.model].filter(Boolean).join(' '), I7.fmtBytes(x.size_bytes), x.serial,
             h('span', null, x.boot_media ? badge('boot media', 'warn') : null, ' ', badge(v || '?', v === 'safe' ? 'ok' : v === 'refused' ? 'bad' : 'warn')), sm ? badge(sm.verdict, sm.verdict === 'pass' ? 'ok' : sm.verdict === 'fail' ? 'bad' : 'warn') : null]; })) : h('span', { class: 'dim' }, 'none'))));
   };
-  const load = () => probe(['system', 'cpu', 'mem', 'dmi', 'pci', 'net', 'block', 'smart', 'thermal'], sig).then(r => { draw(r); }).catch(e => { if (e.name !== 'AbortError') body.replaceChildren(errBox(e, load)); });
-  const stopPoll = poll(async () => { try { const r = await probe(['system', 'cpu', 'mem', 'dmi', 'pci', 'net', 'block', 'smart', 'thermal'], sig); draw(r); } catch (e) { if (e.name !== 'AbortError') body.replaceChildren(errBox(e, load)); } }, 8000);
+  const load = () => probe(['system', 'cpu', 'mem', 'dmi', 'pci', 'net', 'block', 'smart', 'thermal'], sig).then(r => { draw(r); }).catch(e => { if (e.name !== 'AbortError') setKids(body, errBox(e, load)); });
+  const stopPoll = poll(async () => { try { const r = await probe(['system', 'cpu', 'mem', 'dmi', 'pci', 'net', 'block', 'smart', 'thermal'], sig); draw(r); } catch (e) { if (e.name !== 'AbortError') setKids(body, errBox(e, load)); } }, 8000);
   /* SSE snapshot (attention + state); the page works without it. */
   (async function feed() {
     while (!sig.aborted) {
@@ -646,16 +863,16 @@ pages.pcie = function (root, sig) {
       d.config_hex ? h('details', null, h('summary', null, 'Config space'), h('pre', null, t(d.config_hex))) : null);
   };
   function draw() {
-    body.replaceChildren();
+    setKids(body);
     const list = devs.filter(match);
     const unb = devs.filter(d => I7.isNic(d) && !d.driver);
-    body.append(unb.length ? h('div', { class: 'alert bad' }, 'Network controllers without a driver: ', unb.map(d => d.bdf + ' ' + d.vendor + ':' + d.device).join(', ')) : null);
-    drawer = detail(); body.append(drawer);
-    body.append(h('section', { class: 'card' }, h('div', { class: 'dim' }, devs.length + ' devices; IOMMU ' + (state.iommu ? 'on' : 'off')),
+    addKids(body, unb.length ? h('div', { class: 'alert bad' }, 'Network controllers without a driver: ', unb.map(d => d.bdf + ' ' + d.vendor + ':' + d.device).join(', ')) : null);
+    drawer = detail(); addKids(body, drawer);
+    addKids(body, h('section', { class: 'card' }, h('div', { class: 'dim' }, devs.length + ' devices; IOMMU ' + (state.iommu ? 'on' : 'off')),
       state.flat ? table(['BDF', 'Class', 'Device', 'Driver', 'Link', ''], list.map(d => [d.bdf, d.class_name, devLabel(d), d.driver, I7.fmtLink(d.link), h('button', { type: 'button', class: 'link', onclick: () => { state.sel = d.bdf; draw(); } }, 'details')]))
         : h('ul', { class: 'tree', role: 'tree' }, I7.buildTree(devs).filter(function f(n) { return match(n.dev) || n.kids.some(f); }).map(node))));
   }
-  const load = () => probe(['pci'], sig).then(r => { if (r.pci.error) { body.replaceChildren(secErr(r.pci, 'pci')); return; } devs = r.pci.devices || []; state.iommu = r.pci.iommu_enabled; draw(); }).catch(e => { if (e.name !== 'AbortError') body.replaceChildren(errBox(e, load)); });
+  const load = () => probe(['pci'], sig).then(r => { if (r.pci.error) { setKids(body, secErr(r.pci, 'pci')); return; } devs = r.pci.devices || []; state.iommu = r.pci.iommu_enabled; S.exp = () => ({ page: 'PCIe', sections: I7.expPci(devs, state.iommu) }); draw(); }).catch(e => { if (e.name !== 'AbortError') setKids(body, errBox(e, load)); });
   filter.addEventListener('input', () => { state.q = filter.value.toLowerCase(); draw(); });
   flatBtn.addEventListener('click', () => { state.flat = !state.flat; flatBtn.setAttribute('aria-pressed', String(state.flat)); draw(); });
   refresh.addEventListener('click', load); load();
@@ -666,12 +883,13 @@ pages.storage = function (root, sig) {
   root.append(pageShell('Storage', refresh), body);
   const busy = new Set();
   const load = () => probe(['block', 'smart'], sig).then(r => {
-    body.replaceChildren(secErr(r.block, 'block'), secErr(r.smart, 'smart'));
+    setKids(body, secErr(r.block, 'block'), secErr(r.smart, 'smart'));
     const smart = new Map((r.smart && r.smart.devices || []).map(s => [s.dev, s]));
     const disks = r.block && r.block.devices || [];
-    if (!disks.length && !r.block.error) body.append(h('p', { class: 'dim' }, 'No block devices.'));
-    disks.forEach(d => body.append(diskCard(d, smart.get(d.name), busy)));
-  }).catch(e => { if (e.name !== 'AbortError') body.replaceChildren(errBox(e, load)); });
+    S.exp = () => ({ page: 'Storage', sections: I7.expStorage(disks, smart) });
+    if (!disks.length && !r.block.error) addKids(body, h('p', { class: 'dim' }, 'No block devices.'));
+    disks.forEach(d => addKids(body, diskCard(d, smart.get(d.name), busy)));
+  }).catch(e => { if (e.name !== 'AbortError') setKids(body, errBox(e, load)); });
   refresh.addEventListener('click', load); load();
   return () => { /* in-flight tests are aborted through sig */ };
 };
@@ -698,7 +916,7 @@ function diskCard(d, sm, busy) {
         h('p', null, 'Any data in the tested regions is lost. The host re-checks every safety rule and refuses if one fails.')) });
       if (!ok) return;
     }
-    ctl = new AbortController(); busy.add(d.name); out.replaceChildren(); prog.hidden = false; prog.value = 0; chartBox.replaceChildren();
+    ctl = new AbortController(); busy.add(d.name); setKids(out); prog.hidden = false; prog.value = 0; chartBox.replaceChildren();
     const rates = [], stopBtn = h('button', { type: 'button', onclick: () => ctl && ctl.abort() }, 'Cancel');
     progTxt.replaceChildren('running ', stopBtn);
     const sigs = AbortSignal.any ? AbortSignal.any([ctl.signal, curSignal()]) : ctl.signal;
@@ -757,9 +975,9 @@ function curSignal() { return S.ctl ? S.ctl.signal : new AbortController().signa
 
 pages.network = function (root, sig) {
   const body = h('div'); root.append(pageShell('Network'), body);
-  const hist = new Map(); let prev = new Map(), prevAt = 0;
+  const hist = new Map(); let prev = new Map(), prevAt = 0, virtOpen = false;
   const stop = poll(async () => {
-    let r; try { r = await probe(['net', 'pci'], sig); } catch (e) { if (e.name !== 'AbortError') body.replaceChildren(errBox(e)); return; }
+    let r; try { r = await probe(['net', 'pci'], sig); } catch (e) { if (e.name !== 'AbortError') setKids(body, errBox(e)); return; }
     const now = Date.now(), dt = now - prevAt; const ifs = r.net && r.net.ifaces || [];
     for (const i of ifs) {
       const p = prev.get(i.name), hs = hist.get(i.name) || { rx: [], tx: [] };
@@ -767,13 +985,20 @@ pages.network = function (root, sig) {
       hist.set(i.name, hs);
     }
     prev = new Map(ifs.map(i => [i.name, i])); prevAt = now;
-    const unb = (r.pci && r.pci.devices || []).filter(d => I7.isNic(d) && !d.driver);
-    body.replaceChildren(secErr(r.net, 'net'), unb.length ? h('div', { class: 'alert bad' }, h('strong', null, 'No driver for: '), unb.map(d => d.bdf + ' ' + d.vendor + ':' + d.device + ' ' + t(I7.clean(d.device_name || ''))).join('; '), '. This NIC cannot carry control traffic.') : null,
-      h('div', { class: 'grid' }, ifs.map(i => { const hs = hist.get(i.name), lr = hs.rx.filter(x => x !== null).pop(), lt = hs.tx.filter(x => x !== null).pop();
-        return card(t(i.name) + (i.vlan_of ? '  (VLAN ' + i.vlan_id + ' on ' + t(i.vlan_of) + ')' : ''), h('div', { class: 'row' }, badge(i.operstate, i.operstate === 'up' ? 'ok' : ''), i.carrier === false ? badge('no carrier', 'warn') : null, i.speed_mbps ? badge(i.speed_mbps + ' Mb/s ' + (i.duplex || ''), '') : null),
-          kv([['MAC', i.mac], ['Permanent MAC', i.perm_mac && i.perm_mac !== i.mac ? i.perm_mac : null], ['Driver', i.driver], ['Bus', i.bus_info], ['MTU', String(i.mtu)], ['IPv4', (i.ipv4 || []).join(', ')], ['IPv6', (i.ipv6 || []).join(', ')],
-            ['Totals', 'rx ' + I7.fmtBytes(i.rx_bytes) + ' / tx ' + I7.fmtBytes(i.tx_bytes)], ['Errors', 'rx ' + i.rx_errors + ' / tx ' + i.tx_errors], ['Carrier changes', String(i.carrier_changes)]]),
-          lineChart([{ name: 'rx', values: hs.rx }, { name: 'tx', values: hs.tx }], { label: 'Throughput of ' + i.name, h: 100, min: 0, n: 60, xlabel: 'bytes/s, last 60 samples' }), legend([{ name: 'rx', last: lr != null ? I7.fmtRate(lr) : null }, { name: 'tx', last: lt != null ? I7.fmtRate(lt) : null }])); })));
+    const devs = r.pci && r.pci.devices || [], alerts = I7.nicAlerts(devs, ifs);
+    const rates = new Map(ifs.map(i => { const hs = hist.get(i.name); return [i.name, { rx: hs.rx.filter(x => x !== null).pop(), tx: hs.tx.filter(x => x !== null).pop() }]; }));
+    S.exp = () => ({ page: 'Network', sections: I7.expNet(ifs, devs, rates) });
+    const ifCard = i => { const hs = hist.get(i.name), lr = hs.rx.filter(x => x !== null).pop(), lt = hs.tx.filter(x => x !== null).pop();
+      return card(t(i.name) + (i.vlan_of ? '  (VLAN ' + i.vlan_id + ' on ' + t(i.vlan_of) + ')' : ''), h('div', { class: 'row' }, badge(i.operstate, i.operstate === 'up' ? 'ok' : ''), i.carrier === false ? badge('no carrier', 'warn') : null, i.speed_mbps ? badge(i.speed_mbps + ' Mb/s ' + (i.duplex || ''), '') : null),
+        kv([['MAC', i.mac], ['Permanent MAC', i.perm_mac && i.perm_mac !== i.mac ? i.perm_mac : null], ['Driver', i.driver], ['Bus', i.bus_info], ['MTU', String(i.mtu)], ['IPv4', (i.ipv4 || []).join(', ')], ['IPv6', (i.ipv6 || []).join(', ')],
+          ['Totals', 'rx ' + I7.fmtBytes(i.rx_bytes) + ' / tx ' + I7.fmtBytes(i.tx_bytes)], ['Errors', 'rx ' + i.rx_errors + ' / tx ' + i.tx_errors], ['Carrier changes', String(i.carrier_changes)]]),
+        lineChart([{ name: 'rx', values: hs.rx }, { name: 'tx', values: hs.tx }], { label: 'Throughput of ' + i.name, h: 100, min: 0, n: 60, xlabel: 'bytes/s, last 60 samples' }), legend([{ name: 'rx', last: lr != null ? I7.fmtRate(lr) : null }, { name: 'tx', last: lt != null ? I7.fmtRate(lt) : null }])); };
+    const real = ifs.filter(i => !I7.isVirtualIface(i)), virt = ifs.filter(I7.isVirtualIface);
+    const vd = h('details', { class: 'virt', open: virtOpen }, h('summary', null, 'virtual interfaces (' + virt.length + ')'), h('div', { class: 'grid' }, virt.map(ifCard)));
+    vd.addEventListener('toggle', () => { virtOpen = vd.open; });
+    setKids(body, secErr(r.net, 'net'),
+      alerts.map(a => h('div', { class: 'alert ' + a.level, role: a.level === 'bad' ? 'alert' : null }, h('strong', null, a.level === 'bad' ? 'Problem: ' : a.level === 'warn' ? 'Warning: ' : 'Note: '), t(a.text))),
+      h('div', { class: 'grid' }, real.map(ifCard)), virt.length ? vd : null);
   }, 2000);
   return stop;
 };
@@ -782,8 +1007,8 @@ pages.usb = function (root, sig) {
   const body = h('div'), refresh = h('button', { type: 'button' }, 'Refresh'); root.append(pageShell('USB', refresh), body);
   const node = n => { const d = n.dev, lab = h('span', { class: 'trow' }, h('code', null, d.vid + ':' + d.pid), h('strong', null, t([d.manufacturer, d.product].filter(Boolean).join(' ') || '(unnamed)')), h('span', { class: 'dim' }, d.path + (d.speed_mbps ? ', ' + d.speed_mbps + ' Mb/s' : '') + (d.serial ? ', serial ' + t(d.serial) : '') + ((d.drivers || []).length ? ', ' + t(d.drivers.join(' ')) : '')));
     return n.kids.length ? h('li', { role: 'treeitem' }, h('details', { open: true }, h('summary', null, lab), h('ul', { role: 'group' }, n.kids.map(node)))) : h('li', { role: 'treeitem' }, h('div', { class: 'leaf' }, lab)); };
-  const load = () => probe(['usb'], sig).then(r => { const devs = r.usb.devices || []; body.replaceChildren(secErr(r.usb, 'usb'), card(devs.length + ' devices', devs.length ? h('ul', { class: 'tree', role: 'tree' }, I7.buildUsbTree(devs).map(node)) : h('span', { class: 'dim' }, 'none'))); })
-    .catch(e => { if (e.name !== 'AbortError') body.replaceChildren(errBox(e, load)); });
+  const load = () => probe(['usb'], sig).then(r => { const devs = r.usb.devices || []; S.exp = () => ({ page: 'USB', sections: I7.expUsb(devs) }); setKids(body, secErr(r.usb, 'usb'), card(devs.length + ' devices', devs.length ? h('ul', { class: 'tree', role: 'tree' }, I7.buildUsbTree(devs).map(node)) : h('span', { class: 'dim' }, 'none'))); })
+    .catch(e => { if (e.name !== 'AbortError') setKids(body, errBox(e, load)); });
   refresh.addEventListener('click', load); load();
 };
 
@@ -795,11 +1020,12 @@ pages.sensors = function (root, sig) {
   const groups = [['temp', 'Temperatures', 'C'], ['fan', 'Fans', 'rpm'], ['volt', 'Voltages', 'mV'], ['power', 'Power', 'mW']];
   const stop = poll(async () => {
     if (paused) return;
-    let r; try { r = await probe(['thermal'], sig); } catch (e) { if (e.name !== 'AbortError') body.replaceChildren(errBox(e)); return; }
-    if (r.thermal.error) { body.replaceChildren(secErr(r.thermal, 'thermal')); return; }
+    let r; try { r = await probe(['thermal'], sig); } catch (e) { if (e.name !== 'AbortError') setKids(body, errBox(e)); return; }
+    if (r.thermal.error) { setKids(body, secErr(r.thermal, 'thermal')); return; }
     for (const s of I7.sensorSamples(r.thermal)) { meta.set(s.key, s); I7.pushRing(rings.get(s.key) || rings.set(s.key, []).get(s.key), s.value, 120); }
     const alarms = r.thermal.alarms || [];
-    body.replaceChildren(alarms.length ? h('div', { class: 'alert bad', role: 'alert' }, alarms.map(a => h('div', null, 'Alarm: ', t(a)))) : null,
+    S.exp = () => ({ page: 'Sensors', sections: I7.expSensors([...meta.values()], rings, alarms) });
+    setKids(body, alarms.length ? h('div', { class: 'alert bad', role: 'alert' }, alarms.map(a => h('div', null, 'Alarm: ', t(a)))) : null,
       !meta.size ? h('div', { class: 'alert info' }, 'This host reports no sensors.') : null,
       h('div', { class: 'grid' }, groups.map(([g, title, unit]) => {
         const items = [...meta.values()].filter(m => m.group === g); if (!items.length) return null;
@@ -829,6 +1055,7 @@ pages.log = function (root, sig) {
     chips.replaceChildren(...[...tags].sort().map(tag => { const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(f.tags.has(tag)) }, t(tag)); b.addEventListener('click', () => { f.tags.has(tag) ? f.tags.delete(tag) : f.tags.add(tag); draw(); }); return b; }));
     status.textContent = shown.length + ' of ' + lines.length + ' lines';
   };
+  S.exp = () => ({ page: 'Log', sections: I7.expLog(lines, f, srcSel.options[srcSel.selectedIndex].text) });
   const textToLines = txt => txt.split('\n').filter(x => x.length).map((x, i) => ({ seq: i, level: 6, text: x, tags: [] }));
   const fetchLog = async () => {
     if (paused) return;
@@ -849,6 +1076,85 @@ pages.log = function (root, sig) {
   return poll(fetchLog, 3000);
 };
 
+/* ---------- Terminal: xterm.js (vendored, served by this host) on a PTY over signed HTTP ----------
+   POST shell/open -> id; GET shell/<id>/out is a sealed SSE stream (every event mac-checked like all streams);
+   keystrokes go out as signed POST shell/<id>/in (base64 body), one request at a time so order is kept. */
+const loaded = {};
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    if (loaded[src]) { res(); return; }
+    const e = document.createElement('script'); e.src = src;
+    e.onload = () => { loaded[src] = true; res(); }; e.onerror = () => rej(new Error('cannot load ' + src + ' from this host'));
+    document.head.append(e);
+  });
+}
+function loadCss(href) {
+  if (loaded[href]) return; loaded[href] = true;
+  document.head.append(h('link', { rel: 'stylesheet', href }));
+}
+pages.terminal = function (root, sig) {
+  const isAdmin = !!S.admin;
+  const status = h('span', { class: 'dim', role: 'status', 'aria-live': 'polite' });
+  const openBtn = h('button', { type: 'button', class: 'pri', id: 'termopen', disabled: !isAdmin }, 'Open shell');
+  const closeBtn = h('button', { type: 'button', id: 'termclose', disabled: true }, 'Close shell');
+  const box = h('div', { class: 'term-box', id: 'termbox', hidden: true });
+  root.append(pageShell('Terminal'),
+    h('div', { class: 'alert bad', id: 'termwarn', role: 'note' }, h('strong', null, 'Unencrypted HTTP: '), 'everything you type and see is visible on the network; use only on a trusted LAN.'),
+    isAdmin ? null : h('div', { class: 'alert warn', id: 'termdeny' }, h('strong', null, 'Admin key required. '), 'A shell can run anything on this host, so only the admin key may open one. This page is signed with the read-only key. Load the admin key on the ',
+      h('a', { href: '#/actions' }, 'Actions page'), ' to enable the terminal.'),
+    h('div', { class: 'row', style: 'margin:8px 0' }, openBtn, closeBtn, status),
+    h('p', { class: 'dim' }, 'Runs i7labsh on a pty. Limits: 2 shells at a time, closed after 10 minutes without typing, and when you leave this page. Everything is audited.'),
+    box);
+  let sh = null;
+  const fireClose = s => { if (s.closing) return; s.closing = true; api('POST', '/api/v1/shell/' + s.id + '/close', { admin: true }).catch(() => { /* gone already */ }); };
+  const end = (s, why) => {
+    if (s.dead) return; s.dead = true;
+    try { s.term.write('\r\n\x1b[33m[session ended: ' + why + ']\x1b[0m\r\n'); } catch (e) { /* disposed */ }
+    s.ctl.abort(); status.textContent = 'session ended (' + why + ')'; openBtn.disabled = !S.admin; closeBtn.disabled = true; if (sh === s) sh = null;
+  };
+  const pump = async s => {
+    if (s.sending || s.dead) return; s.sending = true;
+    try {
+      while (s.q.length && !s.dead) {
+        const piece = I7.chunkStr(s.q, 4096)[0]; s.q = s.q.slice(piece.length);
+        await api('POST', '/api/v1/shell/' + s.id + '/in', { admin: true, body: I7.toB64(I7.utf8(piece)), signal: s.ctl.signal });
+      }
+    } catch (e) { if (e.name !== 'AbortError') end(s, 'input failed: ' + (e.message || e)); }
+    s.sending = false;
+  };
+  let rt = null;
+  const sendSize = s => { clearTimeout(rt); rt = setTimeout(() => { if (!s.dead) api('POST', '/api/v1/shell/' + s.id + '/resize?cols=' + s.term.cols + '&rows=' + s.term.rows, { admin: true, signal: s.ctl.signal }).catch(() => { /* next resize retries */ }); }, 150); };
+  const begin = async () => {
+    if (sh || !S.admin) return;
+    openBtn.disabled = true; status.textContent = 'starting...';
+    let term;
+    try {
+      loadCss('/vendor/xterm.css'); await loadScript('/vendor/xterm.js'); await loadScript('/vendor/addon-fit.js');
+      term = new Terminal({ cursorBlink: true, fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 14, scrollback: 2000, theme: { background: '#0f1216', foreground: '#e4e7ec' } });
+      const fit = new FitAddon.FitAddon(); term.loadAddon(fit);
+      box.hidden = false; term.open(box); fit.fit();
+      const r = await api('POST', '/api/v1/shell/open?cols=' + term.cols + '&rows=' + term.rows, { admin: true, signal: sig });
+      const s = sh = { id: r.id, term, fit, ctl: new AbortController(), q: '', sending: false, dead: false, closing: false };
+      closeBtn.disabled = false; status.textContent = 'connected (shell ' + t(r.id.slice(0, 8)) + ')';
+      term.onData(d => { s.q += d; pump(s); });
+      term.onResize(() => sendSize(s));
+      if (window.ResizeObserver) { const ro = new ResizeObserver(() => { try { fit.fit(); } catch (e) { /* hidden */ } }); ro.observe(box); s.ro = ro; }
+      term.focus();
+      stream('GET', '/api/v1/shell/' + s.id + '/out', { sse: true, admin: true, signal: s.ctl.signal, onEvent: ev => {
+        if (ev.event === 'out' && typeof ev.b64 === 'string') term.write(I7.fromB64(ev.b64));
+        else if (ev.event === 'exit') end(s, ev.reason === 'exit' ? 'shell exited' + (ev.code != null ? ' with status ' + ev.code : '') : ev.reason === 'idle' ? 'idle for 10 minutes' : String(ev.reason));
+      } }).then(() => end(s, 'connection closed')).catch(e => { if (e.name !== 'AbortError') end(s, e.message || String(e)); });
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      status.textContent = ''; openBtn.disabled = !S.admin; if (term) { try { term.dispose(); } catch (x) { /* ignore */ } } box.hidden = true;
+      addKids(root, errBox(e, () => { route(); }));
+    }
+  };
+  openBtn.addEventListener('click', begin);
+  closeBtn.addEventListener('click', () => { if (sh) { fireClose(sh); end(sh, 'closed by you'); } });
+  return () => { if (sh) { const s = sh; fireClose(s); s.dead = true; if (s.ro) s.ro.disconnect(); try { s.term.dispose(); } catch (e) { /* ignore */ } } };
+};
+
 const ACTIONS = [
   { cmd: 'ping', title: 'Ping', desc: 'Round trip, uptime and boot id.', admin: false, fields: [] },
   { cmd: 'identify', title: 'Identify host', desc: 'Blink LEDs and show a banner on the console.', admin: true, fields: [{ n: 'seconds', label: 'Seconds', def: '30', flag: '--seconds' }], extra: [{ label: 'Stop', args: ['--stop'] }] },
@@ -865,19 +1171,19 @@ pages.actions = function (root, sig) {
   const grid = h('div', { class: 'grid' });
   const loadAdmin = async () => {
     const k = I7.parseKey(adminIn.value);
-    if (!k || k.role !== 'admin') { adminMsg.replaceChildren(h('div', { class: 'alert bad' }, 'That is not an admin key line (i7k1:admin:<64 hex>).')); return; }
+    if (!k || k.role !== 'admin') { setKids(adminMsg, h('div', { class: 'alert bad' }, 'That is not an admin key line (i7k1:admin:<64 hex>).')); return; }
     const prev = S.admin; S.admin = k;
     try { const r = await cmd('id', [], { admin: true, signal: sig }); saveKey(k); adminIn.value = '';
-      adminMsg.replaceChildren(r.role === 'admin' ? h('div', { class: 'alert info' }, 'Admin key accepted (' + k.id + ').') : h('div', { class: 'alert warn' }, 'The host accepted the key but treats it as "' + t(r.role) + '".'));
+      setKids(adminMsg, r.role === 'admin' ? h('div', { class: 'alert info' }, 'Admin key accepted (' + k.id + ').') : h('div', { class: 'alert warn' }, 'The host accepted the key but treats it as "' + t(r.role) + '".'));
       whoami(); renderActions(); }
-    catch (e) { S.admin = prev; adminMsg.replaceChildren(errBox(e)); }
+    catch (e) { S.admin = prev; setKids(adminMsg, errBox(e)); }
   };
-  const forget = () => { ssSet('i7lab.admin', null); S.admin = null; whoami(); renderActions(); adminMsg.replaceChildren(h('div', { class: 'alert info' }, 'Admin key forgotten.')); };
+  const forget = () => { ssSet('i7lab.admin', null); S.admin = null; whoami(); renderActions(); setKids(adminMsg, h('div', { class: 'alert info' }, 'Admin key forgotten.')); };
   const adminCard = h('section', { class: 'card wide' }, h('h2', null, 'Admin key'), h('p', { class: 'dim' }, 'The SPA signs reads with the read-only key. Load the admin key only when you need to change something; it stays in this tab (sessionStorage) and is never sent to the host, only HMACs are.'),
     h('div', { class: 'row' }, h('label', { for: 'adm' }, 'Admin key line'), adminIn, h('button', { type: 'button', class: 'pri', onclick: loadAdmin }, 'Load admin key'), h('button', { type: 'button', onclick: forget }, 'Forget admin key')), adminMsg);
   root.append(pageShell('Actions'), adminCard, grid);
   const renderActions = () => {
-    grid.replaceChildren(...ACTIONS.map(a => {
+    setKids(grid, ...ACTIONS.map(a => {
       const avail = !S.cmds || S.cmds.has(a.cmd), vals = {}, res = h('div', { 'aria-live': 'polite' });
       const inputs = a.fields.map(fl => { const i = h('input', { type: 'text', id: 'a-' + a.cmd + fl.n, value: fl.def }); vals[fl.n] = fl.def; i.addEventListener('input', () => { vals[fl.n] = i.value; }); return h('label', { class: 'blk', for: i.id }, fl.label, i); });
       const chk = (a.checks || []).map(([fl, lab]) => { const c = h('input', { type: 'checkbox' }); c.addEventListener('change', () => { vals[fl] = c.checked; }); return h('label', null, c, lab); });
@@ -886,9 +1192,9 @@ pages.actions = function (root, sig) {
         if (!extra) { for (const fl of a.fields) { const v = vals[fl.n]; if (v === '' || v === undefined) continue; if (fl.pos) args = args.concat(fl.pre || [], v.split(/\s+/)); else args.push(fl.flag, v); }
           for (const [fl] of (a.checks || [])) if (vals[fl]) args.push(fl); }
         if (a.danger) { const host = (S.hello && S.hello.hostname) || 'host'; if (!await confirmDialog({ title: a.title + ' ' + host + '?', danger: true, confirmText: a.title, typed: host, body: h('p', null, t(a.desc), ' Args: ', h('code', null, t(args.join(' ') || '(none)'))) })) return; }
-        res.replaceChildren(h('span', { class: 'dim' }, 'running...'));
-        try { const r = await cmd(a.cmd, args, { admin: a.admin, signal: sig }); res.replaceChildren(h('pre', null, t(JSON.stringify(r, null, 1)))); toast(a.title + ' ok', 'ok'); }
-        catch (e) { if (e.name !== 'AbortError') res.replaceChildren(errBox(e)); }
+        setKids(res, h('span', { class: 'dim' }, 'running...'));
+        try { const r = await cmd(a.cmd, args, { admin: a.admin, signal: sig }); setKids(res, h('pre', null, t(JSON.stringify(r, null, 1)))); toast(a.title + ' ok', 'ok'); }
+        catch (e) { if (e.name !== 'AbortError') setKids(res, errBox(e)); }
       };
       const dis = !avail || (a.admin && !S.admin);
       return h('section', { class: 'card' + (a.danger ? ' danger-zone' : '') }, h('h2', null, a.title, ' ', a.admin ? badge('admin', '') : badge('read-only', 'ok')), h('p', { class: 'dim' }, a.desc),
@@ -905,13 +1211,14 @@ pages.about = function (root, sig) {
   const body = h('div'); root.append(pageShell('About'), body);
   Promise.all([cmd('id', [], { signal: sig }), cmd('cmds', [], { signal: sig })]).then(([id, cm]) => {
     const keys = [['Read-only key', S.ro], ['Admin key', S.admin]].map(([n, k]) => [n, k ? k.role + ' ' + k.id : 'not loaded']);
-    body.replaceChildren(h('div', { class: 'grid' },
+    S.exp = () => ({ page: 'About', sections: I7.expAbout(id, cm, keys, S.stats) });
+    setKids(body, h('div', { class: 'grid' },
       card('Agent', kv([['Version', id.version], ['Build', id.build], ['Hostname', id.hostname], ['Boot id', id.boot_id], ['State', id.state], ['Your role', id.role], ['Host keys', id.kid], ['Protocol', String(id.proto)]])),
-      card('This session', kv(keys.concat([['Verified responses/events', String(S.stats.ok)], ['Failed verification', String(S.stats.bad)], ['Page', 'single file, no external requests']]))),
+      card('This session', kv(keys.concat([['Verified responses/events', String(S.stats.ok)], ['Failed verification', String(S.stats.bad)], ['Page', 'single file; xterm.js is fetched from this host only when the Terminal tab is opened']]))),
       card('API', h('p', null, 'Everything here uses the signed JSON API; see ', h('a', { href: '/api/v1/openapi.json' }, 'openapi.json'), ' (open). Requests are authenticated and the host proves itself, but nothing is encrypted (no TLS in v0.x).'),
         h('p', { class: 'dim' }, 'Command line: i7labctl --http HOST:8080 CMD ... or i7labctl --ether MAC --cmd CMD (no IP needed).')),
       h('section', { class: 'card wide' }, h('h2', null, 'Commands'), table(['Name', 'Access', 'Streams', 'Usage', 'Summary'], (cm.commands || []).map(c => [c.name + (c.planned ? ' (planned' + (c.since ? ' ' + c.since : '') + ')' : ''), c.access, c.streams ? 'yes' : '', c.usage, c.summary])))));
-  }).catch(e => { if (e.name !== 'AbortError') body.replaceChildren(errBox(e)); });
+  }).catch(e => { if (e.name !== 'AbortError') setKids(body, errBox(e)); });
 };
 
 /* ---------- login, header, router ---------- */
@@ -928,9 +1235,9 @@ function loginPage(root) {
   const enter = async (k) => {
     S.ro = k.role === 'ro' ? k : S.ro; if (k.role === 'admin') S.admin = k;
     try { const r = await cmd('id', []); saveKey(k); S.hello = Object.assign({}, S.hello, { hostname: r.hostname }); whoami(); location.hash = '#/overview'; route(); }
-    catch (e) { if (k.role === 'ro') S.ro = null; else S.admin = null; msg.replaceChildren(errBox(e)); }
+    catch (e) { if (k.role === 'ro') S.ro = null; else S.admin = null; setKids(msg, errBox(e)); }
   };
-  const go = () => { const k = I7.parseKey(ta.value); if (!k) { msg.replaceChildren(h('div', { class: 'alert bad' }, 'A key line looks like i7k1:ro:<64 hex characters>.')); return; } enter(k); };
+  const go = () => { const k = I7.parseKey(ta.value); if (!k) { setKids(msg, h('div', { class: 'alert bad' }, 'A key line looks like i7k1:ro:<64 hex characters>.')); return; } enter(k); };
   ta.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
   root.append(h('div', { class: 'login' }, h('h1', null, 'Connect to ' + t(S.hello && S.hello.hostname || 'this host')),
     S.hello && S.hello.error ? h('div', { class: 'alert bad' }, 'Cannot reach the agent: ' + t(S.hello.error)) : null,
@@ -943,6 +1250,7 @@ let routeSeq = 0;
 function route() {
   if (S.cleanup) { try { S.cleanup(); } catch (e) { /* ignore */ } S.cleanup = null; }
   if (S.ctl) S.ctl.abort();
+  S.exp = null;
   S.ctl = new AbortController(); const sig = S.ctl.signal, seq = ++routeSeq;
   const name = (location.hash.replace(/^#\/?/, '') || 'overview').split('?')[0];
   const root = $('#main'); root.replaceChildren();

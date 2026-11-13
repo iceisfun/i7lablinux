@@ -120,7 +120,8 @@ impl Page for PciPage {
         let live: Vec<Line> = vec![
             kv("Devices", pci.devices.len().to_string(), t),
             kv("With driver", pci.devices.iter().filter(|d| d.driver.is_some()).count().to_string(), t),
-            kv("NICs no driver", pci.unbound_nics().len().to_string(), t),
+            kv("Ethernet no driver", pci.unbound_ethernet().len().to_string(), t),
+            kv("Wi-Fi no driver", pci.unbound_wifi().len().to_string(), t),
             kv("Degraded", degraded.to_string(), t),
             kv("AER errors", aer.to_string(), t),
             kv("IOMMU", if pci.iommu_enabled { "enabled" } else { "off" }, t),

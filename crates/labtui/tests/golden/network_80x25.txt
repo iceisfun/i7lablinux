@@ -1,4 +1,4 @@
- i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.1… attention: 7
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.1… attention: 8
  Overview   PCIe   Storage  [Network]  USB   Sensors   Log   Actions
 ┌─ Interfaces ─────────────────────────────────────────────────────────────────┐
 │Iface      Link   Speed     IPv4       MAC                       RX         TX│

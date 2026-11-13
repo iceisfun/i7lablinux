@@ -12,7 +12,8 @@ works offline from the host itself, which is the only place it is needed. A fram
 the image has no Node, the page must keep working on a machine with nothing else, and a 100 KB file is easy to audit.
 
 Pages: Overview, PCIe, Storage (partition bar, write-gate verdicts, read and write test launcher), Network, USB, Sensors,
-Log, Actions, About. Light and dark follow the OS; it works from phone width up.
+Log, Terminal, Actions, About. Every data tab has Copy as Markdown and Copy as JSON buttons (clipboard API, with a
+hidden-textarea fallback for plain-HTTP origins). Light and dark follow the OS; it works from phone width up.
 
 ## Listening
 
@@ -32,6 +33,12 @@ Log, Actions, About. Light and dark follow the OS; it works from phone width up.
 | `GET /api/v1/overview` | signed | snapshot JSON |
 | `GET /api/v1/events` | signed | server-sent events: snapshots, audit, jobs |
 | `GET /api/v1/file`, `PUT /api/v1/file` | signed | raw download and upload |
+| `POST /api/v1/shell/open[?cols=&rows=]` | signed, admin | start i7labsh on a pty, returns `{"id"}` |
+| `GET /api/v1/shell/<id>/out` | signed, admin | sealed SSE: `{"event":"out","b64":..}` chunks, ends with `{"event":"exit","reason":..,"code":..}` |
+| `POST /api/v1/shell/<id>/in` | signed, admin | keystrokes: base64 text body, or raw bytes with `Content-Type: application/octet-stream`; at most 64 KiB |
+| `POST /api/v1/shell/<id>/resize` | signed, admin | `?cols=N&rows=N` or JSON `{"cols":N,"rows":N}`, 1..1000 |
+| `POST /api/v1/shell/<id>/close` | signed, admin | end the shell |
+| `GET /vendor/xterm.js`, `xterm.css`, `addon-fit.js` | open | embedded xterm.js 5.5.0 + fit addon 0.10.0 (MIT), loaded by the Terminal tab only |
 
 ## Authentication
 
@@ -47,9 +54,29 @@ crosses the wire and there is no token file.
 plain-HTTP origins). The page asks for a key line and defaults to the **read-only** key; the admin key is loaded explicitly
 on the Actions page and kept in `sessionStorage` for the tab only.
 
+## Web terminal
+
+A shell in the browser without WebSocket: `shell/open` starts `/bin/i7labsh` as session leader on a pty; the page reads
+`shell/<id>/out` (the same sealed SSE as `events`: per-event `seq` + `mac`, so a forged or reordered byte of terminal
+output is rejected) and writes keystrokes with signed `shell/<id>/in` posts. Requests and responses are signed exactly
+like every other call; the key never leaves the page.
+
+* **Admin key only.** The read-only key gets 403 `EPERM` on every shell route (audited as a denied attempt), and the page
+  shows the tab disabled with an explanation.
+* **Limits.** 2 concurrent shells (503 `BUSY` beyond); 10 minutes without a keystroke or resize closes the shell
+  (`reason":"idle"`); a shell whose out stream is not attached within 60 s is dropped; closing the out stream (tab
+  closed, network gone) closes the shell; one output stream per shell; output is buffered at most 256 KiB and a slow
+  browser makes the shell block on the pty (backpressure, nothing dropped); one input post is at most 64 KiB.
+* **Audit.** `shell.open` and `shell.close` (with the reason: `closed`, `idle`, `disconnect`, `unattached`, `exit N`) go
+  through the normal audit log and `logs --audit -f`; a refused or failed open is audited too.
+* **No encryption.** There is no TLS: everything typed and everything shown is readable on the network. The tab carries a
+  permanent warning ("unencrypted HTTP ... use only on a trusted LAN"). An admin shell is root on the host: keep it on a lab
+  LAN, or use the ether protocol (`i7labctl shell`) which is also unencrypted but needs L2 adjacency.
+* **CSP.** `script-src 'nonce-..' 'self'`: `'self'` is there for `/vendor/*.js`, which is embedded in the binary.
+
 ## Hardening of the page
 
-Content-Security-Policy `default-src 'self'; script-src 'nonce-<per-boot>'; style-src 'self' 'unsafe-inline'`, no inline
+Content-Security-Policy `default-src 'self'; script-src 'nonce-<per-boot>' 'self'; style-src 'self' 'unsafe-inline'`, no inline
 event handlers, every hardware string inserted with `textContent` and sanitised, and a render test feeds `<img onerror>` and
 `<script>` through the model, serial and DMI fields. The write-test form is UX only: the host re-decides in the write gate.
 
