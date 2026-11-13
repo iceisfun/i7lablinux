@@ -4,6 +4,7 @@
 
 pub mod enumerate;
 pub mod guard;
+pub mod image;
 pub mod ioctl;
 pub mod parttable;
 pub mod signatures;

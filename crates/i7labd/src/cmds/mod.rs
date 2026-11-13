@@ -4,6 +4,7 @@
 use crate::registry::Handler;
 
 pub mod blk;
+pub mod blkimage;
 pub mod console;
 pub mod core;
 pub mod exec;
@@ -18,7 +19,7 @@ pub mod svc;
 
 pub fn handler_for(name: &str) -> Option<Handler> {
     [
-        core::TABLE, probe::TABLE, blk::TABLE, net::TABLE, exec::TABLE, files::TABLE, power::TABLE, svc::TABLE,
+        core::TABLE, probe::TABLE, blk::TABLE, blkimage::TABLE, net::TABLE, exec::TABLE, files::TABLE, power::TABLE, svc::TABLE,
         logs::TABLE, console::TABLE, keys::TABLE, jobs::TABLE,
     ]
     .iter()

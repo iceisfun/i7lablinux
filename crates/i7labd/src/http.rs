@@ -61,6 +61,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/v1/events", "SSE: snapshot every 2 s, audit/job/link events"),
     ("GET", "/api/v1/file?path=P[&offset=N&len=N]", "raw download, proof as trailer"),
     ("PUT", "/api/v1/file?path=P[&mode=0644&mkdirs=1&offset=N]", "raw upload, X-Lab-Body-Sha256 required"),
+    ("PUT", "/api/v1/blk-image?a=DEV&a=--size&a=N..", "admin: one batch of blk.image records (see PROTOCOL.md 7.1), X-Lab-Body-Sha256 required"),
     ("GET", "/api/v1/openapi.json", "generated from the catalogue (open)"),
     ("POST", "/api/v1/shell/open[?cols=N&rows=N]", "admin: start i7labsh on a pty -> {id}; max 2 shells, 10 min idle"),
     ("GET", "/api/v1/shell/<id>/out", "admin: sealed SSE of base64 pty output, ends with an exit event"),
@@ -468,13 +469,14 @@ impl Sink for FileSink {
 }
 
 /// Upload source: a thread reads exactly `len` body bytes off the socket into the request's input channel.
-fn feed_body(r: &mut BufReader<TcpStream>, len: u64, tx: &std::sync::mpsc::SyncSender<Vec<u8>>, done: &AtomicBool) -> bool {
+/// Returns (whole body delivered, bytes of the body still unread on the socket).
+fn feed_body(r: &mut BufReader<TcpStream>, len: u64, tx: &std::sync::mpsc::SyncSender<Vec<u8>>, done: &AtomicBool) -> (bool, u64) {
     let mut left = len;
     let mut buf = vec![0u8; 64 * 1024];
     while left > 0 {
         let want = left.min(buf.len() as u64) as usize;
         match r.read(&mut buf[..want]) {
-            Ok(0) => return false,
+            Ok(0) => return (false, left),
             Ok(n) => {
                 left -= n as u64;
                 let mut chunk = Some(buf[..n].to_vec());
@@ -483,24 +485,24 @@ fn feed_body(r: &mut BufReader<TcpStream>, len: u64, tx: &std::sync::mpsc::SyncS
                         Ok(()) => {}
                         Err(std::sync::mpsc::TrySendError::Full(c)) => {
                             if done.load(Ordering::SeqCst) {
-                                return false;
+                                return (false, left);
                             }
                             std::thread::sleep(Duration::from_millis(2));
                             chunk = Some(c);
                         }
-                        Err(_) => return false,
+                        Err(_) => return (false, left),
                     }
                 }
             }
             Err(e) if matches!(e.kind(), io::ErrorKind::Interrupted | io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {
                 if done.load(Ordering::SeqCst) {
-                    return false;
+                    return (false, left);
                 }
             }
-            Err(_) => return false,
+            Err(_) => return (false, left),
         }
     }
-    true
+    (true, 0)
 }
 
 // ------------------------------------------------------------------------------------------------ dispatch helper
@@ -818,6 +820,10 @@ fn handle_one(st: &Arc<HttpState>, c: &mut Conn, served: usize) -> Result<Next, 
     if head.method == "PUT" && route == "file" {
         return put_file(st, c, &head);
     }
+    // ---- blk.image batch upload (same authentication shape as the file upload; the args travel in the query)
+    if head.method == "PUT" && route == "blk-image" {
+        return put_blk_image(st, c, &head);
+    }
 
     // ---- ordinary signed requests: body (bounded) first, then the MAC over its hash
     let body = match head.content_length {
@@ -1112,6 +1118,27 @@ fn put_file(st: &Arc<HttpState>, c: &mut Conn, head: &Head) -> Result<Next, Http
     if head.q("mkdirs") == Some("1") {
         args.push("--mkdirs".into());
     }
+    run_upload(st, c, head, &auth, len, "put", args)
+}
+
+fn put_blk_image(st: &Arc<HttpState>, c: &mut Conn, head: &Head) -> Result<Next, HttpError> {
+    let peer_ip = c.peer.ip();
+    let declared = head.header("x-lab-body-sha256").or(head.header("x-sha256")).and_then(unhex).and_then(|v| <[u8; 32]>::try_from(v).ok());
+    let (Some(len), Some(sha)) = (head.content_length, declared) else {
+        send_error(&mut c.w, 400, Status::BadArgs, "PUT blk-image needs Content-Length and X-Lab-Body-Sha256", false)?;
+        return Ok(Next::Close);
+    };
+    let auth = match st.authenticate(head, &sha, peer_ip) {
+        Ok(a) => a,
+        Err(e) => return auth_failed(st, c, head, e),
+    };
+    let args: Vec<String> = head.q_all("a").into_iter().map(str::to_string).collect();
+    run_upload(st, c, head, &auth, len, "blk.image", args)
+}
+
+/// Run `name args..` with the request body (`len` bytes, already authenticated by its declared digest) as the
+/// command's upload channel; the reply is the command's result.
+fn run_upload(st: &Arc<HttpState>, c: &mut Conn, head: &Head, auth: &Authed, len: u64, name: &str, args: Vec<String>) -> Result<Next, HttpError> {
     let (tx, rx) = sync_channel::<Vec<u8>>(64);
     struct UpSink(Option<std::sync::mpsc::Receiver<Vec<u8>>>);
     impl Sink for UpSink {
@@ -1133,15 +1160,26 @@ fn put_file(st: &Arc<HttpState>, c: &mut Conn, head: &Head) -> Result<Next, Http
     let (reply, body_ok) = std::thread::scope(|s| {
         // the feeder owns `tx`: when it ends (body done or socket dead) the handler sees end-of-input
         let feeder = s.spawn(move || feed_body(reader, len, &tx, done_ref));
-        let reply = run_cmd(st, c.peer, &auth, "put", args, &mut sink, cancel.clone()).unwrap_or_else(|| Reply::error(Status::Internal, "put missing"));
+        let reply = run_cmd(st, c.peer, auth, name, args, &mut sink, cancel.clone()).unwrap_or_else(|| Reply::error(Status::Internal, "command missing"));
         done.store(true, Ordering::SeqCst);
         drop(sink.0.take());
-        (reply, feeder.join().unwrap_or(false))
+        (reply, feeder.join().unwrap_or((false, len)))
     });
+    // a handler that answered early (an error) leaves body bytes on the socket: read them off so the client can
+    // finish its write and see the reply instead of a connection reset
+    if body_ok.1 > 0 {
+        let mut left = body_ok.1.min(64 << 20);
+        let mut sink_buf = vec![0u8; 64 * 1024];
+        while left > 0 {
+            match c.r.read(&mut sink_buf[..left.min(65536) as usize]) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => left -= n as u64,
+            }
+        }
+    }
     let code = reply_http_status(&reply);
     log_access(st, c, head, code, &format!("{}:{}", auth.role.name(), auth.fp));
-    send_json(&mut c.w, code, &reply.body, Some(&auth), false)?;
-    let _ = body_ok; // an unread rest of the body is why the connection closes
+    send_json(&mut c.w, code, &reply.body, Some(auth), false)?;
     Ok(Next::Close)
 }
 

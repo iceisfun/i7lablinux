@@ -10,3 +10,7 @@ publish.workspace = true
 labproto.workspace = true
 labprobe.workspace = true
 labtui.workspace = true
+
+[dev-dependencies]
+# tests/blk_image.rs drives the real client (i7labctl::blkimage) against the real host handler and HTTP server
+i7labctl = { path = "../i7labctl" }

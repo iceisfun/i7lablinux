@@ -752,7 +752,7 @@ fn get(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
 // ---------------------------------------------------------------- blk
 
 pub fn blk(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
-    let (verb, rest) = args.split_first().ok_or_else(|| ClientError::Usage("blk needs a verb\nusage: i7labctl blk ls|smart|read|write|verify <host> ...".into()))?;
+    let (verb, rest) = args.split_first().ok_or_else(|| ClientError::Usage("blk needs a verb\nusage: i7labctl blk ls|smart|read|write|verify|image <host> ...".into()))?;
     let rest = rest.to_vec();
     match verb.as_str() {
         "ls" => {
@@ -779,7 +779,8 @@ pub fn blk(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
             Ok(run.finish_with("blk.smart", &d, &info, &move |b, pt| render::blk_smart(b, attrs, pt), if failed { 3 } else { 0 }))
         }
         "read" | "write" | "verify" => blk_test(run, verb, &rest),
-        other => Err(ClientError::Usage(format!("blk: unknown verb '{}'\nusage: i7labctl blk ls|smart|read|write|verify <host> ...", other))),
+        "image" => crate::blkimage::run_cli(run, &rest),
+        other => Err(ClientError::Usage(format!("blk: unknown verb '{}'\nusage: i7labctl blk ls|smart|read|write|verify|image <host> ...", other))),
     }
 }
 

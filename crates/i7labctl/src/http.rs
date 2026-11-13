@@ -521,6 +521,109 @@ impl HttpTransport {
         Ok(CallResult { status: status_of(head.status, &text), body, exit_code: None, rtt_ms: t0.elapsed().as_secs_f64() * 1000.0 })
     }
 
+    /// `blk.image` over `PUT /api/v1/blk-image?a=ARG..`: the record stream goes out in signed batches (each its own
+    /// request: the MAC covers the declared SHA-256 of the batch). The host keeps the session between batches and
+    /// answers every batch with `{"next":N,"done":false}` (turned into an `ack` event for the sender), the last one
+    /// with the final result.
+    fn call_blk_image(&mut self, args: &[String], io: &mut dyn ClientIo) -> Result<CallResult, ClientError> {
+        const BATCH: usize = 1 << 20;
+        let t0 = Instant::now();
+        let mut stalled = Instant::now();
+        let mut last: Option<CallResult> = None;
+        loop {
+            let mut batch: Vec<u8> = Vec::new();
+            let mut ended = false;
+            loop {
+                match io.input() {
+                    Input::Data(Chan::File, d) => {
+                        batch.extend_from_slice(&d);
+                        if batch.len() >= BATCH {
+                            break;
+                        }
+                    }
+                    Input::Data(..) => {}
+                    Input::Pending => {
+                        if !batch.is_empty() {
+                            break;
+                        }
+                        if stalled.elapsed() > Duration::from_secs(120) {
+                            return Err(ClientError::Failed("the sender produced no data for 120 s".into()));
+                        }
+                        std::thread::sleep(Duration::from_millis(2));
+                    }
+                    Input::End(_) | Input::None => {
+                        ended = true;
+                        break;
+                    }
+                }
+            }
+            if batch.is_empty() {
+                // the sender is done and the host's last answer was "not done": hand that back (no END record sent)
+                return match last {
+                    Some(r) if ended => Ok(r),
+                    _ => Err(ClientError::Failed("the upload ended without the END record".into())),
+                };
+            }
+            stalled = Instant::now();
+            let mut res = self.put_batch(args, &batch)?;
+            res.rtt_ms = t0.elapsed().as_secs_f64() * 1000.0;
+            if res.status != Status::Ok {
+                return Ok(res);
+            }
+            let text = String::from_utf8_lossy(&res.body).into_owned();
+            let v = jv::parse(&text);
+            if v.as_ref().and_then(|v| jv::b(v, "done")) == Some(false) {
+                let next = v.as_ref().and_then(|v| jv::u(v, "next")).unwrap_or(0);
+                io.event(&format!("{{\"event\":\"ack\",\"next\":{}}}", next));
+                if ended {
+                    return Ok(res);
+                }
+                last = Some(res);
+                continue;
+            }
+            return Ok(res);
+        }
+    }
+
+    fn put_batch(&mut self, args: &[String], batch: &[u8]) -> Result<CallResult, ClientError> {
+        let t0 = Instant::now();
+        let mut target = String::from("/api/v1/blk-image?");
+        for (i, a) in args.iter().enumerate() {
+            if i > 0 {
+                target.push('&');
+            }
+            target.push_str("a=");
+            target.push_str(&urlenc(a));
+        }
+        let sha = labproto::crypto::sha256(batch);
+        let nonce = self.nonce()?;
+        let mac = httpauth::request_mac_hashed(&self.key.bytes, &nonce, "PUT", &target, &sha);
+        let mut h = self.auth_headers(&nonce, &mac);
+        h.push(("Content-Type".into(), "application/octet-stream".into()));
+        h.push((H_BODY_SHA256.into(), hex(&sha)));
+        let mut s = self.connect()?;
+        let req = build_request("PUT", &self.addr, &target, &h, Some(batch.len()));
+        s.write_all(req.as_bytes()).map_err(io_err)?;
+        s.write_all(batch).map_err(io_err)?;
+        let mut r = BufReader::new(s);
+        let head = read_head(&mut r)?;
+        let mut br = BodyReader::new(r, &head);
+        let mut body = Vec::new();
+        br.read_to_end(&mut body).map_err(io_err)?;
+        if head.status == 401 {
+            return Err(ClientError::Auth(format!("{} rejected the request signature", self.addr)));
+        }
+        if head.status == 400 && head.header(H_PROOF).is_none() && br.trailer(H_PROOF).is_none() {
+            let msg = String::from_utf8_lossy(&body);
+            let msg = jv::scan_str_field(&msg, "message").unwrap_or_else(|| msg.trim().chars().take(200).collect());
+            return Err(ClientError::Failed(format!("the host rejected the upload request (HTTP 400, unsigned reply, not verified): {}", labproto::text::sanitize(&msg))));
+        }
+        let expect = httpauth::response_mac(&self.key.bytes, &nonce, head.status, &body);
+        self.check_proof(&head, br.trailer(H_PROOF), &expect)?;
+        let text = String::from_utf8_lossy(&body).into_owned();
+        Ok(CallResult { status: status_of(head.status, &text), body, exit_code: None, rtt_ms: t0.elapsed().as_secs_f64() * 1000.0 })
+    }
+
     /// `get` over `GET /api/v1/file`: body bytes go to `io.file`; the proof (header or trailer) covers their hash.
     /// The result body is `{"size":N,"sha256":"hex"}` computed here.
     fn call_get(&mut self, args: &[String], io: &mut dyn ClientIo) -> Result<CallResult, ClientError> {
@@ -648,6 +751,7 @@ impl Transport for HttpTransport {
     fn call(&mut self, cmd: &CmdSpec, args: &[String], io: &mut dyn ClientIo) -> Result<CallResult, ClientError> {
         match cmd.name {
             "put" => self.call_put(args, io),
+            "blk.image" if !args.iter().any(|a| a == "--status" || a == "--abort") => self.call_blk_image(args, io),
             "get" => self.call_get(args, io),
             _ if cmd.streams => self.call_stream(cmd, args, io),
             _ => self.call_buffered(cmd, args),

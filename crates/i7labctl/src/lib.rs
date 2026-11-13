@@ -5,6 +5,7 @@
 //! (registry, aliases, selectors), `keys`, `discover`, `render` (human tables) and `output` (JSON envelope).
 //! Everything that touches the outside world goes through `Env` and `Connect` so tests can inject fakes.
 
+pub mod blkimage;
 pub mod cli;
 pub mod cmds;
 pub mod complete;

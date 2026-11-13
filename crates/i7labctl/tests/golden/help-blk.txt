@@ -1,7 +1,7 @@
 i7labctl blk
-  block devices and tests (write: --destructive --serial S)
+  block devices, tests (write: --destructive --serial S) and disk images (image: stream a raw image onto a whole disk)
 
-usage: i7labctl blk ls|smart|read|write|verify <host> ...
+usage: i7labctl blk ls|smart|read|write|verify|image <host> ...
 transports: ether, http   role: read-only key for reads, admin key for changes
 
 Block devices: enumeration, SMART, read test, write test.
@@ -10,7 +10,9 @@ Block devices: enumeration, SMART, read test, write test.
   blk read <host> DEV [--mb N] [--regions start,mid,end | --offset B --len B] [--bs 1m] [--direct]   READ-ONLY (default 256 MiB in three regions)
   blk write <host> DEV --destructive --serial SERIAL [--mb N] [--regions ..] [--offset B --len B] [--seed N]
   blk verify <host> DEV --seed N [--mb N] [--regions ..]   read-only compare against a seeded pattern
-SAFETY: blk write is the only command that writes to a disk. It refuses locally without --destructive and --serial (exit 7) and asks for confirmation unless --yes. The host then refuses (exit 7) a disk that is mounted, held, swap, read-only, backing the running system, under test, or the boot media (no override exists for those); a disk with a partition table or filesystem signature needs the same two flags and the real serial (see blk ls). Default is always read-only. The seed is printed (and chosen here when omitted) so blk verify can re-check after a reboot.
+  blk image <host> DISK --file IMG --serial SERIAL --destructive [--yes] [--verify] [--offset N] [--resume] [--grow-last] [--no-relocate]
+      stream a raw disk image (tens of GiB, sparse is fine) onto a WHOLE disk without staging it on the host: chunked, SHA-256 per chunk and for the whole image, resumable, flow controlled, zero ranges skipped on the wire. Shows model, size, serial and the current layout and asks first (--yes skips the question, never the serial). --verify reads the disk back on the host and compares. Afterwards the GPT backup is moved to the end of the disk (like sgdisk -e; --grow-last also extends the last partition, --no-relocate leaves the disk exactly as streamed) and the kernel is asked to re-read the partition table. --offset N writes the image at byte N of the disk (multiple of 4096; no GPT move). --resume continues an interrupted transfer where the host stopped.
+SAFETY: blk write and blk image are the only commands that write to a disk (both go through the same host gate). It refuses locally without --destructive and --serial (exit 7) and asks for confirmation unless --yes. The host then refuses (exit 7) a disk that is mounted, held, swap, read-only, backing the running system, under test, or the boot media (no override exists for those); a disk with a partition table or filesystem signature needs the same two flags and the real serial (see blk ls). Default is always read-only. The seed is printed (and chosen here when omitted) so blk verify can re-check after a reboot.
 Exit 3 when a test finds I/O errors or mismatches or SMART says FAILED.
 
 examples
@@ -19,5 +21,6 @@ examples
   i7labctl blk read m900 nvme0n1 --mb 1024
   i7labctl blk write m900 sdb --destructive --serial S3Z9NB0K123456 --mb 512
   i7labctl blk verify m900 sdb --seed 8812
+  i7labctl blk image darter nvme0n1 --file win10.img --serial S5XYNX0R --destructive --verify
 
 global options and exit codes: i7labctl help

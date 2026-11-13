@@ -22,7 +22,7 @@ commands   (transports: E ether, H http, S ssh, L local; role: R read-only key, 
   thermal      EH.. R   temperatures, fans
   logs         EH.. R   logs
   net          EH.. R/W NICs and configuration
-  blk          EH.. R/W block devices and tests (write: --destructive --serial S)
+  blk          EH.. R/W block devices, tests (write: --destructive --serial S) and disk images (image: stream a raw image onto a whole disk)
   exec         EHS. W   run a program (no shell)
   sh           EHS. W   run a command line through i7labsh (alias of exec -- i7labsh -c)
   shell        E.S. W   interactive i7labsh on a pty

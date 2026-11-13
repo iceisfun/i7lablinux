@@ -309,6 +309,7 @@ Short results (RESP up to 1 MiB) are cached by `req_id`, so a lost RESP is re-se
 | 0x0017 | `blk.verify` | 1 | R | `<dev> --seed N [--regions ..]` | re-read and compare a region previously written by `blk.write`, no write |
 | 0x0018 | `net.ls` | 2 | R | `[<iface>]` | JSON NICs: MAC, driver, link state, speed, duplex, carrier changes, IPv4/IPv6, VLAN subifs, rx/tx counters, route, DNS |
 | 0x0019 | `thermal` | 1 | R | `[--follow]` | JSON temperatures/fans, streamed with `--follow` |
+| 0x001A | `blk.image` | 1 | W | `<dev> --size N --image-id HEX --serial S --destructive [--dest-offset B] [--resume] [--verify] [--grow-last] [--no-relocate]` \| `<dev> --status [--image-id HEX]` \| `<dev> --abort` | stream a disk image onto a whole disk through the write gate (section 7.1); upload channel carries the records, `ack` events on chan 1, result JSON |
 | 0x0020 | `exec` | 3 | W | `[--timeout S] [--env K=V]... [--cwd D] [--tty COLSxROWS] [--detach] [--stdin] -- argv...` | chan 1/2 streams; RESP body: `i32 exit_code` + JSON `{signal,duration_ms}`; `status` OK unless the command could not start |
 | 0x0021 | `shell` | 3 | W | `[--cols N --rows N] [--term T]` | like exec of `/bin/i7labsh` on a pty (the in-image shell); chan 3/1/5 |
 | 0x0030 | `put` | 4 | W | `<path> --size N --sha256 HEX [--mode 0644] [--offset N] [--mkdirs]` | after chan 4 data and verification: JSON `{bytes,sha256}`; writes to `<path>.part`, renames at the end; `--offset` resumes |
@@ -346,6 +347,53 @@ Semantics worth stating exactly
 
 Commands that need a missing subsystem return `UNSUPPORTED` (compiled-out) or `NOT_READY` (for example `blk.ls` before udev-equivalent discovery finished).
 
+### 7.1 `blk.image`: streaming a disk image onto a disk
+
+`blk.image` writes a raw image (tens of GiB, sparse is fine) to a **whole disk** of the host without staging it in the host's RAM. It is the only
+command besides `blk.write` that opens a block device for writing, and it opens it **only** through the same `WriteGuard` as `blk.write`:
+admin key, `--destructive`, `--serial` equal to the disk's serial (or WWID), and the refusals for mounted/held/swap/read-only/boot-media/under-test disks
+(a partition table or filesystem signature is overridable with the two flags, as for `blk.write`). `REFUSED` carries the reason list. An image larger than the disk
+(`--dest-offset` + `--size`) is `TOO_BIG` and nothing is written.
+
+Modes (one command id, three argument shapes):
+
+* `<dev> --status [--image-id HEX]`: no input. Result `{"v":1,"max_payload":N,"device":{the blk.ls object of the disk},"session":null|{"id","size","next","in_use","idle_s"},"resume_at":null|N}`.
+  `resume_at` is the byte offset a transfer of that image id can continue at (the live session's `next`, else the `durable` offset of the state file `<run>/blkimage/<dev>.state`).
+* `<dev> --abort`: drops a paused session (releases the disk lock) and the state file. `BUSY` while a request is attached.
+* transfer: `<dev> --size N --image-id HEX --serial S --destructive [--dest-offset B] [--resume] [--verify] [--grow-last] [--no-relocate]` plus **records on the upload channel**
+  (`Chan::File` DATA frames over ether; over HTTP the body of `PUT /api/v1/blk-image?a=ARG&a=ARG..`, one signed request per batch, `X-Lab-Body-Sha256` declared up front exactly like `PUT file`).
+  `--image-id` names the image (the client uses a hash of size, destination, first and last MiB); `--dest-offset` (multiple of the logical block size) places the image at that disk offset; `--resume` continues the session or state of that id instead of starting over.
+
+Record = `type u8 | body_len u32 BE | body` (`labproto::blkwire`):
+
+| type | body | meaning |
+|---|---|---|
+| 1 DATA | `offset u64 BE \| sha256(payload) [32] \| payload` | 1 .. 2 MiB of image bytes at image offset `offset` |
+| 2 ZERO | `offset u64 BE \| len u64 BE` | the range reads back as zeros (the client sends it for all-zero 1 MiB blocks, merged up to 256 MiB) |
+| 3 END | `total u64 BE \| sha256(whole image) [32]` | last record |
+
+Rules (host): a record is accepted only at the session's `next` offset (strictly in order, no gaps, no overlap); a DATA payload whose SHA-256 differs from the record's is **not written**;
+offsets and lengths are multiples of the logical block size except a final partial block, which is zero-padded to the block size. After every applied record the host sends the event
+`{"event":"ack","next":N}` (stdout channel, NDJSON). Errors are `{"error":{"code","message"},"next":N,"resumable":true|false}` with codes `gap`, `chunk_sha`, `range`, `bad_record`, `truncated`, `stalled`, `canceled`
+(session kept: query `--status`, continue with `--resume`), `image_sha`, `readback_mismatch`, `io` (session dropped).
+
+Flow control and memory: the sender keeps at most a window of un-acknowledged bytes in flight (ether: 3 MiB in 256 KiB chunks; HTTP: 2 MiB, one batch per request; a ZERO record counts 4 KiB) and at most 128 records.
+The host holds one record (<= 2 MiB + 45 bytes) plus the transport's upload queue (ether: 4096 frames; HTTP: 64 reads of 64 KiB), so host memory is a few MiB whatever the image size. A record larger than the limit ends the request.
+
+Durability and resume: data is written with `pwrite` through the guard's `O_DIRECT` fd; every 64 MiB the host `fdatasync`s and records the `durable` offset. A session that loses its request (cut link, HTTP batch end)
+stays for 300 s (`IDLE_TTL`), holding the disk lock, then is dropped; the state file lets a **new** session resume at `durable` (the rest of the disk is re-read to compute the whole-image hash).
+
+Zero ranges: executed with `BLKZEROOUT` (guaranteed zeros; the kernel uses WRITE ZEROES or writes zero pages), falling back to ordinary zero writes where the ioctl does not exist. `BLKDISCARD` is **not** used, because the
+content read back after a discard is unspecified and the verification must stay exact. Zero ranges are still hashed (the whole-image SHA-256 covers every byte).
+
+Verification: END's SHA-256 is compared with the hash the host kept while writing in order (`verify_mode":"stream"`); after a resume the disk range is re-read in 1 MiB steps instead (`"reread"`, counts as verified).
+With `--verify` the host additionally re-reads the whole range from the device (O_DIRECT, after fsync + BLKFLSBUF) and compares it with END (`readback_mismatch` otherwise).
+
+After a verified write (unless `--no-relocate`, or `--dest-offset` != 0): the host moves the GPT backup to the end of the disk (the equivalent of `sgdisk -e`: backup entries and header at the last LBAs, primary header's alternate LBA, last usable LBA and CRCs
+updated, primary entries untouched, protective MBR size updated; refuses, leaving the disk as streamed, on a bad CRC or a partition beyond the disk; `--grow-last` additionally extends the partition that ends last to the new last usable LBA and rewrites both entry arrays),
+and issues `BLKRRPART`. Result: `{"v":1,"done":true,"bytes","sha256","verified","verify_mode","data_bytes","zero_bytes","elapsed_ms","gpt":{"action":"moved|already_at_end|none|skipped|error",...},"rrpart":"ok|n/a ..|failed: .."}`.
+The sectors of the disk that differ from the image afterwards are LBA 0 (protective MBR size), LBA 1 (primary header) and the last LBAs (backup): everything else is the image byte for byte.
+
 ## 8. Rate limiting and abuse rules
 
 The server is on a shared lab segment and runs as root: every unauthenticated path is cheap, bounded and silent.
@@ -358,7 +406,7 @@ The server is on a shared lab segment and runs as root: every unauthenticated pa
 * **Per-session limits.** 8 outstanding requests, 4 concurrent execs per host, 1 concurrent block write test per host, 2 concurrent block read tests, 128 frames in flight, request body 64 KiB, response body 16 MiB, stream length 4 GiB - 1. Violations return `BUSY` or `TOO_BIG` and, if repeated 20 times, close the session.
 * **Memory.** Per session at most 2 MiB of reassembly and 1 MiB of response cache; per host at most 24 MiB for all sessions.
 * **CPU.** The receive loop does: header sanity, MAC rate-limit lookup, session lookup and counter window, then one HMAC. Time budget: a saturated 1 Gbit/s stream of garbage must not stop the beacon and the console TUI (receive loop is single-threaded but bounded to a 5 ms slice per 20 ms; excess frames are dropped by the socket buffer).
-* **Dangerous commands** (`reboot`, `poweroff`, `kexec`, `blk.write`, `fs.rm`, `net.set`, `svc ... stop`, `key.set`) require the admin key; they are logged to the console TUI and `/run/i7lab/audit.log` (time, session, source MAC, VLAN, command, argv without file contents). The audit log cannot be disabled by a command.
+* **Dangerous commands** (`reboot`, `poweroff`, `kexec`, `blk.write`, `blk.image`, `fs.rm`, `net.set`, `svc ... stop`, `key.set`) require the admin key; they are logged to the console TUI and `/run/i7lab/audit.log` (time, session, source MAC, VLAN, command, argv without file contents). The audit log cannot be disabled by a command.
 * **Bound to NICs.** `i7labd` listens on every Ethernet NIC with carrier except interfaces listed in `/etc/i7lab/ether.deny` (a baked option, default empty). `svc ether stop` stops all NICs.
 
 ## 9. Versioning and extension

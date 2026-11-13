@@ -8,6 +8,7 @@
 
 pub mod args;
 pub mod beacon;
+pub mod blkwire;
 pub mod catalog;
 pub mod cmdline;
 pub mod crypto;

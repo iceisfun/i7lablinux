@@ -15,6 +15,7 @@ pub const O_DIRECT: i32 = 0o40000;
 const BLKROGET: u64 = 0x125E;
 const BLKRRPART: u64 = 0x125F;
 const BLKFLSBUF: u64 = 0x1261;
+const BLKZEROOUT: u64 = 0x127F;
 const BLKSSZGET: u64 = 0x1268;
 const BLKGETSIZE64: u64 = 0x8008_1272;
 
@@ -122,6 +123,14 @@ pub fn flush(f: &File) -> io::Result<()> {
         Err(e) if e.raw_os_error() == Some(25) => Ok(()), // ENOTTY: regular file
         r => r,
     }
+}
+
+/// BLKZEROOUT: make `[off, off+len)` read back as zeros (the kernel uses WRITE ZEROES / unmap where the device
+/// guarantees zeroes, else writes zero pages). Both must be multiples of the logical block size. `ENOTTY` on
+/// regular files.
+pub fn zero_out(f: &File, off: u64, len: u64) -> io::Result<()> {
+    let mut range = [off, len];
+    ioctl(f, BLKZEROOUT, range.as_mut_ptr() as *mut u8)
 }
 
 pub fn reread_partitions(f: &File) -> io::Result<()> {
