@@ -378,7 +378,26 @@ fn the_same_job_over_signed_http_batches() {
     // the read-only key is refused by the host before any byte is read
     let mut ro = srv.client(Role::Ro, 2);
     let e = flash(&mut ro, "vde5", &params(&p, SER), &mut ui).unwrap_err();
-    assert!(matches!(e, FlashError::Client(_)), "{:?}", e);
+    assert!(matches!(e, FlashError::Client(ClientError::Auth(_))), "{:?}", e);
+    let _ = std::fs::remove_file(p);
+}
+
+#[test]
+fn http_batches_continue_one_session_without_a_retry() {
+    // several 1 MiB batches: each later batch must continue the host's paused session (found by a live QEMU run:
+    // without `--resume` the host starts over and the second batch is a `gap`, healed by a wasted retry)
+    let fx = Fx::new("http3");
+    fx.disk("vde7", 16 * MIB, 8, SER);
+    let srv = Http::start(fx.daemon("h"));
+    let img = image(5 * MIB as usize);
+    let p = tmpimg("http3", &img);
+    let mut t = srv.client(Role::Admin, 1);
+    let mut ui = TUi::default();
+    let mut pr = params(&p, SER);
+    pr.no_relocate = true;
+    let o = flash(&mut t, "vde7", &pr, &mut ui).unwrap();
+    assert_eq!(o.attempts, 1, "{:?}", o);
+    assert_eq!(fx.get("vde7", 0, img.len()), img);
     let _ = std::fs::remove_file(p);
 }
 

@@ -530,6 +530,9 @@ impl HttpTransport {
         let t0 = Instant::now();
         let mut stalled = Instant::now();
         let mut last: Option<CallResult> = None;
+        // every batch after the first continues the host's session: without `--resume` the host treats a request
+        // for a paused session of the same image as a fresh start and discards it (gap at the second batch)
+        let mut args: Vec<String> = args.to_vec();
         loop {
             let mut batch: Vec<u8> = Vec::new();
             let mut ended = false;
@@ -565,7 +568,7 @@ impl HttpTransport {
                 };
             }
             stalled = Instant::now();
-            let mut res = self.put_batch(args, &batch)?;
+            let mut res = self.put_batch(&args, &batch)?;
             res.rtt_ms = t0.elapsed().as_secs_f64() * 1000.0;
             if res.status != Status::Ok {
                 return Ok(res);
@@ -575,6 +578,9 @@ impl HttpTransport {
             if v.as_ref().and_then(|v| jv::b(v, "done")) == Some(false) {
                 let next = v.as_ref().and_then(|v| jv::u(v, "next")).unwrap_or(0);
                 io.event(&format!("{{\"event\":\"ack\",\"next\":{}}}", next));
+                if !args.iter().any(|a| a == "--resume") {
+                    args.push("--resume".into());
+                }
                 if ended {
                     return Ok(res);
                 }

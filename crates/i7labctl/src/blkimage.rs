@@ -378,6 +378,7 @@ pub fn host_status(t: &mut dyn Transport, dev: &str, id: &str) -> Result<HostSta
         return Err(match st {
             Status::Unsupported => ClientError::Unsupported(format!("the host does not serve blk.image ({}): its image is older than this i7labctl", text)),
             Status::Refused => ClientError::Safety(text),
+            Status::Eperm => ClientError::Auth(text),
             _ => ClientError::Failed(format!("blk.image --status: {}", text)),
         });
     }
@@ -457,6 +458,26 @@ pub fn flash(t: &mut dyn Transport, dev: &str, p: &Params, ui: &mut dyn Ui) -> R
     let have = jv::s(&st.v, "device.serial").or(jv::s(&st.v, "device.wwid")).unwrap_or("");
     if have.trim() != p.serial.trim() {
         return Err(ClientError::Safety(format!("serial mismatch: {} has serial '{}', you gave '{}'. Nothing was sent.", dev, have, p.serial)).into());
+    }
+    // a killed sender can leave its request attached on the host (over ether nothing tells the host) until the host's
+    // input idle timeout (60 s); `--resume` then has to wait for it instead of finding nothing to resume
+    let mut st = st;
+    if p.resume && jv::b(&st.v, "session.in_use") == Some(true) {
+        ui.say("the host still has the previous request of this transfer attached; waiting for it to detach (up to 90 s)");
+        for _ in 0..45 {
+            std::thread::sleep(Duration::from_secs(2));
+            match host_status(t, dev, &id) {
+                Ok(s) => {
+                    let busy = jv::b(&s.v, "session.in_use") == Some(true);
+                    st = s;
+                    if !busy {
+                        break;
+                    }
+                }
+                Err(ClientError::Transport(_)) | Err(ClientError::Timeout) => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
     }
     let mut summary = describe_device(&st.v, &p.file, size, p.dest_offset);
     let mut resume_at = if p.resume { st.resume_at } else { None };
@@ -559,9 +580,12 @@ pub fn flash(t: &mut dyn Transport, dev: &str, p: &Params, ui: &mut dyn Ui) -> R
         ui.say(&format!("attempt {} failed ({}); asking the host how far it got", attempts, retry_reason));
         // the host may need a moment (a reboot is not survivable: the session is gone and so is the state file)
         let mut st2 = None;
-        for k in 0..5 {
-            std::thread::sleep(Duration::from_millis(500 * (k + 1)));
+        // (a cut request can stay attached on the host while it drains the records it already holds: the status
+        // then has `session.in_use` and no `resume_at`; wait for it to detach rather than start over into BUSY)
+        for k in 0..40u64 {
+            std::thread::sleep(Duration::from_millis((500 * (k + 1)).min(2000)));
             match host_status(t, dev, &id) {
+                Ok(s) if jv::b(&s.v, "session.in_use") == Some(true) && k < 39 => continue,
                 Ok(s) => {
                     st2 = Some(s);
                     break;
