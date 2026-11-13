@@ -28,7 +28,7 @@ wire commands: i7labctl --ether <mac> --cmd NAME [params..]   (offline copy; liv
   0x0019  thermal      R    temperatures, fans
                            [--follow]
   0x001a  blk.image    W    stream a disk image onto a whole disk behind the safety gate (records on the upload channel)
-                           DEV --size N --image-id HEX --serial S --destructive [--allow-boot-media] [--dest-offset B] [--resume] [--verify] [--grow-last] [--no-relocate] | DEV --status [--image-id HEX] | DEV --abort
+                           DEV --size N --image-id HEX --serial S --destructive [--allow-boot-media] [--dest-offset B] [--resume] [--verify] [--grow-last] [--no-relocate] [--verify-ranges] | DEV --resume --finish|--hash-range OFF:LEN (+ the transfer's flags) | DEV --hash-disk OFF:LEN --size N --serial S [--dest-offset B] | DEV --status [--image-id HEX] | DEV --abort
   0x0020  exec         W    run a program (no shell)
                            [--timeout S] [--env K=V].. [--cwd D] [--tty CxR] [--detach] [--stdin] -- ARGV..
   0x0021  shell        W    i7labsh on a pty

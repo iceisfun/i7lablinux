@@ -13,6 +13,12 @@
 //! SHA-256 before it is written, END carries the SHA-256 of the whole image, compared with the running hash the
 //! host kept while writing (and, with `--verify`, with a streaming re-read of the disk range).
 //!
+//! Verification (`--verify-ranges`): after END the session stays in a verify phase and the sender asks for the
+//! SHA-256 of bounded disk ranges (`--hash-range OFF:LEN`, each request short, read with a 1 MiB buffer) and
+//! compares them with the image itself; every such request refreshes the session TTL. `--finish` then relocates
+//! the GPT backup and ends the session. `--hash-disk OFF:LEN` hashes a range of a disk WITHOUT a session and
+//! without the write gate (read only: admin key + serial + no write session on the disk), for `--verify-only`.
+//!
 //! Zero ranges are executed with BLKZEROOUT (guaranteed zeros), falling back to writing zero pages; never
 //! BLKDISCARD, whose read-back is unspecified.
 
@@ -63,6 +69,10 @@ struct State {
     serial: Option<String>,
     state_path: PathBuf,
     started: Instant,
+    /// set when END was accepted and the session waits in the verify phase: (total, image SHA-256)
+    end: Option<(u64, [u8; 32])>,
+    /// bytes of disk range hashes served in the verify phase (reported as `verified` when they cover the image)
+    hashed: u64,
 }
 
 struct Session {
@@ -145,6 +155,18 @@ struct Params {
     verify: bool,
     grow_last: bool,
     relocate: bool,
+    verify_ranges: bool,
+    finish: bool,
+    hash_range: Option<(u64, u64)>,
+}
+
+/// Longest range one hash request may cover: it must finish well inside the transports' timeouts.
+pub const MAX_HASH_RANGE: u64 = 1 << 30;
+
+fn parse_range(s: &str) -> Option<(u64, u64)> {
+    let (a, b) = s.split_once(':')?;
+    let (off, len) = (super::blk::parse_u64(a)?, super::blk::parse_u64(b)?);
+    (len > 0).then_some((off, len))
 }
 
 fn parse_hex_id(s: &str) -> bool {
@@ -173,7 +195,7 @@ fn write_state(st: &State) {
 }
 
 fn image(ctx: &mut Ctx) -> Reply {
-    let o = opts_or_bad!(ctx, &["status", "abort", "destructive", "allow-boot-media", "resume", "verify", "grow-last", "no-relocate"], &["serial", "size", "image-id", "dest-offset"]);
+    let o = opts_or_bad!(ctx, &["status", "abort", "destructive", "allow-boot-media", "resume", "verify", "grow-last", "no-relocate", "verify-ranges", "finish"], &["serial", "size", "image-id", "dest-offset", "hash-range", "hash-disk"]);
     let dev = match o.positional() {
         [d] if block::valid_dev_name(d) => d.clone(),
         [_] => return Reply::error(Status::BadArgs, "bad device name"),
@@ -190,6 +212,19 @@ fn image(ctx: &mut Ctx) -> Reply {
     }
     if o.flag("abort") {
         return abort(ctx, &dev);
+    }
+    let hash_range = match o.value("hash-range").map(parse_range) {
+        Some(None) => return Reply::error(Status::BadArgs, "bad --hash-range (OFF:LEN, LEN > 0)"),
+        Some(Some(r)) => Some(r),
+        None => None,
+    };
+    if let Some(spec) = o.value("hash-disk") {
+        let Some((off, len)) = parse_range(spec) else { return Reply::error(Status::BadArgs, "bad --hash-disk (OFF:LEN, LEN > 0)") };
+        return match (num(&o, "size"), num(&o, "dest-offset")) {
+            (Ok(Some(size)), Ok(base)) if size > 0 => hash_disk(ctx, &dev, off, len, size, base.unwrap_or(0), o.value("serial")),
+            (Ok(_), Ok(_)) => Reply::error(Status::BadArgs, "--size N (image bytes, > 0) is required"),
+            (Err(r), _) | (_, Err(r)) => r,
+        };
     }
     let (size, base) = match (num(&o, "size"), num(&o, "dest-offset")) {
         (Ok(Some(s)), Ok(b)) if s > 0 => (s, b.unwrap_or(0)),
@@ -209,7 +244,27 @@ fn image(ctx: &mut Ctx) -> Reply {
         verify: o.flag("verify"),
         grow_last: o.flag("grow-last"),
         relocate: !o.flag("no-relocate") && base == 0,
+        verify_ranges: o.flag("verify-ranges"),
+        finish: o.flag("finish"),
+        hash_range,
     };
+    if p.finish || p.hash_range.is_some() {
+        // verify phase requests: they continue a session that exists, never create one
+        if !p.resume || !p.destructive || p.serial.is_none() {
+            return Reply::error(Status::BadArgs, "--hash-range and --finish need --resume --destructive --serial (the session's own flags)");
+        }
+        let have = SLOTS.lock().unwrap().iter().any(|s| s.dev == p.dev && s.id == p.id);
+        if !have {
+            return fail_reply(&fail(Status::NotFound, "no_session", "the host has no session for this transfer (expired, aborted or the host restarted)", false), 0);
+        }
+        let mut sess = match acquire(ctx, &p) {
+            Ok(s) => s,
+            Err(r) => return r,
+        };
+        let (reply, keep) = verify_phase(ctx, &mut sess, &p);
+        release(&p.dev, if keep { Some(sess) } else { None });
+        return reply;
+    }
     let Some(input) = ctx.sink.input() else {
         return Reply::error(Status::Unsupported, "this transport has no upload channel");
     };
@@ -308,6 +363,8 @@ fn create(ctx: &Ctx, p: &Params) -> Result<Session, Reply> {
         serial: p.serial.clone(),
         state_path,
         started: Instant::now(),
+        end: None,
+        hashed: 0,
     };
     Ok(Session { guard, st })
 }
@@ -465,7 +522,9 @@ fn finish(ctx: &mut Ctx, guard: &WriteGuard, w: &mut ImageWriter, st: &mut State
     if let Err(e) = w.sync() {
         return f(Status::Io, "io", format!("fsync: {}", e));
     }
-    // the hash the host kept while writing, or (after a resume) a streaming re-read of the whole range
+    // the hash the host kept while writing, or (after a resume) a streaming re-read of the whole range; with
+    // --verify-ranges that re-read is left to the sender's bounded hash requests (one long request would outlive
+    // the transports' timeouts)
     let reread = |w: &mut ImageWriter| -> Result<[u8; 32], String> {
         let mut h = Sha256::new();
         w.hash_range(0, total, &mut h).map_err(|e| format!("read-back: {}", e))?;
@@ -473,6 +532,7 @@ fn finish(ctx: &mut Ctx, guard: &WriteGuard, w: &mut ImageWriter, st: &mut State
     };
     let (host_sha, mut verified, mode) = match st.whole.take() {
         Some(h) => (h.finish(), false, "stream"),
+        None if p.verify_ranges => (client_sha, false, "ranges"),
         None => match reread(w) {
             Ok(h) => (h, true, "reread"),
             Err(e) => return f(Status::Io, "io", e),
@@ -481,6 +541,19 @@ fn finish(ctx: &mut Ctx, guard: &WriteGuard, w: &mut ImageWriter, st: &mut State
     if host_sha != client_sha {
         return f(Status::Io, "image_sha", format!("whole-image SHA-256 mismatch: sender {} host {}", hex(&client_sha), hex(&host_sha)));
     }
+    if p.verify_ranges {
+        st.end = Some((total, host_sha));
+        let mut j = JsonWriter::new();
+        j.begin_object();
+        j.field_u64("v", 1);
+        j.field_u64("next", total);
+        j.field_u64("size", st.size);
+        j.field_bool("done", false);
+        j.field_str("phase", "verify");
+        j.field_str("sha256", &hex(&host_sha));
+        j.end_object();
+        return (Reply::json(j.finish()), true);
+    }
     if p.verify && mode == "stream" {
         match reread(w) {
             Ok(h) if h == client_sha => verified = true,
@@ -488,6 +561,98 @@ fn finish(ctx: &mut Ctx, guard: &WriteGuard, w: &mut ImageWriter, st: &mut State
             Err(e) => return f(Status::Io, "io", e),
         }
     }
+    complete(ctx, guard, st, p, total, host_sha, verified, mode)
+}
+
+/// One request of the verify phase: `--hash-range OFF:LEN` (a bounded read-back hash) or `--finish`.
+fn verify_phase(ctx: &mut Ctx, sess: &mut Session, p: &Params) -> (Reply, bool) {
+    let Session { guard, st } = sess;
+    let Some((total, sha)) = st.end else {
+        return (fail_reply(&fail(Status::BadArgs, "not_ended", "the image has not been completely written yet", true), st.next), true);
+    };
+    if let Some((off, len)) = p.hash_range {
+        if len > MAX_HASH_RANGE {
+            return (fail_reply(&fail(Status::TooBig, "too_big", format!("a hash range is at most {} bytes", MAX_HASH_RANGE), true), st.next), true);
+        }
+        let mut w = match ImageWriter::new(guard.file(), st.block, st.dev_size, st.base, st.size) {
+            Ok(w) => w,
+            Err(e) => return (fail_reply(&fail(Status::BadArgs, "bad_range", e.to_string(), true), st.next), true),
+        };
+        let t0 = Instant::now();
+        let mut h = Sha256::new();
+        if let Err(e) = w.hash_range(off, len, &mut h) {
+            return (fail_reply(&fail(Status::Io, "io", format!("read-back at {}: {}", off, e), true), st.next), true);
+        }
+        st.hashed += len;
+        return (hash_reply(off, len, &h.finish(), t0.elapsed()), true);
+    }
+    // --finish
+    let verified = st.hashed >= total;
+    complete(ctx, guard, st, p, total, sha, verified, if verified { "ranges" } else { "none" })
+}
+
+fn hash_reply(off: u64, len: u64, sha: &[u8; 32], el: Duration) -> Reply {
+    let mut j = JsonWriter::new();
+    j.begin_object();
+    j.field_u64("v", 1);
+    j.field_u64("off", off);
+    j.field_u64("len", len);
+    j.field_str("sha256", &hex(sha));
+    j.field_u64("ms", el.as_millis() as u64);
+    j.end_object();
+    Reply::json(j.finish())
+}
+
+/// `--hash-disk OFF:LEN`: SHA-256 of image bytes OFF..OFF+LEN as they lie on the disk (image at `base`). Read only:
+/// no write gate, but still the admin key and the real serial, and never while a write session holds the disk.
+fn hash_disk(ctx: &mut Ctx, dev: &str, off: u64, len: u64, size: u64, base: u64, serial: Option<&str>) -> Reply {
+    if len > MAX_HASH_RANGE {
+        return Reply::error(Status::TooBig, &format!("a hash range is at most {} bytes", MAX_HASH_RANGE));
+    }
+    if off.checked_add(len).map_or(true, |e| e > size) {
+        return Reply::error(Status::BadArgs, "range is outside the image");
+    }
+    let report = match block::probe(&ctx.daemon.probe, true) {
+        Ok(r) => r,
+        Err(e) => return Reply::error(probe_status(&e), &e.to_string()),
+    };
+    let Some(d) = report.devices.iter().find(|d| d.name == dev) else {
+        return Reply::error(Status::NotFound, &format!("no block device {}", dev));
+    };
+    match (d.serial.as_deref().or(d.wwid.as_deref()), serial) {
+        (None, _) => return Reply::error(Status::Refused, "the disk reports no serial: refusing to name it"),
+        (Some(_), None) => return Reply::error(Status::Refused, "--serial is required (the real serial of the disk)"),
+        (Some(e), Some(g)) if e.trim() != g.trim() => return Reply::error(Status::Refused, "serial mismatch"),
+        _ => {}
+    }
+    if SLOTS.lock().unwrap().iter().any(|s| s.dev == dev) {
+        return Reply::error(Status::Busy, "a blk.image transfer holds this disk: it cannot be verified until that ends");
+    }
+    let path = ctx.daemon.probe.path(&format!("/dev/{}", dev));
+    if ctx.daemon.probe.root == std::path::Path::new("/") && !labprobe::block::ioctl::is_block_device(&path) {
+        return Reply::error(Status::Refused, "not a block device");
+    }
+    let file = match labprobe::block::ioctl::open(&path, false, false, true) {
+        Ok(f) => f,
+        Err(e) => return Reply::error(Status::Io, &format!("open {}: {}", dev, e)),
+    };
+    let dev_size = labprobe::block::ioctl::size_bytes(&file).unwrap_or(d.size_bytes);
+    let block = d.logical_block.max(512) as u64;
+    let mut w = match ImageWriter::new(&file, block, dev_size, base, size) {
+        Ok(w) => w,
+        Err(e) => return Reply::error(Status::BadArgs, &e.to_string()),
+    };
+    let t0 = Instant::now();
+    let mut h = Sha256::new();
+    if let Err(e) = w.hash_range(off, len, &mut h) {
+        return Reply::error(Status::Io, &format!("read at {}: {}", off, e));
+    }
+    hash_reply(off, len, &h.finish(), t0.elapsed())
+}
+
+/// The disk now holds the (verified) image: fix the GPT backup, ask the kernel to re-read the table, end the session.
+#[allow(clippy::too_many_arguments)]
+fn complete(ctx: &mut Ctx, guard: &WriteGuard, st: &mut State, p: &Params, total: u64, host_sha: [u8; 32], verified: bool, mode: &str) -> (Reply, bool) {
     // the disk now holds the image: fix the GPT backup, ask the kernel to re-read the table
     let mut j = JsonWriter::new();
     j.begin_object();

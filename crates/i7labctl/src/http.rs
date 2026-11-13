@@ -757,7 +757,7 @@ impl Transport for HttpTransport {
     fn call(&mut self, cmd: &CmdSpec, args: &[String], io: &mut dyn ClientIo) -> Result<CallResult, ClientError> {
         match cmd.name {
             "put" => self.call_put(args, io),
-            "blk.image" if !args.iter().any(|a| a == "--status" || a == "--abort") => self.call_blk_image(args, io),
+            "blk.image" if !args.iter().any(|a| matches!(a.as_str(), "--status" | "--abort" | "--finish" | "--hash-range" | "--hash-disk")) => self.call_blk_image(args, io),
             "get" => self.call_get(args, io),
             _ if cmd.streams => self.call_stream(cmd, args, io),
             _ => self.call_buffered(cmd, args),

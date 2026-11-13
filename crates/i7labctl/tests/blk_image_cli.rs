@@ -75,12 +75,14 @@ fn yes_runs_the_transfer_with_the_wire_arguments_and_reports() {
     let calls = t.calls();
     let w = argv(calls.last().unwrap());
     assert_eq!(w[0], "nvme0n1");
-    for want in ["--size", "1048576", "--image-id", "--serial", "S1", "--destructive", "--verify", "--grow-last"] {
+    for want in ["--size", "1048576", "--image-id", "--serial", "S1", "--destructive", "--verify-ranges", "--grow-last"] {
         assert!(w.iter().any(|a| a == want), "{} missing in {:?}", want, w);
     }
     assert!(!w.iter().any(|a| a == "--resume"));
     // the upload carried the END record at least (mock reads the stream)
     assert!(!calls.last().unwrap().uploaded.is_empty());
+    // progress also reaches a log or pipe (stderr/stdout not a terminal): plain lines, written at once
+    assert!(e.contains("MiB/s") && e.contains("elapsed") && !e.contains('\r'), "no progress line without a terminal: {}", e);
     assert!(o.contains("wrote 1.0 MiB to nvme0n1") && o.contains("verified by reading the disk back") && o.contains("gpt backup: moved"), "{}", o);
     // refusing an image larger than the disk, and a serial that is not the disk's
     let (code, _, e) = t.run(&["--yes", "blk", "image", MAC, "nvme0n1", "--file", &img, "--destructive", "--serial", "S2"]);

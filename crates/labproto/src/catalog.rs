@@ -76,7 +76,7 @@ pub static CATALOG: &[CmdSpec] = &[
     c!(0x0017, "blk.verify", 1, Ro, true, "DEV --seed N [--mb N] [--regions ..]", "re-read and compare a seeded pattern"),
     c!(0x0018, "net.ls", 2, Ro, false, "[IFACE]", "network interfaces"),
     c!(0x0019, "thermal", 1, Ro, true, "[--follow]", "temperatures, fans"),
-    c!(0x001A, "blk.image", 1, Admin, true, "DEV --size N --image-id HEX --serial S --destructive [--allow-boot-media] [--dest-offset B] [--resume] [--verify] [--grow-last] [--no-relocate] | DEV --status [--image-id HEX] | DEV --abort", "stream a disk image onto a whole disk behind the safety gate (records on the upload channel)"),
+    c!(0x001A, "blk.image", 1, Admin, true, "DEV --size N --image-id HEX --serial S --destructive [--allow-boot-media] [--dest-offset B] [--resume] [--verify] [--grow-last] [--no-relocate] [--verify-ranges] | DEV --resume --finish|--hash-range OFF:LEN (+ the transfer's flags) | DEV --hash-disk OFF:LEN --size N --serial S [--dest-offset B] | DEV --status [--image-id HEX] | DEV --abort", "stream a disk image onto a whole disk behind the safety gate (records on the upload channel)"),
     c!(0x0020, "exec", 3, Admin, true, "[--timeout S] [--env K=V].. [--cwd D] [--tty CxR] [--detach] [--stdin] -- ARGV..", "run a program (no shell)"),
     c!(0x0021, "shell", 3, Admin, true, "[--cols N --rows N] [--term T]", "i7labsh on a pty"),
     c!(0x0030, "put", 4, Admin, true, "PATH --size N --sha256 HEX [--mode 0644] [--offset N] [--mkdirs]", "upload a file (PATH must be the first word)"),

@@ -14,6 +14,7 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{sync_channel, Receiver};
 use std::time::{Duration, Instant};
 
 use labproto::blkwire::{encode_data, encode_end, encode_zero};
@@ -319,9 +320,36 @@ pub struct Params {
     pub allow_boot_media: bool,
     /// override of the transport's tuning (tests)
     pub tuning: Option<Tuning>,
+    /// bytes per verify request (0 = `DEFAULT_VERIFY_CHUNK`)
+    pub verify_chunk: u64,
+}
+
+/// One verify request covers this many image bytes: ~1.5 s of host read at 170 MB/s, far below every timeout.
+pub const DEFAULT_VERIFY_CHUNK: u64 = 256 << 20;
+/// `--skip-gpt-head` leaves out this many leading bytes (LBA 0..1 at either sector size), which the GPT backup
+/// relocation rewrites after a flash.
+pub const GPT_HEAD: u64 = 8192;
+const MAX_BAD_RANGES: usize = 16;
+
+#[derive(Clone, Debug, Default)]
+pub struct VerifyProgress {
+    /// range index (0-based) just finished and the number of ranges in total
+    pub range: u64,
+    pub ranges: u64,
+    pub bytes_done: u64,
+    pub bytes_total: u64,
+    pub elapsed: Duration,
+    /// MB/s (decimal megabytes) of the host's reads over the whole verify so far
+    pub rate_mb: f64,
+}
+
+pub fn verify_line(v: &VerifyProgress) -> String {
+    format!("verify: range {}/{}  {} / {}  {:.1} MB/s  elapsed {}", v.range + 1, v.ranges, fmt_bytes(v.bytes_done), fmt_bytes(v.bytes_total), v.rate_mb, fmt_dur(v.elapsed.as_secs()))
 }
 
 pub trait Ui {
+    /// Progress of the verify phase (one call per range).
+    fn verify_progress(&mut self, _v: &VerifyProgress) {}
     fn say(&mut self, s: &str);
     /// The summary of what is about to happen; true = go on.
     fn confirm(&mut self, summary: &str) -> bool;
@@ -512,8 +540,10 @@ pub fn flash(t: &mut dyn Transport, dev: &str, p: &Params, ui: &mut dyn Ui) -> R
         if resume_at.is_some() {
             args.push("--resume".into());
         }
-        if p.verify {
-            args.push("--verify".into());
+        // chunked verification (bounded hash requests after END): wanted with --verify, and forced after a resume,
+        // where the host did not see the first `start` bytes and cannot vouch for them
+        if p.verify || start > 0 {
+            args.push("--verify-ranges".into());
         }
         if p.grow_last {
             args.push("--grow-last".into());
@@ -537,7 +567,9 @@ pub fn flash(t: &mut dyn Transport, dev: &str, p: &Params, ui: &mut dyn Ui) -> R
             Ok(res) if res.status == Status::Ok => {
                 let body = String::from_utf8_lossy(&res.body).into_owned();
                 let v = jv::parse(&body);
-                if v.as_ref().and_then(|v| jv::b(v, "done")) == Some(false) {
+                if v.as_ref().and_then(|v| jv::b(v, "done")) == Some(false) && v.as_ref().and_then(|v| jv::s(v, "phase")) == Some("verify") {
+                    return verify_and_finish(t, dev, p, ui, size, &id, (attempts, first_start, t0, data_sent, zero_sent));
+                } else if v.as_ref().and_then(|v| jv::b(v, "done")) == Some(false) {
                     format!("the host acknowledged {} bytes but the image is not complete", v.as_ref().and_then(|v| jv::u(v, "next")).unwrap_or(0))
                 } else {
                     let v = v.ok_or_else(|| ClientError::Failed(format!("unreadable result from the host: {}", labproto::text::sanitize(&body))))?;
@@ -614,6 +646,307 @@ pub fn flash(t: &mut dyn Transport, dev: &str, p: &Params, ui: &mut dyn Ui) -> R
     }
 }
 
+
+// ------------------------------------------------------------------------------------------------ verify
+
+struct LocalRange {
+    idx: u64,
+    off: u64,
+    len: u64,
+    sha: [u8; 32],
+    /// SHA-256 state of the image up to the end of this range (`None` when the prefix was skipped)
+    whole: Option<Sha256>,
+}
+
+/// Hashes the local image range by range on a thread (overlapping the host's reads), bounded by the channel.
+/// Ranges are `(idx, off, len)` of the bytes to hash; the file is read from `ranges[0].start` on.
+fn local_hasher(path: PathBuf, ranges: Vec<(u64, u64, u64, u64)>, want_whole: bool) -> Receiver<std::io::Result<LocalRange>> {
+    let (tx, rx) = sync_channel(2);
+    std::thread::spawn(move || {
+        let run = || -> std::io::Result<()> {
+            let mut f = File::open(&path)?;
+            let mut whole = Sha256::new();
+            let mut buf = vec![0u8; 4 << 20];
+            if let Some(&(_, start, _, _)) = ranges.first() {
+                f.seek(SeekFrom::Start(if want_whole { 0 } else { start }))?;
+            }
+            let mut pos = if want_whole { 0 } else { ranges.first().map_or(0, |r| r.1) };
+            for &(idx, _start, off, len) in &ranges {
+                let mut h = Sha256::new();
+                let end = off + len;
+                while pos < end {
+                    let n = ((end - pos).min(buf.len() as u64)) as usize;
+                    f.read_exact(&mut buf[..n])?;
+                    if want_whole {
+                        whole.update(&buf[..n]);
+                    }
+                    // bytes before `off` (the skipped GPT head) belong to the whole-image hash only
+                    let skip = off.saturating_sub(pos).min(n as u64) as usize;
+                    h.update(&buf[skip..n]);
+                    pos += n as u64;
+                }
+                let lr = LocalRange { idx, off, len, sha: h.finish(), whole: if want_whole { Some(whole.clone()) } else { None } };
+                if tx.send(Ok(lr)).is_err() {
+                    return Ok(());
+                }
+            }
+            Ok(())
+        };
+        if let Err(e) = run() {
+            let _ = tx.send(Err(e));
+        }
+    });
+    rx
+}
+
+/// How the hash requests address the host.
+enum Via<'a> {
+    /// the verify phase of a write session
+    Session { id: &'a str, serial: &'a str, allow_boot_media: bool },
+    /// no session: read-only `--hash-disk`
+    Disk { serial: &'a str },
+}
+
+fn hash_args(dev: &str, via: &Via, size: u64, dest: u64, off: u64, len: u64) -> Vec<String> {
+    let mut a = vec![dev.to_string(), "--size".into(), size.to_string()];
+    match via {
+        Via::Session { id, serial, allow_boot_media } => {
+            a.extend(["--image-id".to_string(), id.to_string(), "--serial".into(), serial.to_string(), "--destructive".into(), "--resume".into()]);
+            if *allow_boot_media {
+                a.push("--allow-boot-media".into());
+            }
+            a.extend(["--hash-range".to_string(), format!("{}:{}", off, len)]);
+        }
+        Via::Disk { serial } => {
+            a.extend(["--serial".to_string(), serial.to_string(), "--hash-disk".into(), format!("{}:{}", off, len)]);
+        }
+    }
+    if dest > 0 {
+        a.extend(["--dest-offset".to_string(), dest.to_string()]);
+    }
+    a
+}
+
+/// Ask the host for the SHA-256 of one range. Errors that a retry can fix (cut link, timeout, I/O hiccup) are
+/// `Ok(Err(text))`; anything else (refusal, auth, lost session) is a hard `Err`.
+fn hash_once(t: &mut dyn Transport, args: &[String]) -> Result<Result<[u8; 32], String>, ClientError> {
+    let (st, body) = match call_json(t, args) {
+        Ok(x) => x,
+        Err(ClientError::Transport(m)) => return Ok(Err(format!("transport: {}", m))),
+        Err(ClientError::Timeout) => return Ok(Err("no response (timeout)".into())),
+        Err(e) => return Err(e),
+    };
+    if st == Status::Ok {
+        let v = jv::parse(&body).ok_or_else(|| ClientError::Failed("unreadable hash reply from the host".into()))?;
+        let h = jv::s(&v, "sha256").unwrap_or("");
+        if h.len() != 64 {
+            return Err(ClientError::Failed(format!("bad hash reply from the host: {}", labproto::text::sanitize(&body))));
+        }
+        let mut out = [0u8; 32];
+        for (i, b) in out.iter_mut().enumerate() {
+            *b = u8::from_str_radix(&h[2 * i..2 * i + 2], 16).map_err(|_| ClientError::Failed("bad hash digits from the host".into()))?;
+        }
+        return Ok(Ok(out));
+    }
+    let (code, _) = error_next(&body);
+    let (text, _) = crate::output::remote_error_text(st.name(), &body);
+    Err(match (st, code.as_str()) {
+        (Status::Io, _) => return Ok(Err(text)),
+        (Status::Refused, _) => ClientError::Safety(text),
+        (Status::Eperm, _) => ClientError::Auth(text),
+        (Status::Unsupported, _) => ClientError::Unsupported(text),
+        (_, "no_session") => ClientError::Failed(format!("{}. Run `blk image ... --verify-only` to check the disk against the image", text)),
+        _ => ClientError::Failed(text),
+    })
+}
+
+fn hash_retry(t: &mut dyn Transport, args: &[String], ui: &mut dyn Ui, what: &str) -> Result<[u8; 32], ClientError> {
+    for attempt in 0..2 {
+        match hash_once(t, args)? {
+            Ok(h) => return Ok(h),
+            Err(m) if attempt == 0 => {
+                ui.say(&format!("{} failed ({}); retrying once", what, m));
+                std::thread::sleep(Duration::from_secs(1));
+            }
+            Err(m) => return Err(ClientError::Failed(format!("{} failed twice: {}", what, m))),
+        }
+    }
+    unreachable!()
+}
+
+#[derive(Debug)]
+pub struct VerifyOutcome {
+    /// SHA-256 of the whole image (computed locally; `None` when the run started after range 0)
+    pub sha256: Option<String>,
+    pub ranges: u64,
+    pub bytes: u64,
+    pub elapsed: Duration,
+    pub skipped_head: bool,
+}
+
+/// Compare the disk with the image range by range. `from_range`: first range to check (resume of a verify).
+#[allow(clippy::too_many_arguments)]
+fn verify_ranges(t: &mut dyn Transport, dev: &str, via: &Via, file: &Path, size: u64, dest: u64, chunk: u64, from_range: u64, skip_head: bool, ui: &mut dyn Ui) -> Result<VerifyOutcome, FlashError> {
+    let chunk = if chunk == 0 { DEFAULT_VERIFY_CHUNK } else { chunk }.clamp(1 << 20, 1 << 30);
+    let n_ranges = size.div_ceil(chunk);
+    if from_range >= n_ranges {
+        return Err(ClientError::Usage(format!("--from-range {} is past the last range ({} ranges of {})", from_range, n_ranges, fmt_bytes(chunk))).into());
+    }
+    let skip_head = skip_head && size > GPT_HEAD;
+    let mut list = Vec::new();
+    for i in from_range..n_ranges {
+        let start = i * chunk;
+        let mut off = start;
+        let mut len = (size - start).min(chunk);
+        if i == 0 && skip_head {
+            off += GPT_HEAD;
+            len -= GPT_HEAD.min(len);
+        }
+        if len > 0 {
+            list.push((i, start, off, len));
+        }
+    }
+    let want_whole = from_range == 0;
+    let total_bytes: u64 = list.iter().map(|r| r.3).sum();
+    let rx = local_hasher(file.to_path_buf(), list, want_whole);
+    let t0 = Instant::now();
+    let (mut done, mut last_whole) = (0u64, None);
+    let mut bad: Vec<String> = Vec::new();
+    let mut first_bad: Option<u64> = None;
+    while let Ok(item) = rx.recv() {
+        let lr = item.map_err(|e| ClientError::Failed(format!("reading {}: {}", file.display(), e)))?;
+        let args = hash_args(dev, via, size, dest, lr.off, lr.len);
+        let what = format!("range {}/{} (offset {})", lr.idx + 1, n_ranges, lr.off);
+        let mut host = hash_retry(t, &args, ui, &what)?;
+        if host != lr.sha {
+            // one more read before calling it a mismatch
+            ui.say(&format!("{} differs (disk {} image {}); reading it once more", what, &hex(&host)[..16], &hex(&lr.sha)[..16]));
+            host = hash_retry(t, &args, ui, &what)?;
+        }
+        if host != lr.sha {
+            first_bad.get_or_insert(lr.idx);
+            bad.push(format!("range {} (offset {}, {} bytes): image {} disk {}", lr.idx, lr.off, lr.len, hex(&lr.sha), hex(&host)));
+        }
+        done += lr.len;
+        last_whole = lr.whole;
+        let el = t0.elapsed();
+        ui.verify_progress(&VerifyProgress { range: lr.idx, ranges: n_ranges, bytes_done: done, bytes_total: total_bytes, elapsed: el, rate_mb: done as f64 / 1e6 / el.as_secs_f64().max(0.001) });
+        if bad.len() >= MAX_BAD_RANGES {
+            break;
+        }
+    }
+    if !bad.is_empty() {
+        return Err(FlashError::Mismatch(format!(
+            "VERIFY MISMATCH: the disk does not hold the image in {} range(s){}:\n  {}\n(re-check later with `--verify-only --from-range {}`)",
+            bad.len(),
+            if bad.len() >= MAX_BAD_RANGES { " (stopped scanning)" } else { "" },
+            bad.join("\n  "),
+            first_bad.unwrap_or(0)
+        )));
+    }
+    if done < total_bytes {
+        return Err(ClientError::Failed("the local hasher stopped early".into()).into());
+    }
+    Ok(VerifyOutcome { sha256: last_whole.map(|w| hex(&w.finish())), ranges: n_ranges - from_range, bytes: done, elapsed: t0.elapsed(), skipped_head: skip_head })
+}
+
+/// Verify phase of a flash (the host kept the session open after END), then `--finish`.
+fn verify_and_finish(t: &mut dyn Transport, dev: &str, p: &Params, ui: &mut dyn Ui, size: u64, id: &str, stats: (u32, u64, Instant, u64, u64)) -> Result<Outcome, FlashError> {
+    let (attempts, first_start, t0, data_sent, zero_sent) = stats;
+    ui.say(&format!("image written; verifying the disk against the image in {} ranges", fmt_bytes(if p.verify_chunk == 0 { DEFAULT_VERIFY_CHUNK } else { p.verify_chunk })));
+    let via = Via::Session { id, serial: &p.serial, allow_boot_media: p.allow_boot_media };
+    if let Err(e) = verify_ranges(t, dev, &via, &p.file, size, p.dest_offset, p.verify_chunk, 0, false, ui) {
+        // a disk that does not hold the image: drop the host's session (best effort; a lost link keeps it for --resume)
+        if matches!(e, FlashError::Mismatch(_)) {
+            let _ = call_json(t, &[dev.to_string(), "--abort".into()]);
+        }
+        return Err(e);
+    }
+    let mut args = vec![dev.to_string(), "--size".into(), size.to_string(), "--image-id".into(), id.to_string(), "--serial".into(), p.serial.clone(), "--destructive".into(), "--resume".into(), "--finish".into()];
+    if p.allow_boot_media {
+        args.push("--allow-boot-media".into());
+    }
+    if p.grow_last {
+        args.push("--grow-last".into());
+    }
+    if p.no_relocate {
+        args.push("--no-relocate".into());
+    }
+    if p.dest_offset > 0 {
+        args.extend(["--dest-offset".to_string(), p.dest_offset.to_string()]);
+    }
+    let mut last = String::new();
+    for k in 0..3 {
+        match call_json(t, &args) {
+            Ok((Status::Ok, body)) => {
+                let v = jv::parse(&body).ok_or_else(|| ClientError::Failed(format!("unreadable result from the host: {}", labproto::text::sanitize(&body))))?;
+                return Ok(Outcome {
+                    bytes: size,
+                    sha256: jv::s(&v, "sha256").unwrap_or("").to_string(),
+                    host: body.clone(),
+                    attempts,
+                    resumed_from: first_start,
+                    elapsed: t0.elapsed(),
+                    data_sent,
+                    zero_sent,
+                    verified: true,
+                    gpt_action: jv::s(&v, "gpt.action").unwrap_or("").to_string(),
+                    rrpart: jv::s(&v, "rrpart").unwrap_or("").to_string(),
+                });
+            }
+            Ok((st, body)) => {
+                let (text, _) = crate::output::remote_error_text(st.name(), &body);
+                if k > 0 && error_next(&body).0 == "no_session" {
+                    return Err(ClientError::Failed(format!("the disk was verified against the image, but the host's final step did not answer and the session is gone ({}): the GPT backup may not have been moved; check with `blk ls`", text)).into());
+                }
+                if st != Status::NotFound {
+                    return Err(ClientError::Failed(format!("finishing the transfer: {}", text)).into());
+                }
+                last = text;
+            }
+            Err(ClientError::Transport(m)) => last = format!("transport: {}", m),
+            Err(ClientError::Timeout) => last = "no response (timeout)".into(),
+            Err(e) => return Err(e.into()),
+        }
+        ui.say(&format!("finishing the transfer failed ({}); retrying", last));
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    Err(ClientError::Failed(format!("finishing the transfer failed: {}. The disk was verified against the image", last)).into())
+}
+
+#[derive(Clone, Debug)]
+pub struct VerifyParams {
+    pub file: PathBuf,
+    pub serial: String,
+    pub dest_offset: u64,
+    pub from_range: u64,
+    pub chunk: u64,
+    pub skip_gpt_head: bool,
+}
+
+/// `--verify-only`: compare a disk with an image without writing anything (read-only on the host).
+pub fn verify_only(t: &mut dyn Transport, dev: &str, p: &VerifyParams, ui: &mut dyn Ui) -> Result<VerifyOutcome, FlashError> {
+    let size = std::fs::metadata(&p.file).map_err(|e| ClientError::Usage(format!("cannot read {}: {}", p.file.display(), e)))?.len();
+    if size == 0 {
+        return Err(ClientError::Usage(format!("{} is empty", p.file.display())).into());
+    }
+    let id = image_id(&p.file, size, p.dest_offset)?;
+    let st = host_status(t, dev, &id)?;
+    if size.checked_add(p.dest_offset).map_or(true, |e| e > st.dev_size) {
+        return Err(ClientError::Safety(format!("the image ({} bytes at offset {}) is larger than the disk ({} bytes)", size, p.dest_offset, st.dev_size)).into());
+    }
+    let have = jv::s(&st.v, "device.serial").or(jv::s(&st.v, "device.wwid")).unwrap_or("");
+    if have.trim() != p.serial.trim() {
+        return Err(ClientError::Safety(format!("serial mismatch: {} has serial '{}', you gave '{}'", dev, have, p.serial)).into());
+    }
+    if jv::s(&st.v, "session.id").is_some() {
+        return Err(ClientError::Failed(format!("the host has a blk.image session on {} (idle or running): finish it or run `blk image --abort` first", dev)).into());
+    }
+    let chunk = if p.chunk == 0 { DEFAULT_VERIFY_CHUNK } else { p.chunk };
+    ui.say(&format!("verifying {} against {} ({}) in {} ranges, read only", dev, p.file.display(), fmt_bytes(size), size.div_ceil(chunk.clamp(1 << 20, 1 << 30))));
+    verify_ranges(t, dev, &Via::Disk { serial: &p.serial }, &p.file, size, p.dest_offset, p.chunk, p.from_range, p.skip_gpt_head, ui)
+}
+
 pub fn progress_line(p: &Progress) -> String {
     let pct = p.acked as f64 * 100.0 / p.total.max(1) as f64;
     let moved = (p.acked - p.start).max(1) as f64;
@@ -651,7 +984,11 @@ struct CliUi<'r, 'e> {
     run: &'r mut Run<'e>,
     live: bool,
     drew: bool,
+    /// last plain progress line written when not on a terminal (one every PLAIN_EVERY, always flushed)
+    last_plain: Option<Instant>,
 }
+
+const PLAIN_EVERY: Duration = Duration::from_secs(10);
 
 impl CliUi<'_, '_> {
     fn clear(&mut self) {
@@ -694,14 +1031,43 @@ impl Ui for CliUi<'_, '_> {
             let _ = write!(self.run.env.err, "\r{}\x1b[K", progress_line(p));
             let _ = self.run.env.err.flush();
             self.drew = true;
+        } else {
+            self.plain(&progress_line(p), false);
+        }
+    }
+
+    fn verify_progress(&mut self, v: &VerifyProgress) {
+        let last = v.range + 1 >= v.ranges;
+        if self.live {
+            let _ = write!(self.run.env.err, "\r{}\x1b[K", verify_line(v));
+            let _ = self.run.env.err.flush();
+            self.drew = true;
+        } else {
+            // one line per range when ranges are slow, never more often than PLAIN_EVERY except the last
+            self.plain(&verify_line(v), last);
         }
     }
 }
 
+impl CliUi<'_, '_> {
+    /// Progress for logs and pipes: a plain line, flushed at once (stderr is not a terminal there).
+    fn plain(&mut self, line: &str, force: bool) {
+        if self.run.g.quiet {
+            return;
+        }
+        if !force && self.last_plain.is_some_and(|t| t.elapsed() < PLAIN_EVERY) {
+            return;
+        }
+        self.last_plain = Some(Instant::now());
+        self.run.err(line);
+        let _ = self.run.env.err.flush();
+    }
+}
+
 pub fn run_cli(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
-    let spec = Spec::new("blk image <host> DISK --file IMG --serial SERIAL --destructive [--allow-boot-media] [--yes] [--verify] [--offset N] [--resume] [--grow-last] [--no-relocate]")
-        .flags(&["destructive", "allow-boot-media", "verify", "resume", "grow-last", "no-relocate"])
-        .valued(&["file", "serial", "offset"])
+    let spec = Spec::new("blk image <host> DISK --file IMG --serial SERIAL (--destructive [--allow-boot-media] [--yes] [--verify] [--resume] [--grow-last] [--no-relocate] | --verify-only [--from-range N] [--skip-gpt-head]) [--offset N] [--verify-chunk MIB]")
+        .flags(&["destructive", "allow-boot-media", "verify", "resume", "grow-last", "no-relocate", "verify-only", "skip-gpt-head"])
+        .valued(&["file", "serial", "offset", "from-range", "verify-chunk"])
         .pos(1, 1);
     let p = run.parse(args, &spec)?;
     let dev = p.pos[0].clone();
@@ -710,6 +1076,17 @@ pub fn run_cli(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
     }
     let file = p.opts.value("file").ok_or_else(|| ClientError::Usage("blk image needs --file IMG (a raw disk image)".into()))?;
     let serial = p.opts.value("serial").filter(|s| !s.trim().is_empty());
+    let chunk = match p.uint("verify-chunk")? {
+        None => 0,
+        Some(m) if (1..=1024).contains(&m) => m << 20,
+        Some(_) => return Err(ClientError::Usage("--verify-chunk is in MiB, 1..1024".into())),
+    };
+    if p.opts.flag("verify-only") {
+        return run_verify_only(run, &p, &dev, file, serial, chunk);
+    }
+    if p.opts.value("from-range").is_some() || p.opts.flag("skip-gpt-head") {
+        return Err(ClientError::Usage("--from-range and --skip-gpt-head belong to --verify-only".into()));
+    }
     if !p.opts.flag("destructive") || serial.is_none() {
         return Err(ClientError::Safety(format!(
             "blk image overwrites the whole disk and needs BOTH --destructive and --serial SERIAL (the real serial of {} from `i7labctl blk ls`). Nothing was sent.",
@@ -730,12 +1107,13 @@ pub fn run_cli(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
         no_relocate: p.opts.flag("no-relocate"),
         allow_boot_media: p.opts.flag("allow-boot-media"),
         tuning: None,
+        verify_chunk: chunk,
     };
     let mut prep = run.prepare(p.host.as_deref(), 0.0)?;
     let live = run.env.out_tty && !run.g.json && !run.g.quiet;
     let json = run.g.json;
     let res = {
-        let mut ui = CliUi { run: &mut *run, live, drew: false };
+        let mut ui = CliUi { run: &mut *run, live, drew: false, last_plain: None };
         let r = flash(&mut *prep.transport, &dev, &params, &mut ui);
         ui.clear();
         r
@@ -771,6 +1149,61 @@ pub fn run_cli(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
                 }
             }
             Ok(if warn_gpt || warn_rr { 3 } else { 0 })
+        }
+        Err(FlashError::Mismatch(m)) => {
+            let e = ClientError::Failed(m);
+            Ok(crate::cli::emit_error(run.env, &run.g, "blk.image", &e, 3))
+        }
+        Err(FlashError::Client(e)) => Err(e),
+    }
+}
+
+fn run_verify_only(run: &mut Run, p: &crate::cmds::Parsed, dev: &str, file: &str, serial: Option<&str>, chunk: u64) -> Result<i32, ClientError> {
+    for f in ["destructive", "allow-boot-media", "verify", "resume", "grow-last", "no-relocate"] {
+        if p.opts.flag(f) {
+            return Err(ClientError::Usage(format!("--{} writes to the disk and cannot be combined with --verify-only", f)));
+        }
+    }
+    let Some(serial) = serial else {
+        return Err(ClientError::Safety(format!("--verify-only needs --serial SERIAL (the real serial of {} from `i7labctl blk ls`). Nothing was sent.", dev)));
+    };
+    let dest = p.uint("offset")?.unwrap_or(0);
+    if dest % 4096 != 0 {
+        return Err(ClientError::Usage(format!("--offset is the byte offset on the disk and must be a multiple of 4096, got {}", dest)));
+    }
+    let vp = VerifyParams { file: PathBuf::from(file), serial: serial.to_string(), dest_offset: dest, from_range: p.uint("from-range")?.unwrap_or(0), chunk, skip_gpt_head: p.opts.flag("skip-gpt-head") };
+    let mut prep = run.prepare(p.host.as_deref(), 0.0)?;
+    let live = run.env.out_tty && !run.g.json && !run.g.quiet;
+    let json = run.g.json;
+    let res = {
+        let mut ui = CliUi { run: &mut *run, live, drew: false, last_plain: None };
+        let r = verify_only(&mut *prep.transport, dev, &vp, &mut ui);
+        ui.clear();
+        r
+    };
+    let tname = prep.transport.name();
+    match res {
+        Ok(o) => {
+            if json {
+                let body = format!(
+                    "{{\"v\":1,\"verified\":true,\"ranges\":{},\"bytes\":{},\"elapsed_ms\":{},\"sha256\":{},\"skipped_gpt_head\":{}}}",
+                    o.ranges,
+                    o.bytes,
+                    o.elapsed.as_millis(),
+                    o.sha256.as_ref().map_or("null".to_string(), |s| format!("\"{}\"", s)),
+                    o.skipped_head
+                );
+                let e = output::ok_envelope(tname, Some(&prep.info), "blk.image", None, &body);
+                run.outln(&e);
+            } else {
+                let secs = o.elapsed.as_secs_f64().max(0.001);
+                match &o.sha256 {
+                    Some(h) => run.outln(&format!("verify OK {}", h)),
+                    None => run.outln(&format!("verify OK (ranges {}..end; no whole-image hash when resuming at a later range)", vp.from_range)),
+                }
+                run.outln(&format!("{} bytes in {} ranges, {} ({:.1} MB/s){}", o.bytes, o.ranges, fmt_dur(secs as u64), o.bytes as f64 / 1e6 / secs, if o.skipped_head { "; the first 8192 bytes were not compared (--skip-gpt-head)" } else { "" }));
+            }
+            Ok(0)
         }
         Err(FlashError::Mismatch(m)) => {
             let e = ClientError::Failed(m);
@@ -964,7 +1397,7 @@ mod tests {
     }
 
     fn params(p: &PathBuf) -> Params {
-        Params { file: p.clone(), serial: "SER1".into(), verify: true, dest_offset: 0, resume: false, grow_last: false, no_relocate: false, allow_boot_media: false, tuning: Some(Tuning { chunk: 256 << 10, window: 1 << 20 }) }
+        Params { file: p.clone(), serial: "SER1".into(), verify: true, dest_offset: 0, resume: false, grow_last: false, no_relocate: false, allow_boot_media: false, tuning: Some(Tuning { chunk: 256 << 10, window: 1 << 20 }), verify_chunk: 0 }
     }
 
     const OK_BODY: &str = "{\"v\":1,\"done\":true,\"sha256\":\"ab\",\"verified\":true,\"gpt\":{\"action\":\"moved\"},\"rrpart\":\"ok\"}";
@@ -1014,7 +1447,7 @@ mod tests {
         assert!(!transfers[0].iter().any(|a| a == "--resume"));
         assert!(transfers[1].iter().any(|a| a == "--resume") && transfers[2].iter().any(|a| a == "--resume"));
         for a in &transfers {
-            assert!(a.iter().any(|x| x == "--destructive") && a.iter().any(|x| x == "--verify"));
+            assert!(a.iter().any(|x| x == "--destructive") && a.iter().any(|x| x == "--verify-ranges"));
             assert_eq!(a.iter().position(|x| x == "--serial").map(|i| a[i + 1].as_str()), Some("SER1"));
         }
         assert!(ui.said.iter().any(|s| s.contains("continuing at byte 262144")), "{:?}", ui.said);

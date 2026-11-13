@@ -107,7 +107,7 @@ impl Ui for TUi {
 }
 
 fn params(p: &PathBuf, serial: &str) -> Params {
-    Params { file: p.clone(), serial: serial.into(), verify: true, dest_offset: 0, resume: false, grow_last: false, no_relocate: false, allow_boot_media: false, tuning: None }
+    Params { file: p.clone(), serial: serial.into(), verify: true, dest_offset: 0, resume: false, grow_last: false, no_relocate: false, allow_boot_media: false, tuning: None, verify_chunk: 0 }
 }
 
 // ------------------------------------------------------------------ in-process "ether-style" transport
@@ -162,7 +162,7 @@ impl Transport for Local<'_> {
         "ether"
     }
     fn call(&mut self, cmd: &CmdSpec, args: &[String], io: &mut dyn ClientIo) -> Result<CallResult, ClientError> {
-        let is_transfer = !args.iter().any(|a| a == "--status" || a == "--abort");
+        let is_transfer = !args.iter().any(|a| matches!(a.as_str(), "--status" | "--abort" | "--finish" | "--hash-range" | "--hash-disk"));
         if is_transfer {
             self.attempts += 1;
         }

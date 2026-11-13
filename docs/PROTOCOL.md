@@ -309,7 +309,7 @@ Short results (RESP up to 1 MiB) are cached by `req_id`, so a lost RESP is re-se
 | 0x0017 | `blk.verify` | 1 | R | `<dev> --seed N [--regions ..]` | re-read and compare a region previously written by `blk.write`, no write |
 | 0x0018 | `net.ls` | 2 | R | `[<iface>]` | JSON NICs: MAC, driver, link state, speed, duplex, carrier changes, IPv4/IPv6, VLAN subifs, rx/tx counters, route, DNS |
 | 0x0019 | `thermal` | 1 | R | `[--follow]` | JSON temperatures/fans, streamed with `--follow` |
-| 0x001A | `blk.image` | 1 | W | `<dev> --size N --image-id HEX --serial S --destructive [--dest-offset B] [--resume] [--verify] [--grow-last] [--no-relocate]` \| `<dev> --status [--image-id HEX]` \| `<dev> --abort` | stream a disk image onto a whole disk through the write gate (section 7.1); upload channel carries the records, `ack` events on chan 1, result JSON |
+| 0x001A | `blk.image` | 1 | W | `<dev> --size N --image-id HEX --serial S --destructive [--dest-offset B] [--resume] [--verify] [--verify-ranges] [--grow-last] [--no-relocate]` \| `<dev> --size N --image-id HEX --serial S --destructive --resume (--hash-range OFF:LEN \| --finish) ..` \| `<dev> --size N --serial S --hash-disk OFF:LEN [--dest-offset B]` \| `<dev> --status [--image-id HEX]` \| `<dev> --abort` | stream a disk image onto a whole disk through the write gate (section 7.1); upload channel carries the records, `ack` events on chan 1, result JSON |
 | 0x0020 | `exec` | 3 | W | `[--timeout S] [--env K=V]... [--cwd D] [--tty COLSxROWS] [--detach] [--stdin] -- argv...` | chan 1/2 streams; RESP body: `i32 exit_code` + JSON `{signal,duration_ms}`; `status` OK unless the command could not start |
 | 0x0021 | `shell` | 3 | W | `[--cols N --rows N] [--term T]` | like exec of `/bin/i7labsh` on a pty (the in-image shell); chan 3/1/5 |
 | 0x0030 | `put` | 4 | W | `<path> --size N --sha256 HEX [--mode 0644] [--offset N] [--mkdirs]` | after chan 4 data and verification: JSON `{bytes,sha256}`; writes to `<path>.part`, renames at the end; `--offset` resumes |
@@ -386,6 +386,10 @@ stays for 300 s (`IDLE_TTL`), holding the disk lock, then is dropped; the state 
 Zero ranges: executed with `BLKZEROOUT` (guaranteed zeros; the kernel uses WRITE ZEROES or writes zero pages), falling back to ordinary zero writes where the ioctl does not exist. `BLKDISCARD` is **not** used, because the
 content read back after a discard is unspecified and the verification must stay exact. Zero ranges are still hashed (the whole-image SHA-256 covers every byte).
 
+Chunked verification (`--verify-ranges`, section 7.1.1 below): a read-back of a whole 20-60 GiB disk is minutes of work and must not be one request, so the client sets `--verify-ranges` and the host,
+instead of re-reading, ends the transfer request after END with `{"v":1,"next":N,"size":N,"done":false,"phase":"verify","sha256":"<image sha>"}` and keeps the session (disk lock held) in the **verify phase**.
+The old inline `--verify` (one request that re-reads everything) still exists for old clients.
+
 Verification: END's SHA-256 is compared with the hash the host kept while writing in order (`verify_mode":"stream"`); after a resume the disk range is re-read in 1 MiB steps instead (`"reread"`, counts as verified).
 With `--verify` the host additionally re-reads the whole range from the device (O_DIRECT, after fsync + BLKFLSBUF) and compares it with END (`readback_mismatch` otherwise).
 
@@ -393,6 +397,20 @@ After a verified write (unless `--no-relocate`, or `--dest-offset` != 0): the ho
 updated, primary entries untouched, protective MBR size updated; refuses, leaving the disk as streamed, on a bad CRC or a partition beyond the disk; `--grow-last` additionally extends the partition that ends last to the new last usable LBA and rewrites both entry arrays),
 and issues `BLKRRPART`. Result: `{"v":1,"done":true,"bytes","sha256","verified","verify_mode","data_bytes","zero_bytes","elapsed_ms","gpt":{"action":"moved|already_at_end|none|skipped|error",...},"rrpart":"ok|n/a ..|failed: .."}`.
 The sectors of the disk that differ from the image afterwards are LBA 0 (protective MBR size), LBA 1 (primary header) and the last LBAs (backup): everything else is the image byte for byte.
+
+#### 7.1.1 Verify phase and `--hash-disk`
+
+Short requests, all JSON, no upload channel, each repeating the transfer's own flags (`--size N --image-id HEX --serial S --destructive [--allow-boot-media] --resume`, and `--dest-offset` when used):
+
+* `--hash-range OFF:LEN`: image offsets, `OFF` a multiple of the logical block size, `LEN` at most 1 GiB (`TOO_BIG` otherwise; the client uses 256 MiB). The host reads the range from the disk through the session's fd (O_DIRECT, 1 MiB at a time, bounded memory, after the fsync at END) and answers
+  `{"v":1,"off":N,"len":N,"sha256":"<hex of that range>","ms":N}`. Zero ranges are real zeros and are hashed like everything else. The client compares with the SHA-256 of the same range of its image. The session's idle timer (`IDLE_TTL`, 300 s) restarts at the end of every request, so the verify may take any total time.
+* `--finish`: moves the GPT backup, re-reads the partition table, ends the session and answers the usual final result (`verified` is true and `verify_mode` is `"ranges"` when hash requests covered at least the image size, else `"none"`).
+* Errors: `no_session` (`NOT_FOUND`, `resumable:false`) when the host has no session of that image id on that disk (expired, aborted, host restarted); `not_ended` (`BAD_ARGS`) when END has not been accepted; `io` on a read error (the session stays). A request without `--resume --destructive --serial` is `BAD_ARGS`; the gate flags of the session must match (`REFUSED` otherwise).
+* After END of a transfer that began after a resume the host does not re-read the disk itself when `--verify-ranges` is set (it takes the client's END hash on trust: the client's range compare is the verification).
+
+`<dev> --size N --serial S --hash-disk OFF:LEN [--dest-offset B]` is the same read without any session or write gate, for `blk image --verify-only`: admin key, `--serial` equal to the disk's serial (or WWID; `REFUSED` when missing, different or the disk has none), no transfer session on that disk (`BUSY`), the device opened read-only (O_DIRECT) with no claim, `OFF+LEN` inside `--size`, the image placed at `--dest-offset`. Same reply as `--hash-range`. Nothing is written and no audit line is made.
+
+Client (`i7labctl blk image`): the compare loop hashes the local image on a thread (bounded queue of 2 ranges) while the host hashes the previous one; a range whose request fails is retried once, a range whose hash differs is requested once more before it is reported with its offset and length.
 
 ## 8. Rate limiting and abuse rules
 
