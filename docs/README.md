@@ -30,7 +30,6 @@ Start with the [project README](../README.md). Then pick by what you are doing.
 | [PROTOCOL.md](PROTOCOL.md) | wire protocols: frames, sessions, catalogue, beacons, test vectors, threat model |
 | [PROBES.md](PROBES.md) | what is probed and how, the block test engine |
 | [ROADMAP.md](ROADMAP.md) | versions and open items |
-| [LICENSE-DECISION.md](LICENSE-DECISION.md) | licence options for the operator |
 | [THIRD_PARTY.md](THIRD_PARTY.md) | third-party material in built images |
 | [../SECURITY.md](../SECURITY.md) | threat model and reporting |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | how to work on it |

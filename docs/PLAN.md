@@ -871,9 +871,8 @@ are open; everything else is signed. `i7labctl web` (local proxy for ether-only 
 
 ## 11. Licence
 
-**No LICENSE file until the operator chooses** (options and recommendation in [LICENSE-DECISION.md](LICENSE-DECISION.md)).
-Cargo manifests carry `publish = false` and no `license` field. README says "Licence: not yet chosen; all rights reserved
-by the author until then". Third-party material in built images (Linux GPL-2.0-only, GRUB GPL-3.0-or-later, firmware
+**MIT** (`LICENSE` at the repository root, `license = "MIT"` in the workspace manifest; decided by the operator 2026-11-13).
+Cargo manifests carry `publish = false`. Third-party material in built images (Linux GPL-2.0-only, GRUB GPL-3.0-or-later, firmware
 per `WHENCE`) is listed in `docs/THIRD_PARTY.md` (build lane) and in the image under `/usr/share/i7lab/LICENSES`; the
 kernel source offer is the pinned tarball URL + our fragments.
 

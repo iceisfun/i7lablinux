@@ -1,7 +1,7 @@
 # Third-party material
 
 Our source tree has no third-party crates. Built images and release bundles contain the following. This list is a
-summary for the licence decision, not legal advice; the image carries the full texts under `/usr/share/i7lab/LICENSES`
+summary, not legal advice; the image carries the full texts under `/usr/share/i7lab/LICENSES`
 (see [PLAN.md](PLAN.md) section 11).
 
 | component | in | licence | notes |

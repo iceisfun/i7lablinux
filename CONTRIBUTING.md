@@ -56,5 +56,5 @@ recon belong in [docs/design-history/](docs/design-history/README.md), not in th
 
 ## Commits
 
-No sign-off trailers are required. The licence is undecided ([docs/LICENSE-DECISION.md](docs/LICENSE-DECISION.md)), so
-do not contribute code you cannot license to the maintainer.
+No sign-off trailers are required. The project is MIT licensed ([LICENSE](LICENSE)); by contributing you agree that your
+contribution is licensed the same way, so do not contribute code you cannot license under the MIT licence.

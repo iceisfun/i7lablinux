@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license.workspace = true
 
 # No dependencies on purpose. crypto.rs, json.rs and httpauth.rs are compiled straight from crates/labproto/src
 # (#[path] in main.rs) because labproto as a whole is Linux-only (libc FFI, AF_PACKET, unix permissions).

@@ -31,7 +31,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
 publish = false
-# No license field on purpose: the operator has not chosen a licence yet (docs/PLAN.md section 11).
+license = "MIT"
 
 # No external dependencies anywhere in this workspace (std + hand-written libc FFI only).
 [workspace.dependencies]

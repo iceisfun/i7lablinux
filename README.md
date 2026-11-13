@@ -97,6 +97,5 @@ image, QEMU and the full end-to-end run need the build host. See [CONTRIBUTING.m
 
 ## Licence
 
-Not chosen yet; there is deliberately no LICENSE file until the operator decides
-([docs/LICENSE-DECISION.md](docs/LICENSE-DECISION.md)). Built images contain third-party components under their own
+MIT, see [LICENSE](LICENSE). Built images contain third-party components under their own
 licences ([docs/THIRD_PARTY.md](docs/THIRD_PARTY.md)).
