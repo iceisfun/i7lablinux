@@ -9,6 +9,21 @@ members = [
     "crates/i7labsh",
     "crates/i7labctl",
     "crates/i7labwr",
+    "crates/i7oracled",
+]
+# i7oracled is a WINDOWS daemon (cross-built for x86_64-pc-windows-gnu, docs/ORACLED.md). It is a workspace
+# member (shared lockfile, `cargo build -p i7oracled --target x86_64-pc-windows-gnu`) but not a default member,
+# so a plain `cargo build` / `cargo test` in the workspace root skips it. It still compiles on Linux (pure logic
+# + stubs) when selected with --workspace or -p.
+default-members = [
+    "crates/labproto",
+    "crates/labprobe",
+    "crates/labtui",
+    "crates/i7labd",
+    "crates/i7lab-init",
+    "crates/i7labsh",
+    "crates/i7labctl",
+    "crates/i7labwr",
 ]
 
 [workspace.package]
