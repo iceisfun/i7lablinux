@@ -1,4 +1,4 @@
-# Added to modules.list when the image is built with WIFI=1 and FIRMWARE=wifi (needs the 60-wifi.config kernel fragment).
+# Wi-Fi modules that MUST exist in the kernel (assertion list like modules.list; Wi-Fi is always built, see 60-wifi.config).
 cfg80211
 mac80211
 iwlwifi
@@ -14,3 +14,11 @@ ath11k
 ath11k_pci
 mt76
 mt7921e
+iwlmld
+ath9k
+ath12k
+mt7925e
+mt7996e
+rtl8xxxu
+brcmfmac
+mwifiex

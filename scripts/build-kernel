@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Fetch the pinned kernel (configs/kernel/VERSION), verify sha256, merge fragments, build bzImage + modules into out/kernel.
-# usage: build-kernel [--jobs N] [--build-host auto|local|HOST] [--lenient] [--keep-tree] [--no-cache] [WIFI=1]
+# Fetch the pinned kernel (configs/kernel/VERSION.<flavour>), verify sha256 + signature, merge fragments, build bzImage + modules
+# into out/kernel.
+# usage: build-kernel [--kernel stable|lts] [--jobs N] [--build-host auto|local|HOST] [--lenient] [--config-only] [--keep-tree] [--no-cache]
+#   --kernel stable (default) = newest stable pinned in VERSION.stable; lts = pinned longterm fallback (VERSION.lts).
+#   --config-only: unpack, resolve and check the config (fragments, must-be-y.list), then stop: for iterating on fragments.
+#   WIFI=1 is accepted and ignored (Wi-Fi drivers are always built as modules now).
 #   auto (default): build here when this machine has >= 64 cores or I7_ON_BUILD_HOST=1, else on the build host via scripts/remote
 #   and fetch out/kernel back. --lenient turns "requested symbol was dropped" from an error into a warning (config iteration).
 #   out/kernel: bzImage, config (resolved .config), modules/lib/modules/<rel>/, BUILD-INFO, SHA256SUMS
 # Owner: P10. Spec: docs/PLAN.md section 7, docs/BUILD.md.
 . "$(dirname "$0")/lib/common.sh"
 
-JOBS="" HOSTSEL=auto LENIENT=0 KEEP=0 NOCACHE=0 WIFI="${WIFI:-0}"
+JOBS="" HOSTSEL=auto LENIENT=0 KEEP=0 NOCACHE=0 CONFIGONLY=0
 ORIG_ARGS=("$@")
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -16,8 +20,10 @@ while [ $# -gt 0 ]; do
     --lenient) LENIENT=1; shift;;
     --keep-tree) KEEP=1; shift;;
     --no-cache) NOCACHE=1; shift;;
-    WIFI=*) WIFI="${1#WIFI=}"; shift;;
-    -h|--help) sed -n '2,7p' "$0"; exit 0;;
+    --kernel) i7_select_kernel "${2:?--kernel stable|lts}"; shift 2;;
+    --config-only) CONFIGONLY=1; shift;;
+    WIFI=*) shift;;
+    -h|--help) sed -n '2,10p' "$0"; exit 0;;
     *) die "unknown option $1 (see --help)";;
   esac
 done
@@ -33,6 +39,7 @@ if ! on_build_host; then
   LABEL="${I7_REMOTE_LABEL:-build}"
   info "this machine has $(nproc) cores: building on $I7_HOST (label $LABEL)"
   remote_run "$LABEL" scripts/build-kernel "${ORIG_ARGS[@]}" --build-host local
+  [ "$CONFIGONLY" = 0 ] || exit 0
   remote_fetch "$LABEL" kernel
   info "kernel fetched to $I7_OUT/kernel"
   exit 0
@@ -43,19 +50,16 @@ need make gcc bc flex bison perl cpio xz tar curl sha256sum awk
 for h in libelf.h openssl/evp.h; do
   [ -e "/usr/include/$h" ] || [ -e "/usr/include/x86_64-linux-gnu/$h" ] || die "missing header $h (apt-get install libelf-dev libssl-dev)"
 done
-VF="$I7_ROOT/configs/kernel/VERSION"
-KVER="$(conf_get "$VF" version)"; URL="$(conf_get "$VF" url)"; SHA="$(conf_get "$VF" sha256)"; SIGN_URL="$(conf_get "$VF" sign_url)"
-[ -n "$KVER" ] && [ -n "$URL" ] && [[ "$SHA" =~ ^[0-9a-f]{64}$ ]] || die "configs/kernel/VERSION needs version=, url=, sha256= (64 hex)"
+VF="$I7_VERSION_FILE"
+KVER="$(conf_get "$VF" version)"; URL="$(conf_get "$VF" url)"; SHA="$(conf_get "$VF" sha256)"; SIGN_URL="$(conf_get "$VF" sign_url)"; SIGNER="$(conf_get "$VF" signer_fpr)"
+[ -n "$KVER" ] && [ -n "$URL" ] && [[ "$SHA" =~ ^[0-9a-f]{64}$ ]] || die "$VF needs version=, url=, sha256= (64 hex)"
 JOBS="${JOBS:-$(nproc)}"
 FRAGDIR="$I7_ROOT/configs/kernel/fragments"
 FRAGS=()
-for f in "$FRAGDIR"/*.config; do
-  case "$(basename "$f")" in 60-wifi.config) [ "$WIFI" = 1 ] || continue;; esac
-  FRAGS+=("$f")
-done
+for f in "$FRAGDIR"/*.config; do FRAGS+=("$f"); done
 
 # cache key: everything that changes the kernel
-KEY="$( { cat "$VF" "${FRAGS[@]}" "$I7_ROOT/configs/kernel/must-be-y.list"; gcc --version | head -n1; echo "wifi=$WIFI"; } | sha256sum | cut -c1-16)"
+KEY="$( { cat "$VF" "${FRAGS[@]}" "$I7_ROOT/configs/kernel/must-be-y.list"; gcc --version | head -n1; echo "flavour=$I7_KERNEL"; } | sha256sum | cut -c1-16)"
 CDIR="$I7_CACHE/kernel-$KEY"
 mkdir -p "$I7_CACHE/dl" "$I7_OUT"
 if [ -s "$CDIR/bzImage" ] && [ "$NOCACHE" = 0 ]; then
@@ -70,11 +74,20 @@ else
   fi
   [ "$(sha256_file "$TAR")" = "$SHA" ] || { rm -f "$TAR"; die "sha256 of $(basename "$TAR") does not match configs/kernel/VERSION (file removed)"; }
   info "sha256 ok ($SHA)"
+  SIGSTATE="not-checked"
   if command -v gpg >/dev/null 2>&1 && [ -n "$SIGN_URL" ]; then
+    # own keyring (never the operator's): kernel.org developer keys come from WKD, the signature must be by the pinned signer_fpr
+    export GNUPGHOME="$I7_CACHE/gnupg"; mkdir -p "$GNUPGHOME"; chmod 700 "$GNUPGHOME"
     SIG="$I7_CACHE/dl/$(basename "$SIGN_URL")"
     [ -s "$SIG" ] || curl -fsSL -o "$SIG" "$SIGN_URL" 2>/dev/null || true
-    if [ -s "$SIG" ] && xz -dc "$TAR" | gpg --verify "$SIG" - >/dev/null 2>&1; then info "kernel.org signature ok"
-    else warn "kernel.org signature NOT verified (gpg keys not imported or no .sign file); the pinned sha256 is the control"; fi
+    gpg -q --batch --auto-key-locate clear,wkd --locate-keys gregkh@kernel.org torvalds@kernel.org sashal@kernel.org >/dev/null 2>&1 || true
+    VOUT=""; [ ! -s "$SIG" ] || VOUT="$(xz -dc "$TAR" | gpg --batch --status-fd 1 --verify "$SIG" - 2>/dev/null || true)"
+    if grep -q "^\[GNUPG:\] VALIDSIG ${SIGNER:-NOSIGNER} " <<<"$VOUT"; then
+      SIGSTATE="verified-by-$SIGNER"; info "kernel.org signature ok (key $SIGNER)"
+    else
+      SIGSTATE="NOT-verified"; warn "kernel.org signature NOT verified (no keys, no .sign file, or signed by another key than signer_fpr=); the pinned sha256 is the control"
+      [ -z "${I7_REQUIRE_SIG:-}" ] || die "I7_REQUIRE_SIG is set and the signature did not verify"
+    fi
   fi
 
   # ---- configure
@@ -109,17 +122,32 @@ else
       esac
     done < "$f"
   done
+  # must-be-y.list grammar: SYM (must be =y) | SYM=VALUE (exact value, e.g. DEFAULT_MMAP_MIN_ADDR=65536) | !SYM (must be unset)
   while IFS= read -r s; do
     case "$s" in ''|'#'*) continue;; esac
-    grep -qx "CONFIG_$s=y" .config || chk_fail "must-be-y.list: CONFIG_$s is not =y in the resolved config"
+    case "$s" in
+      '!'*) sym="${s#!}"; got="$(sed -n "s/^CONFIG_$sym=//p" .config)"
+            { [ -z "$got" ] || [ "$got" = n ]; } || chk_fail "must-be-y.list: CONFIG_$sym must be unset, resolved '$got'";;
+      *=*)  sym="${s%%=*}"; want="${s#*=}"; got="$(sed -n "s/^CONFIG_$sym=//p" .config)"
+            [ "$got" = "$want" ] || chk_fail "must-be-y.list: CONFIG_$sym=$want required, resolved '${got:-unset}'";;
+      *)    grep -qx "CONFIG_$s=y" .config || chk_fail "must-be-y.list: CONFIG_$s is not =y in the resolved config";;
+    esac
   done < "$I7_ROOT/configs/kernel/must-be-y.list"
   [ "$BAD" = 0 ] || die "$BAD config problem(s) above; fix configs/kernel/fragments (or --lenient to iterate)"
   info "config check ok"
+  if [ "$CONFIGONLY" = 1 ]; then
+    cp .config "$I7_CACHE/config-$I7_KERNEL.resolved"
+    info "--config-only: stopped before the build; resolved config in $I7_CACHE/config-$I7_KERNEL.resolved ($(grep -c '=m$' .config) modules, $(grep -c '=y$' .config) built in)"
+    [ "$KEEP" = 1 ] || rm -rf "$W"
+    exit 0
+  fi
 
   # ---- build
   info "make -j$JOBS bzImage modules"
   make -s -j"$JOBS" bzImage modules 2>&1 | tail -n 40
   [ -s arch/x86/boot/bzImage ] || die "no bzImage produced"
+  BZ=$(stat -c%s arch/x86/boot/bzImage)
+  [ "$BZ" -le $((20*1048576)) ] || [ -n "${I7_ALLOW_BIG_KERNEL:-}" ] || die "bzImage is $((BZ/1048576)) MiB (> 20 MiB budget): move more drivers to modules (I7_ALLOW_BIG_KERNEL=1 to override)"
   STAGE="$W/modstage"; rm -rf "$STAGE"
   make -s modules_install INSTALL_MOD_PATH="$STAGE" INSTALL_MOD_STRIP=1 DEPMOD=true >/dev/null
   REL="$(cat include/config/kernel.release)"
@@ -133,7 +161,7 @@ else
   cp -a "$STAGE/lib" "$OUTK/modules/"
   {
     echo "kernel=$KVER"; echo "release=$REL"; echo "sha256_tarball=$SHA"; echo "epoch=$SOURCE_DATE_EPOCH"
-    echo "wifi=$WIFI"; echo "cache_key=$KEY"; echo "gcc=$(gcc --version | head -n1)"; echo "binutils=$(ld --version | head -n1)"
+    echo "flavour=$I7_KERNEL"; echo "signature=$SIGSTATE"; echo "cache_key=$KEY"; echo "gcc=$(gcc --version | head -n1)"; echo "binutils=$(ld --version | head -n1)"
     echo "built_on=$(hostname) $(nproc) cores"
   } > "$OUTK/BUILD-INFO"
   ( cd "$OUTK" && sha256sum bzImage config > SHA256SUMS )

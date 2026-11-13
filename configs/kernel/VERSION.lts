@@ -1,0 +1,11 @@
+# Pinned LTS kernel source (owner: P10), the fallback: scripts/build-kernel --kernel lts. Format: key=value, one per line.
+# Policy: newest longterm, exact version + sha256, never "latest". Bump = edit these lines, rebuild, commit.
+version=6.18.63
+url=https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.63.tar.xz
+sha256=81764a545072d160748beff4d9de2e7d95aa9f16e8261110288f067a2cc61d71
+# Detached signature of the uncompressed tar, and the fingerprint of the key that must have made it (checked when gpg is
+# present: build-kernel fetches the kernel.org keys into its own keyring, docs/BUILD.md "Signatures").
+sign_url=https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.63.tar.sign
+signer_fpr=647F28654894E3BD457199BE38DBBDC86092693E
+# SOURCE_DATE_EPOCH for every artifact (kernel build time, initramfs mtimes, image timestamps): ours, not the release date.
+epoch=1767225600

@@ -1,24 +1,32 @@
 #!/usr/bin/env bash
-# Build a KEYLESS release bundle: image, ISO, kernel build info, i7labctl, docs, checksums. Never contains keys.
-# usage: make-release [--no-build] [--out DIR]
+# Build a KEYLESS, FIRMWARE-FREE release bundle: image, ISO, kernel build info, i7labctl, docs, checksums. Never contains keys.
+# usage: make-release [--no-build] [--out DIR] [--variant lean|full] [--kernel stable|lts] [--with-firmware]
+#   Default: lean variant built with FIRMWARE=none (all drivers as modules, NO linux-firmware blobs: they carry their own
+#   redistribution licences, docs/THIRD_PARTY.md) and the build refuses to bundle an image that contains /lib/firmware files.
+#   --with-firmware: bundle an image WITH the variant's firmware set (a local, operator-only artifact: never publish it
+#   from the public repository) and write a NOTICE saying so.
 #   out/release/i7lablinux-<kver>-<sha7>/ and a .tar.zst next to it. Refuses to run with a key-baked image or when the
 #   build fails the no-busybox check. Reproducible inputs: pinned kernel, SOURCE_DATE_EPOCH, sorted archives (docs/BUILD.md).
 # Owner: P10. Spec: docs/PLAN.md sections 7, 11.
 . "$(dirname "$0")/lib/common.sh"
 
-BUILD=1 OUTD="$I7_OUT/release"
+BUILD=1 OUTD="$I7_OUT/release" WITHFW=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-build) BUILD=0; shift;;
     --out) OUTD="${2:?}"; shift 2;;
-    -h|--help) sed -n '2,6p' "$0"; exit 0;;
+    --variant) i7_select_variant "${2:?--variant lean|full}"; shift 2;;
+    --kernel) i7_select_kernel "${2:?--kernel stable|lts}"; shift 2;;
+    --with-firmware) WITHFW=1; shift;;
+    -h|--help) sed -n '2,10p' "$0"; exit 0;;
     *) die "unknown option $1 (see --help)";;
   esac
 done
-need sha256sum tar zstd
+need sha256sum tar zstd cpio
 "$I7_ROOT/scripts/check-no-busybox" --repo
 if [ "$BUILD" = 1 ]; then
-  "$I7_ROOT/scripts/build-image" --full
+  FWARG=FIRMWARE=none; [ "$WITHFW" = 0 ] || FWARG=FIRMWARE=auto
+  "$I7_ROOT/scripts/build-image" --full --variant "$I7_VARIANT" --kernel "$I7_KERNEL" "$FWARG"
   "$I7_ROOT/scripts/build-userland" --ctl-only >/dev/null 2>&1 || warn "i7labctl did not build: the bundle has no operator binary"
 fi
 ID="$(i7_image_id)"
@@ -30,18 +38,33 @@ if command -v mcopy >/dev/null 2>&1 && command -v sgdisk >/dev/null 2>&1; then
   SZ="$(MTOOLS_SKIP_CHECK=1 mcopy -n -i "$IMG@@$OFF" ::i7lab/keys.cpio - | wc -c)"
   [ "$SZ" -le 124 ] || die "$IMG carries keys.cpio of $SZ bytes: a release image must be keyless (rebuild with build-image)"
   "$I7_ROOT/scripts/check-no-busybox" --image "$IMG"
+  # firmware gate: a default bundle must not carry a single linux-firmware blob
+  NFW="$(MTOOLS_SKIP_CHECK=1 mcopy -n -i "$IMG@@$OFF" ::i7lab/initramfs.cpio.zst - | zstd -dc | cpio -it --quiet 2>/dev/null | grep -c '^lib/firmware/.' || true)"
+  if [ "$WITHFW" = 0 ] && [ "${NFW:-0}" -gt 0 ]; then
+    die "$IMG carries $NFW firmware files: a release bundle is firmware-free (rebuild with FIRMWARE=none, or pass --with-firmware for a LOCAL bundle)"
+  fi
 else warn "mtools/sgdisk missing: could not check the image for baked keys"; fi
 D="$OUTD/i7lablinux-$ID"; rm -rf "$D"; mkdir -p "$D"
 cp "$IMG" "$D/"; [ ! -f "$ISOF" ] || cp "$ISOF" "$D/"
 cp "$I7_OUT/kernel/BUILD-INFO" "$D/KERNEL-BUILD-INFO" 2>/dev/null || true
 cp "$I7_OUT/kernel/config" "$D/kernel-config-$I7_KVER" 2>/dev/null || true
+cp "$I7_ROOT/configs/kernel/VERSION.$I7_KERNEL" "$D/KERNEL-VERSION" 2>/dev/null || true
+cp "$I7_ROOT/configs/firmware/VERSION" "$D/FIRMWARE-VERSION" 2>/dev/null || true
 [ ! -x "$I7_OUT/bin/i7labctl" ] || cp "$I7_OUT/bin/i7labctl" "$D/"
 cp "$I7_ROOT"/docs/{QUICKSTART,KEYS,REMOTE-BOOT,BUILD}.md "$D/" 2>/dev/null || true
 cat > "$D/README.txt" <<EOT
 i7lablinux $ID (keyless). This bundle contains NO keys: generate yours with scripts/gen-keys from the source tree,
 then add them with scripts/bake-keys --image / --iso / --device, or use scripts/build-usb-drive.
-Third-party: Linux GPL-2.0-only, GRUB GPL-3.0-or-later, firmware per linux-firmware (see the image's /usr/share/i7lab/LICENSES).
+Third-party: Linux GPL-2.0-only, GRUB GPL-3.0-or-later (see the image's /usr/share/i7lab/LICENSES).
 EOT
+if [ "$WITHFW" = 1 ]; then
+  cat >> "$D/README.txt" <<EOT
+NOTICE: this bundle includes linux-firmware blobs (tag in /etc/i7lab/BUILD), each under its own licence (WHENCE and
+LICENSES/ inside the image). It is a local operator artifact: do not publish it from the public source repository.
+EOT
+else
+  echo "Firmware: NONE (variant $I7_VARIANT without linux-firmware). Build with scripts/build-usb-drive --variant $I7_VARIANT on your own machine to add the pinned firmware." >> "$D/README.txt"
+fi
 ( cd "$D" && sha256sum -- * > SHA256SUMS )
 ( cd "$OUTD" && tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner -cf - "i7lablinux-$ID" | zstd -19 -T1 -q -f -o "i7lablinux-$ID.tar.zst" )
 info "release: $D and $OUTD/i7lablinux-$ID.tar.zst"

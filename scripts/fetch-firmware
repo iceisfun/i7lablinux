@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Fetch the PINNED linux-firmware release (configs/firmware/VERSION) into the build host's cache, verify and unpack it. The blobs
+# never enter this repository. build-initramfs calls this itself; run it by hand to warm the cache or to look at the tree.
+# usage: fetch-firmware [--build-host auto|local|HOST] [--stats VARIANT] [--print]
+#   default / --print: make sure the tree exists and print its path on stdout.
+#   --stats lean|full: also stage that variant (zstd) into a temp dir and print file count and size (for tuning the list files).
+#   --stage-to DIR (with --stats): keep the staged tree in DIR (on the build host) and print the biggest top-level entries.
+# Owner: P10. Spec: docs/BUILD.md "Firmware", docs/THIRD_PARTY.md.
+. "$(dirname "$0")/lib/common.sh"
+. "$I7_ROOT/scripts/lib/firmware.sh"
+HOSTSEL=auto STATS="" KEEPDIR=""
+ORIG=("$@")
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --build-host) HOSTSEL="${2:?}"; shift 2;;
+    --stats) STATS="${2:?lean|full}"; shift 2;;
+    --stage-to) KEEPDIR="${2:?DIR}"; shift 2;;
+    --print) shift;;
+    -h|--help) sed -n '2,7p' "$0"; exit 0;;
+    *) die "unknown option $1 (see --help)";;
+  esac
+done
+case "$HOSTSEL" in local) I7_BUILD_HOST=local;; auto) ;; *) I7_HOST="$HOSTSEL";; esac
+if ! on_build_host; then
+  need ssh
+  info "fetching on $I7_HOST (the tree stays in the build host's cache: $FW_TREE)"
+  remote_run "${I7_REMOTE_LABEL:-build}" scripts/fetch-firmware "${ORIG[@]}" --build-host local
+  exit 0
+fi
+fw_fetch() {
+  local VF="$FW_VERSION_FILE" url sha sign fpr tar d="$I7_CACHE/firmware-$FW_TAG"
+  url="$(conf_get "$VF" url)"; sha="$(conf_get "$VF" sha256)"; sign="$(conf_get "$VF" sign_url)"; fpr="$(conf_get "$VF" signer_fpr)"
+  [ -n "$FW_TAG" ] && [ -n "$url" ] && [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || die "$VF needs tag=, url=, sha256= (64 hex)"
+  if [ -f "$d/.ok" ] && [ "$(cat "$d/.ok")" = "$sha" ]; then return 0; fi
+  need curl tar xz zstd sha256sum realpath
+  mkdir -p "$I7_CACHE/dl"; tar="$I7_CACHE/dl/$(basename "$url")"
+  if [ ! -s "$tar" ] || [ "$(sha256_file "$tar")" != "$sha" ]; then
+    info "downloading $url (large: ~700 MB)"
+    curl -fsSL --retry 3 -o "$tar.part" "$url" || die "download failed: $url"
+    mv "$tar.part" "$tar"
+  fi
+  [ "$(sha256_file "$tar")" = "$sha" ] || { rm -f "$tar"; die "sha256 of $(basename "$tar") does not match configs/firmware/VERSION (file removed)"; }
+  info "sha256 ok ($sha)"
+  if command -v gpg >/dev/null 2>&1 && [ -n "$sign" ] && [ -n "$fpr" ]; then
+    export GNUPGHOME="$I7_CACHE/gnupg"; mkdir -p "$GNUPGHOME"; chmod 700 "$GNUPGHOME"
+    local sig="$I7_CACHE/dl/$(basename "$sign")" vout=""
+    [ -s "$sig" ] || curl -fsSL -o "$sig" "$sign" 2>/dev/null || true
+    gpg -q --batch --list-keys "$fpr" >/dev/null 2>&1 || gpg -q --batch --keyserver hkps://keys.openpgp.org --recv-keys "$fpr" >/dev/null 2>&1 \
+      || gpg -q --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys "$fpr" >/dev/null 2>&1 || true
+    [ ! -s "$sig" ] || vout="$(xz -dc "$tar" | gpg --batch --status-fd 1 --verify "$sig" - 2>/dev/null || true)"
+    if grep -q "^\[GNUPG:\] VALIDSIG $fpr " <<<"$vout"; then info "linux-firmware signature ok (key $fpr)"
+    else warn "linux-firmware signature NOT verified; the pinned sha256 is the control"; [ -z "${I7_REQUIRE_SIG:-}" ] || die "I7_REQUIRE_SIG is set and the signature did not verify"; fi
+  fi
+  rm -rf "$d"; mkdir -p "$d/x"
+  tar -xJf "$tar" -C "$d/x"
+  mv "$d/x/linux-firmware-$FW_TAG" "$d/tree" || die "tarball did not contain linux-firmware-$FW_TAG"
+  rmdir "$d/x"; printf '%s\n' "$sha" > "$d/.ok"
+}
+fw_fetch
+if [ -n "$STATS" ]; then
+  if [ -n "$KEEPDIR" ]; then s="$KEEPDIR"; rm -rf "$s"; else s="$(mktemp -d)"; trap 'rm -rf "$s"' EXIT; fi
+  info "stage $STATS: $(fw_select "$STATS" "$FW_TREE" "$s")"
+  [ -z "$KEEPDIR" ] || { info "largest entries (KiB):"; du -sk "$s"/* | sort -rn | head -25 | sed "s|$s/||" >&2; }
+fi
+echo "$FW_TREE"

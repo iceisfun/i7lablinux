@@ -1,0 +1,51 @@
+# Firmware for the LEAN image (image + ISO must stay under 256 MiB so a JetKVM uploads it quickly): a curated subset, globs on
+# installed names ("*" crosses "/"), plus link targets automatically. "@latest N GLOB" keeps the N highest -<number> versions per
+# family. Everything else needs the full variant. Grow it only with a measurement (scripts/fetch-firmware --stats lean).
+# --- Wi-Fi: Intel 9260, AX2xx and BE2xx families, newest ucode per family; the PNVM files travel with them (older cards: full)
+iwlwifi-cc-a0-*
+iwlwifi-Qu*
+iwlwifi-QuZ*
+iwlwifi-so-a0-*
+iwlwifi-ty-a0-*
+iwlwifi-ma-*
+iwlwifi-bz-*
+iwlwifi-gl-*
+iwlwifi-sc*
+iwlwifi-9260-*
+@latest 1 iwlwifi-*.ucode
+# --- Wi-Fi: Realtek, MediaTek, Atheros/Qualcomm top families, Broadcom USB/PCIe basics
+rtw88/*
+rtw89/*
+rtlwifi/*
+rtl_bt/*
+mediatek/mt7921*
+mediatek/mt7922*
+mediatek/mt7925/*
+mediatek/mt7925*
+mediatek/WIFI_*
+mediatek/BT_RAM_CODE_MT79*
+ath10k/QCA6174/*
+ath10k/QCA9377/*
+ath11k/WCN6855/*
+ath11k/QCA6390/*
+ath12k/WCN7850/*
+ath9k_htc/*
+ar3k/*
+htc_*
+carl9170*
+regulatory.db*
+# --- Bluetooth (Intel ibt, Qualcomm qca, Realtek above)
+intel/ibt-*
+qca/*
+# --- wired NICs that need a blob
+rtl_nic/*
+tigon/*
+bnx2/*
+bnx2x/*
+e100/*
+intel/ice/*
+# --- display: Intel i915 DMC + newest GuC/HuC per platform, xe (small); no amdgpu/nouveau here (see modules.lean.exclude)
+i915/*_dmc*
+@latest 1 i915/*_guc_*
+@latest 1 i915/*_huc_*
+xe/*

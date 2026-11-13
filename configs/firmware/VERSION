@@ -1,0 +1,10 @@
+# Pinned linux-firmware release (owner: P10). scripts/fetch-firmware downloads it on the build host into the cache, verifies the
+# sha256 and the detached signature (key signer_fpr), and unpacks it there. NEVER committed to this repository: the blobs carry
+# their own redistribution licences (see docs/THIRD_PARTY.md). Policy: exact tag + sha256, never "latest".
+# Source: https://cdn.kernel.org/pub/linux/kernel/firmware/ (tags of git.kernel.org linux-firmware), sums from sha256sums.asc there.
+tag=20261019
+url=https://cdn.kernel.org/pub/linux/kernel/firmware/linux-firmware-20261019.tar.xz
+sha256=a10d1ab5baf2c74ba92e8c7cf313e691696c26bddfa6df00db795e48d70cd4ca
+sign_url=https://cdn.kernel.org/pub/linux/kernel/firmware/linux-firmware-20261019.tar.sign
+# Josh Boyer, the linux-firmware release signer (fetched from keys.openpgp.org into fetch-firmware's private keyring)
+signer_fpr=4CDE8575E547BF835FE15807A31B6BD72486CFD6

@@ -1,0 +1,10 @@
+# Pinned STABLE kernel source (owner: P10), the default: scripts/build-kernel [--kernel stable]. Format: key=value.
+# Policy: the newest stable release on kernel.org at pin time (7.3.4 on 2026-11-13: finger_banner + v7.x/sha256sums.asc), exact
+# version + sha256, never "latest". Bump = edit version/url/sha256/sign_url, rebuild on the build host, run e2e, commit.
+# Stable branches go EOL quickly: when kernel.org marks this series (EOL), bump it or build --kernel lts.
+version=7.3.4
+url=https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.3.4.tar.xz
+sha256=b11b6df8295e8e991ff040b71aaa4994a8b55caa23b6b092907f195b5840fd1f
+sign_url=https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.3.4.tar.sign
+signer_fpr=647F28654894E3BD457199BE38DBBDC86092693E
+epoch=1767225600

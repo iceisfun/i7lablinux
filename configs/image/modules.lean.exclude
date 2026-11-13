@@ -1,0 +1,6 @@
+# Module-name globs left OUT of the lean image (the full image has everything). Reason: these GPU drivers claim the firmware
+# framebuffer (simpledrm) at probe time and cannot finish without their big firmware sets, which only the full variant ships; a
+# failed probe would leave a black console. i915 and xe stay: their firmware is small and part of the lean list.
+amdgpu
+radeon
+nouveau

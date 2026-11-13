@@ -1,5 +1,6 @@
-# Extra kernel modules loaded by i7lab-init at boot, in this order (one name per line, dependencies are pulled in
-# automatically by scripts/build-initramfs). Core drivers (the common NICs, NVMe, AHCI, USB, virtio) are built in.
+# Modules that MUST exist in the kernel (scripts/build-initramfs fails if one is unknown, e.g. after a Kconfig rename). Every module the
+# kernel builds goes into the image (lean: minus modules.lean.exclude) and i7lab-init loads them by modalias from modules.alias, so
+# this list no longer selects anything: it is the "these drivers must keep building" assertion for the modules we rely on.
 # NICs not built in (server and 10/25/40/100G gear)
 i40e
 ice
@@ -16,3 +17,24 @@ xfs
 btrfs
 exfat
 udf
+# added with the broad driver set (operator 2026-11-13)
+ixgbevf
+atlantic
+alx
+atl1c
+sfc
+hv_netvsc
+xen_netfront
+cdc_mbim
+lan78xx
+smsc95xx
+aacraid
+smartpqi
+i915
+xe
+btusb
+btintel
+btrtl
+ipmi_ssif
+tpm_tis
+f2fs

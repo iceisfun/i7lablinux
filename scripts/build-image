@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Build the KEYLESS GPT image (BIOS boot + 64 MiB ESP, placeholder keys.cpio) and the hybrid ISO into out/image/.
-# usage: build-image [--full] [--no-bios] [--no-iso] [--pmbr-active 0|1] [--esp-mib N] [FIRMWARE=..] [WIFI=1]
+# Build the KEYLESS GPT image (BIOS boot + ESP, placeholder keys.cpio) and the hybrid ISO into out/image/.
+# usage: build-image [--variant lean|full] [--kernel stable|lts] [--full] [--no-bios] [--no-iso] [--pmbr-active 0|1] [--esp-mib N] [FIRMWARE=none]
+#   --variant lean (default): small firmware subset, image and ISO stay under 256 MiB (JetKVM virtual media uploads fast).
+#   --variant full: every driver family + the broad linux-firmware set, up to ~1 GiB, for a real USB stick (files get a -full suffix).
+#   --kernel stable (default) | lts: which pinned kernel (configs/kernel/VERSION.*); out/kernel must hold that one.
 #   Inputs: out/kernel (build-kernel), out/initramfs.cpio.zst (build-initramfs). --full builds them first (userland, kernel,
 #   initramfs) and, on a small machine, does all of it on the build host via scripts/remote and fetches out/image back.
 #   Outputs: out/image/i7lablinux-<kver>-<sha7>.{img,iso}, SHA256SUMS, stable symlinks out/image/i7lablinux.{img,iso}.
@@ -14,12 +17,15 @@ FULL=0 BIOS=1 ISO=1 PMBR_ACTIVE="${PMBR_ACTIVE:-1}" ESP_MIB="${ESP_MIB:-64}" PAS
 while [ $# -gt 0 ]; do
   case "$1" in
     --full) FULL=1; shift;;
+    --variant) i7_select_variant "${2:?--variant lean|full}"; shift 2;;
+    --kernel) i7_select_kernel "${2:?--kernel stable|lts}"; shift 2;;
     --no-bios) BIOS=0; shift;;
     --no-iso) ISO=0; shift;;
     --pmbr-active) PMBR_ACTIVE="${2:?0|1}"; shift 2;;
     --esp-mib) ESP_MIB="${2:?N}"; shift 2;;
-    FIRMWARE=*|WIFI=*) PASS+=("$1"); shift;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0;;
+    FIRMWARE=*) PASS+=("$1"); shift;;
+    WIFI=*) shift;;
+    -h|--help) sed -n '2,15p' "$0"; exit 0;;
     *) die "unknown option $1 (see --help)";;
   esac
 done
@@ -36,8 +42,8 @@ fi
 if [ "$FULL" = 1 ]; then
   export I7_ON_BUILD_HOST=1
   "$I7_ROOT/scripts/build-userland" --no-ctl
-  "$I7_ROOT/scripts/build-kernel" ${WIFI:+WIFI=$WIFI}
-  "$I7_ROOT/scripts/build-initramfs" "${PASS[@]}"
+  "$I7_ROOT/scripts/build-kernel" --kernel "$I7_KERNEL"
+  "$I7_ROOT/scripts/build-initramfs" --variant "$I7_VARIANT" --kernel "$I7_KERNEL" "${PASS[@]}"
 fi
 
 GRUB_PC="${I7_GRUB_PC:-/usr/lib/grub/i386-pc}" GRUB_EFI="${I7_GRUB_EFI:-/usr/lib/grub/x86_64-efi}"
@@ -48,6 +54,9 @@ need sgdisk mkfs.vfat mcopy mmd grub-mkimage grub-mkstandalone sha256sum dd trun
 KDIR="$I7_OUT/kernel" INITRD="$I7_OUT/initramfs.cpio.zst"
 [ -s "$KDIR/bzImage" ] || die "$KDIR/bzImage missing: scripts/build-kernel (or --full)"
 [ -s "$INITRD" ] || die "$INITRD missing: scripts/build-initramfs (or --full)"
+i7_check_kernel_matches "$KDIR"
+[ "$(sed -n 's/^variant=//p' <(zstd -dc "$INITRD" 2>/dev/null | cpio -i --to-stdout etc/i7lab/BUILD 2>/dev/null))" = "$I7_VARIANT" ] \
+  || die "$INITRD was built for another variant than --variant $I7_VARIANT: run scripts/build-initramfs --variant $I7_VARIANT (or --full)"
 
 IMGID="$(i7_image_id)"
 OUTD="$I7_OUT/image"; mkdir -p "$OUTD"
@@ -90,7 +99,7 @@ cpio_trailer > "$ESP/i7lab/keys.cpio"                      # placeholder: the ke
 echo "$IMGID" > "$ESP/i7lab/IMAGE-ID"
 {
   echo "$IMGID"; echo "kernel=$(sed -n 's/^release=//p' "$KDIR/BUILD-INFO")"; echo "git=$(i7_sha7)"; echo "epoch=$SOURCE_DATE_EPOCH"
-  echo "pmbr_active=$PMBR_ACTIVE"; echo "bios=$BIOS"
+  echo "pmbr_active=$PMBR_ACTIVE"; echo "bios=$BIOS"; echo "variant=$I7_VARIANT"; echo "kernel_flavour=$I7_KERNEL"
 } > "$ESP/i7lab/BUILD"
 ( cd "$ESP" && sha256sum i7lab/bzImage i7lab/initramfs.cpio.zst i7lab/IMAGE-ID i7lab/BUILD > i7lab/SHA256SUMS )
 render_cfg() { sed -e "s|@IMAGE_ID@|$IMGID|g" -e "s|@CMDLINE@|$CMDLINE|g" -e "s|@BOOT@|$1|g" "$I7_ROOT/configs/grub/grub.cfg.in"; }
@@ -115,13 +124,15 @@ CONTENT_MIB=$(( $(du -sb "$ESP" | cut -f1) / 1048576 + 1 ))
 [ "$ESP_MIB" -ge $((CONTENT_MIB + 8)) ] || ESP_MIB=$((CONTENT_MIB + 8))
 [ "$ESP_MIB" -ge 36 ] || ESP_MIB=36                                  # FAT32 needs >= 65525 clusters
 TOTAL_MIB=$((2 + ESP_MIB + 1))                                       # 1 MiB gap + 1 MiB BIOS boot + ESP + room for the backup GPT
-[ "$TOTAL_MIB" -le 256 ] || die "image would be $TOTAL_MIB MiB (> 256 MiB budget); trim modules or firmware"
+BUDGET_MIB=256; [ "$I7_VARIANT" != full ] || BUDGET_MIB=1100
+[ "$TOTAL_MIB" -le "$BUDGET_MIB" ] || die "image would be $TOTAL_MIB MiB (> $BUDGET_MIB MiB budget of the $I7_VARIANT variant); trim modules (configs/image/modules.lean.exclude) or firmware (configs/firmware-$I7_VARIANT.*)"
 
 # ---- FAT ESP (mtools, no root) -----------------------------------------------------------------------------------------------
 find "$ESP" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 rm -f "$T/esp.img"; truncate -s "${ESP_MIB}M" "$T/esp.img"
 VOLID="$(sha256sum <<<"$IMGID" | cut -c1-8)"
-mkfs.vfat -F32 -s 1 -n I7LABESP -i "$VOLID" "$T/esp.img" >/dev/null
+CLUSTER=1; [ "$ESP_MIB" -le 300 ] || CLUSTER=8     # 512 B clusters for the small image, 4 KiB when the ESP holds the full variant
+mkfs.vfat -F32 -s "$CLUSTER" -n I7LABESP -i "$VOLID" "$T/esp.img" >/dev/null
 export MTOOLS_SKIP_CHECK=1
 for d in EFI boot i7lab; do mcopy -s -p -m -i "$T/esp.img" "$ESP/$d" ::/ || die "mcopy $d failed"; done
 

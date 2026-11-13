@@ -1,4 +1,5 @@
-# Symbols that MUST end up =y in the resolved .config (checked by scripts/build-kernel after olddefconfig).
+# Symbols that MUST end up as stated in the resolved .config (checked by scripts/build-kernel after olddefconfig).
+# Grammar: SYM = must be =y | SYM=VALUE = exact value | !SYM = must be unset.
 # Without them a lab host is unreachable or invisible, so a silent Kconfig drop is a build failure (review F-F18).
 # NICs
 E1000
@@ -40,3 +41,31 @@ SERIAL_8250_CONSOLE
 VT_CONSOLE
 DRM_SIMPLEDRM
 UNIX98_PTYS
+# hardening (70-hardening.config): the build FAILS if any of these is dropped
+RANDOMIZE_BASE
+RANDOMIZE_MEMORY
+STACKPROTECTOR_STRONG
+VMAP_STACK
+RANDOMIZE_KSTACK_OFFSET_DEFAULT
+STRICT_KERNEL_RWX
+STRICT_MODULE_RWX
+HARDENED_USERCOPY
+FORTIFY_SOURCE
+INIT_ON_ALLOC_DEFAULT_ON
+SLAB_FREELIST_RANDOM
+SLAB_FREELIST_HARDENED
+SHUFFLE_PAGE_ALLOCATOR
+LIST_HARDENED
+BUG_ON_DATA_CORRUPTION
+STRICT_DEVMEM
+IO_STRICT_DEVMEM
+DEFAULT_MMAP_MIN_ADDR=65536
+LEGACY_VSYSCALL_NONE
+!DEBUG_FS
+!COMPAT_BRK
+!PROC_KCORE
+# kexec is deliberately on (the later kexec command needs it); do not remove it silently
+KEXEC
+# the kernel image stays small: drivers beyond these are modules
+MODULES
+FW_LOADER_COMPRESS_ZSTD

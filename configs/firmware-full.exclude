@@ -1,0 +1,61 @@
+# Installed-name globs LEFT OUT of the full variant (everything else in linux-firmware's WHENCE is included). Globs match the
+# whole installed path, "*" crosses "/". "@latest N GLOB" keeps only the N highest -<number> versions per family.
+# Reasons: no driver for it in this kernel, ARM/embedded SoC only, audio/camera/video-codec blocks, or dead weight.
+# Policy for GPUs: amdgpu, i915, xe and nvidia (nouveau GSP) STAY: without their firmware a loaded GPU driver cannot finish its
+# probe and would take the console away from simpledrm.
+# --- ARM / embedded SoC and phone-class blobs (the single largest block: Qualcomm SoC DSP/GPU/video)
+qcom/*
+ti/*
+ti-connectivity/*
+imx/*
+amlogic/*
+amphion/*
+arm/*
+cnm/*
+cadence/*
+dpaa2/*
+mediatek/mt8*
+mediatek/mt7986*
+mediatek/mt7988*
+airoha/*
+# --- NICs/switches whose driver we do not build (their firmware lives on the card or the part is a switch ASIC)
+netronome/*
+mellanox/*
+mrvl/prestera/*
+liquidio/*
+cavium/*
+cxgb3/*
+cxgb4/*
+qlogic/*
+ql2*
+hfi1_*
+# --- audio, camera, video codecs, TV tuners (CONFIG_SOUND is off; no media stack)
+intel/avs/*
+intel/catpt/*
+intel/sof*
+intel/dsp_fw*
+intel/fw_sst*
+intel/ipu/*
+intel/vpu/*
+intel/vsc/*
+intel/qat/*
+cirrus/*
+dvb*
+av7110/*
+go7007/*
+cpia2/*
+v4l-*
+cx*
+as102*
+cmmb*
+ctefx.bin
+ctspeq.bin
+ctfw*
+cs42l43.bin
+sb16/*
+yamaha/*
+korg/*
+emu/*
+ess/*
+# --- old Intel Wi-Fi API versions: keep the newest 2 per family (kernels ask for the newest they know, then fall back)
+@latest 2 *iwlwifi-*.ucode

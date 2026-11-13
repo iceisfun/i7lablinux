@@ -36,13 +36,32 @@ sha256_file() { sha256sum "$1" | cut -d' ' -f1; }
 # conf_get FILE KEY : value of a `key=value` line (comments and blanks ignored); empty if absent.
 conf_get() { sed -n "s/^$2[[:space:]]*=[[:space:]]*//p" "$1" | head -n1; }
 
-I7_KVER="$(conf_get "$I7_ROOT/configs/kernel/VERSION" version)"
-SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(conf_get "$I7_ROOT/configs/kernel/VERSION" epoch)}"
-SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1767225600}"
-export SOURCE_DATE_EPOCH
+# ---- kernel flavour and image variant (operator decision 2026-11-13) --------------------------------------------------------
+# I7_KERNEL: stable (default: newest stable release) | lts (fallback: pinned longterm). I7_VARIANT: lean (default, < 256 MiB, small
+# firmware subset, JetKVM-friendly) | full (every driver family + linux-firmware, for a real USB stick). Scripts take --kernel /
+# --variant and call i7_select_*; remote runs forward both variables.
+I7_KERNEL="${I7_KERNEL:-stable}"
+I7_VARIANT="${I7_VARIANT:-lean}"
+i7_select_kernel() { # NAME : stable|lts, re-reads configs/kernel/VERSION.<NAME>
+  case "$1" in stable|lts) ;; *) die "--kernel takes stable or lts (got '$1')";; esac
+  I7_KERNEL="$1"; I7_VERSION_FILE="$I7_ROOT/configs/kernel/VERSION.$I7_KERNEL"
+  [ -s "$I7_VERSION_FILE" ] || die "$I7_VERSION_FILE missing"
+  I7_KVER="$(conf_get "$I7_VERSION_FILE" version)"
+  SOURCE_DATE_EPOCH="${I7_EPOCH_OVERRIDE:-$(conf_get "$I7_VERSION_FILE" epoch)}"; SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1767225600}"
+  export I7_KERNEL SOURCE_DATE_EPOCH
+}
+i7_select_variant() { case "$1" in lean|full) I7_VARIANT="$1"; export I7_VARIANT;; *) die "--variant takes lean or full (got '$1')";; esac; }
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-}"; I7_EPOCH_OVERRIDE="$SOURCE_DATE_EPOCH"
+i7_select_kernel "$I7_KERNEL"; i7_select_variant "$I7_VARIANT"
 
 i7_sha7() { git -C "$I7_ROOT" rev-parse --short=7 HEAD 2>/dev/null || echo nogit; }
-i7_image_id() { echo "${I7_KVER}-$(i7_sha7)"; }   # used in file names: i7lablinux-<kver>-<sha7>.img
+# used in file names: i7lablinux-<kver>-<sha7>.img (lean) and i7lablinux-<kver>-<sha7>-full.img
+i7_image_id() { echo "${I7_KVER}-$(i7_sha7)$([ "$I7_VARIANT" = full ] && echo -full || true)"; }
+# i7_check_kernel_matches DIR : the kernel in DIR (out/kernel) must be the one --kernel/I7_KERNEL selects, or the image id lies.
+i7_check_kernel_matches() {
+  local have; have="$(sed -n 's/^kernel=//p' "$1/BUILD-INFO" 2>/dev/null)"
+  [ "$have" = "$I7_KVER" ] || die "$1 holds kernel '${have:-?}' but --kernel $I7_KERNEL selects $I7_KVER: run scripts/build-kernel --kernel $I7_KERNEL"
+}
 
 # ---- key material helpers (formats: docs/PLAN.md section 5, crates/labproto/src/keys.rs) --------------------------------
 is_hex64() { [[ "$1" =~ ^[0-9a-f]{64}$ ]]; }
@@ -109,7 +128,7 @@ on_build_host() { [ "${I7_ON_BUILD_HOST:-0}" = 1 ] || [ "$(nproc)" -ge 64 ] || [
 remote_run() {
   local label=$1; shift
   need_build_host
-  "$I7_ROOT/scripts/remote" -l "$label" -H "$I7_HOST" -- env I7_ON_BUILD_HOST=1 "$@"
+  "$I7_ROOT/scripts/remote" -l "$label" -H "$I7_HOST" -- env I7_ON_BUILD_HOST=1 "I7_KERNEL=$I7_KERNEL" "I7_VARIANT=$I7_VARIANT" "$@"
 }
 # remote_fetch LABEL SUBDIR : copy <build host tree>/out/SUBDIR back to $I7_OUT/SUBDIR (a file or a directory)
 remote_fetch() {
