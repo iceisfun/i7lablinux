@@ -61,6 +61,7 @@ fn disk(name: &str, size: u64, kind: DiskKind, vendor: &str, model: &str, serial
         holders: vec![],
         swap: false,
         boot_media: false,
+        ram_resident: false,
         write_safety: WriteSafety { verdict: Verdict::Safe, absolute: vec![], overridable: vec![] },
     }
 }

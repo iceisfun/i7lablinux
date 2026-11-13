@@ -292,7 +292,7 @@ function partLayout(disk) {
 function diskId(d) { return d.serial || d.wwid || null; }
 function writeGate(d, f) {
   const why = [], ws = d.write_safety || {};
-  if (d.boot_media) why.push('boot media: never writable');
+  if (d.boot_media) why.push('boot media: not writable from this page (RAM-resident hosts: i7labctl blk write|image --allow-boot-media)');
   if (ws.verdict === 'refused') why.push('refused by host: ' + (ws.absolute || []).map(r => r.code + (r.detail ? ' (' + r.detail + ')' : '')).join(', '));
   if ((d.mounts || []).length) why.push('mounted: ' + d.mounts.join(', '));
   if ((d.holders || []).length) why.push('held by ' + d.holders.join(', '));

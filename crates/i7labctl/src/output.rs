@@ -53,11 +53,12 @@ pub struct Table {
     headers: Vec<String>,
     right: Vec<bool>,
     rows: Vec<Vec<String>>,
+    max_cell: usize,
 }
 
 impl Table {
     pub fn new(headers: &[&str]) -> Table {
-        Table { headers: headers.iter().map(|h| h.to_string()).collect(), right: vec![false; headers.len()], rows: Vec::new() }
+        Table { headers: headers.iter().map(|h| h.to_string()).collect(), right: vec![false; headers.len()], rows: Vec::new(), max_cell: 48 }
     }
     /// Right-align a column (numbers).
     pub fn right(mut self, col: usize) -> Table {
@@ -66,9 +67,14 @@ impl Table {
         }
         self
     }
-    /// Cells are sanitised and cut to 48 characters here; callers pass raw remote strings.
+    /// Cut cells at `n` characters instead of 48 (a column that carries reasons the operator must read whole).
+    pub fn max_cell(mut self, n: usize) -> Table {
+        self.max_cell = n;
+        self
+    }
+    /// Cells are sanitised and cut to 48 characters (see `max_cell`) here; callers pass raw remote strings.
     pub fn row<S: AsRef<str>>(&mut self, cells: &[S]) {
-        let mut r: Vec<String> = cells.iter().map(|c| cell(c.as_ref(), 48)).collect();
+        let mut r: Vec<String> = cells.iter().map(|c| cell(c.as_ref(), self.max_cell)).collect();
         r.resize(self.headers.len(), String::new());
         self.rows.push(r);
     }

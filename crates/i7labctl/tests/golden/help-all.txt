@@ -343,11 +343,11 @@ Block devices: enumeration, SMART, read test, write test.
   blk ls <host> [--all]       name, size, model, SERIAL, table, filesystems, mounted, boot media, SMART verdict, and the write-safety verdict (WRITE-SAFE or UNSAFE: reasons)
   blk smart <host> DEV [--attrs]   PASSED / WARNING / FAILED / UNKNOWN with reasons, temperature, hours, NVMe wear and error counters, SATA attributes (exit 3 on FAILED); USB disks may answer 'not available (bridge)'
   blk read <host> DEV [--mb N] [--regions start,mid,end | --offset B --len B] [--bs 1m] [--direct]   READ-ONLY (default 256 MiB in three regions)
-  blk write <host> DEV --destructive --serial SERIAL [--mb N] [--regions ..] [--offset B --len B] [--seed N]
+  blk write <host> DEV --destructive --serial SERIAL [--allow-boot-media] [--mb N] [--regions ..] [--offset B --len B] [--seed N]
   blk verify <host> DEV --seed N [--mb N] [--regions ..]   read-only compare against a seeded pattern
-  blk image <host> DISK --file IMG --serial SERIAL --destructive [--yes] [--verify] [--offset N] [--resume] [--grow-last] [--no-relocate]
+  blk image <host> DISK --file IMG --serial SERIAL --destructive [--allow-boot-media] [--yes] [--verify] [--offset N] [--resume] [--grow-last] [--no-relocate]
       stream a raw disk image (tens of GiB, sparse is fine) onto a WHOLE disk without staging it on the host: chunked, SHA-256 per chunk and for the whole image, resumable, flow controlled, zero ranges skipped on the wire. Shows model, size, serial and the current layout and asks first (--yes skips the question, never the serial). --verify reads the disk back on the host and compares. Afterwards the GPT backup is moved to the end of the disk (like sgdisk -e; --grow-last also extends the last partition, --no-relocate leaves the disk exactly as streamed) and the kernel is asked to re-read the partition table. --offset N writes the image at byte N of the disk (multiple of 4096; no GPT move). --resume continues an interrupted transfer where the host stopped.
-SAFETY: blk write and blk image are the only commands that write to a disk (both go through the same host gate). It refuses locally without --destructive and --serial (exit 7) and asks for confirmation unless --yes. The host then refuses (exit 7) a disk that is mounted, held, swap, read-only, backing the running system, under test, or the boot media (no override exists for those); a disk with a partition table or filesystem signature needs the same two flags and the real serial (see blk ls). Default is always read-only. The seed is printed (and chosen here when omitted) so blk verify can re-check after a reboot.
+SAFETY: blk write and blk image are the only commands that write to a disk (both go through the same host gate). It refuses locally without --destructive and --serial (exit 7) and asks for confirmation unless --yes. The host then refuses (exit 7) a disk that is mounted, held, swap, read-only, backing the running system, or under test (no override exists for those). The boot media is refused too, except when the host proves it is fully RAM-resident (root on rootfs/tmpfs/ramfs, nothing mounted, held, swapped or executing from that disk): blk ls then shows boot_media(ram-resident: --allow-boot-media) and the write needs that flag in addition to --destructive and --serial (the host keeps running from RAM; it cannot boot from that disk afterwards). A disk with a partition table or filesystem signature needs the same two flags and the real serial (see blk ls). Default is always read-only. The seed is printed (and chosen here when omitted) so blk verify can re-check after a reboot.
 Exit 3 when a test finds I/O errors or mismatches or SMART says FAILED.
 
 examples
@@ -856,7 +856,7 @@ wire commands: i7labctl --ether <mac> --cmd NAME [params..]   (offline copy; liv
   0x0015  blk.read     R    read test (never writes)
                            DEV [--mb N] [--regions start,mid,end | --offset B --len B] [--bs 1m] [--direct]
   0x0016  blk.write    W    destructive write+verify test behind the safety gate
-                           DEV --destructive --serial S [--mb N] [--regions ..] [--offset B --len B] [--seed N]
+                           DEV --destructive --serial S [--allow-boot-media] [--mb N] [--regions ..] [--offset B --len B] [--seed N]
   0x0017  blk.verify   R    re-read and compare a seeded pattern
                            DEV --seed N [--mb N] [--regions ..]
   0x0018  net.ls       R    network interfaces
@@ -864,7 +864,7 @@ wire commands: i7labctl --ether <mac> --cmd NAME [params..]   (offline copy; liv
   0x0019  thermal      R    temperatures, fans
                            [--follow]
   0x001a  blk.image    W    stream a disk image onto a whole disk behind the safety gate (records on the upload channel)
-                           DEV --size N --image-id HEX --serial S --destructive [--dest-offset B] [--resume] [--verify] [--grow-last] [--no-relocate] | DEV --status [--image-id HEX] | DEV --abort
+                           DEV --size N --image-id HEX --serial S --destructive [--allow-boot-media] [--dest-offset B] [--resume] [--verify] [--grow-last] [--no-relocate] | DEV --status [--image-id HEX] | DEV --abort
   0x0020  exec         W    run a program (no shell)
                            [--timeout S] [--env K=V].. [--cwd D] [--tty CxR] [--detach] [--stdin] -- ARGV..
   0x0021  shell        W    i7labsh on a pty

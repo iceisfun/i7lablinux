@@ -68,6 +68,17 @@ and UEFI: GRUB, PID 1, no busybox string on the console, beacon ok, ether ping o
 `scripts/build-usb-drive --image out/my.img --iso out/my.iso` from the operator machine with the real generated key set (`scripts/gen-keys`):
 build on the build host (kernel cache hit), rsync back, `bake-keys` into both files, read-back verified, exit 0. No root, no loop device.
 
+## Boot media overwrite (`scripts/e2e-bootmedia`, 2026-11-13)
+
+One QEMU guest booted from a virtual USB stick (sda), throwaway keys: 20 checks, 20 passed. Refused without `--allow-boot-media`
+(`blk image`, `blk write`), refused with the flag but without `--destructive`, with a wrong serial, and with the stick's ESP mounted
+in the guest (boot_media absolute again); allowed with `--destructive --serial --allow-boot-media --verify` on the RAM-resident guest
+(64 MiB GPT image over the boot disk), the guest kept answering `id`/`ping`, `blk ls` showed the new table, the audit log carried
+`allow_boot_media=true ... BOOT-MEDIA-OVERRIDE ram-resident`. Controls: the same image onto a blank virtio disk and a blank non-boot USB
+disk. Transcript: [e2e/transcript-bootmedia-20261113.txt](e2e/transcript-bootmedia-20261113.txt). Note: QEMU `snapshot=on` keeps its
+overlay in `$TMPDIR` (default `/var/tmp`); on a build host with a full root filesystem the guest pauses on ENOSPC (seen as a hung
+`blk image` at >32 MiB), so the script points `TMPDIR` at the run directory.
+
 ## Sizes
 
 | Artifact | Size |

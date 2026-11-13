@@ -140,6 +140,7 @@ struct Params {
     base: u64,
     serial: Option<String>,
     destructive: bool,
+    allow_boot_media: bool,
     resume: bool,
     verify: bool,
     grow_last: bool,
@@ -172,7 +173,7 @@ fn write_state(st: &State) {
 }
 
 fn image(ctx: &mut Ctx) -> Reply {
-    let o = opts_or_bad!(ctx, &["status", "abort", "destructive", "resume", "verify", "grow-last", "no-relocate"], &["serial", "size", "image-id", "dest-offset"]);
+    let o = opts_or_bad!(ctx, &["status", "abort", "destructive", "allow-boot-media", "resume", "verify", "grow-last", "no-relocate"], &["serial", "size", "image-id", "dest-offset"]);
     let dev = match o.positional() {
         [d] if block::valid_dev_name(d) => d.clone(),
         [_] => return Reply::error(Status::BadArgs, "bad device name"),
@@ -203,6 +204,7 @@ fn image(ctx: &mut Ctx) -> Reply {
         base,
         serial: o.value("serial").map(str::to_string),
         destructive: o.flag("destructive"),
+        allow_boot_media: o.flag("allow-boot-media"),
         resume: o.flag("resume"),
         verify: o.flag("verify"),
         grow_last: o.flag("grow-last"),
@@ -235,9 +237,9 @@ fn acquire(ctx: &Ctx, p: &Params) -> Result<Session, Reply> {
             }
             if p.resume {
                 let s = g[i].sess.take().expect("idle slot has a session");
-                if s.st.serial != p.serial || !p.destructive {
+                if s.st.serial != p.serial || !p.destructive || (s.guard.device().boot_media && !p.allow_boot_media) {
                     g[i].sess = Some(s);
-                    return Err(Reply::error(Status::Refused, "resuming needs the same --destructive and --serial as the transfer it continues"));
+                    return Err(Reply::error(Status::Refused, "resuming needs the same --destructive and --serial (and --allow-boot-media) as the transfer it continues"));
                 }
                 g[i].in_use = true;
                 return Ok(s);
@@ -257,7 +259,7 @@ fn acquire(ctx: &Ctx, p: &Params) -> Result<Session, Reply> {
 }
 
 fn create(ctx: &Ctx, p: &Params) -> Result<Session, Reply> {
-    let req = WriteRequest { dev: p.dev.clone(), destructive: p.destructive, serial: p.serial.clone(), actor: format!("{} {}", ctx.actor, ctx.source.describe()) };
+    let req = WriteRequest { dev: p.dev.clone(), destructive: p.destructive, serial: p.serial.clone(), allow_boot_media: p.allow_boot_media, actor: format!("{} {}", ctx.actor, ctx.source.describe()) };
     // `under_test` alone can be a lock still held by a forked child that has not exec'd yet (the flock belongs to
     // the open file description, which a fork shares until exec closes the CLOEXEC copy): retry briefly. A lock
     // that is really held stays held and is refused after ~1 s.
@@ -908,6 +910,35 @@ mod tests {
         assert_eq!(r.status, Status::Refused);
         assert!(reasons(&r).contains("boot_media"), "{}", body(&r));
         assert_eq!(fx.get("vdg3", 0, 8), vec![0; 8]);
+        // boot media of a RAM-resident host: still refused without --allow-boot-media (reason is overridable)
+        let proc = fx.root.join("proc/self");
+        std::fs::write(proc.join("mountinfo"), "1 1 0:2 / / rw - rootfs rootfs rw\n").unwrap();
+        let _ = std::fs::remove_file(proc.join("exe"));
+        std::os::unix::fs::symlink("/usr/sbin/i7labd", proc.join("exe")).unwrap();
+        let (r, _) = call(&d2, Role::Admin, &args("vdg3", &size, &[]), &refs(&recs));
+        assert_eq!(r.status, Status::Refused);
+        assert!(reasons(&r).contains("ram-resident") && reasons(&r).contains("\"overridable\":true"), "{}", body(&r));
+        assert_eq!(fx.get("vdg3", 0, 8), vec![0; 8], "nothing written without the flag");
+        // the flag alone (no --destructive) does not do it either
+        let (r, _) = call(&d2, Role::Admin, &["vdg3", "--size", &size, "--image-id", "ab12", "--serial", SER, "--allow-boot-media"], &refs(&recs));
+        assert_eq!(r.status, Status::Refused);
+        assert!(reasons(&r).contains("not_destructive"), "{}", body(&r));
+        // wrong serial with the flag
+        let (r, _) = call(&d2, Role::Admin, &["vdg3", "--size", &size, "--image-id", "ab12", "--destructive", "--serial", "WRONG", "--allow-boot-media"], &refs(&recs));
+        assert!(reasons(&r).contains("serial_mismatch"), "{}", body(&r));
+        // root on the boot disk itself: absolute even with the flag
+        std::fs::write(proc.join("mountinfo"), "1 1 8:1 / / rw - ext4 /dev/vdg3 rw\n").unwrap();
+        let (r, _) = call(&d2, Role::Admin, &args("vdg3", &size, &["--allow-boot-media"]), &refs(&recs));
+        assert_eq!(r.status, Status::Refused);
+        assert!(reasons(&r).contains("boot_media") && !reasons(&r).contains("ram-resident"), "{}", body(&r));
+        assert_eq!(fx.get("vdg3", 0, 8), vec![0; 8]);
+        // RAM-resident + all three flags: written, and the audit log says the override was used
+        std::fs::write(proc.join("mountinfo"), "1 1 0:2 / / rw - rootfs rootfs rw\n").unwrap();
+        let (r, _) = call(&d2, Role::Admin, &args("vdg3", &size, &["--allow-boot-media"]), &refs(&recs));
+        assert_eq!(r.status, Status::Ok, "{}", body(&r));
+        assert_eq!(fx.get("vdg3", 0, img.len()), img);
+        let log = std::fs::read_to_string(fx.root.join("run/i7lab/audit.log")).unwrap_or_default();
+        assert!(log.contains("allow_boot_media=true") && log.contains("BOOT-MEDIA-OVERRIDE"), "{}", log);
         // a disk with a partition table needs the same two flags: refused without, written with
         fx.disk("vdg4", 8 * MIB, 40, SER);
         fx.put("vdg4", 0, &build_gpt(4096, 8 * MIB / 4096, &[(34, 100, "old")]));

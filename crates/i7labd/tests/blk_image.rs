@@ -107,7 +107,7 @@ impl Ui for TUi {
 }
 
 fn params(p: &PathBuf, serial: &str) -> Params {
-    Params { file: p.clone(), serial: serial.into(), verify: true, dest_offset: 0, resume: false, grow_last: false, no_relocate: false, tuning: None }
+    Params { file: p.clone(), serial: serial.into(), verify: true, dest_offset: 0, resume: false, grow_last: false, no_relocate: false, allow_boot_media: false, tuning: None }
 }
 
 // ------------------------------------------------------------------ in-process "ether-style" transport
@@ -326,6 +326,52 @@ fn refusals_reach_the_operator_and_write_nothing() {
     assert!(matches!(e, FlashError::Client(ClientError::Safety(ref m)) if m.contains("larger than the disk")), "{:?}", e);
     assert_eq!(fx.get("vde3", 0, 16), vec![0; 16]);
     let _ = (std::fs::remove_file(p), std::fs::remove_file(big));
+}
+
+#[test]
+fn boot_media_is_written_only_on_a_ram_resident_host_with_the_flag() {
+    let fx = Fx::new("bootmedia");
+    fx.disk("vde8", 16 * MIB, 8, SER);
+    let mut d = fx.daemon("a");
+    d.probe.boot_disk = Some((252, 8));
+    let img = image(2 * MIB as usize);
+    let p = tmpimg("bootmedia", &img);
+    let mut ui = TUi::default();
+    let mut t = Local { d: &d, faults: Faults::default(), attempts: 0, max_queued: Arc::new(AtomicU64::new(0)) };
+    let mut pr = params(&p, SER);
+    pr.no_relocate = true;
+    let mountinfo = |s: &str| std::fs::write(fx.root.join("proc/self/mountinfo"), s).unwrap();
+    let _ = std::fs::remove_file(fx.root.join("proc/self/exe"));
+    std::os::unix::fs::symlink("/usr/sbin/i7labd", fx.root.join("proc/self/exe")).unwrap();
+
+    // root on the boot disk itself: absolute, with or without the flag
+    mountinfo("1 0 8:1 / / rw - ext4 /dev/vde8p1 rw\n");
+    for allow in [false, true] {
+        pr.allow_boot_media = allow;
+        let e = flash(&mut t, "vde8", &pr, &mut ui).unwrap_err();
+        assert!(matches!(e, FlashError::Client(ClientError::Safety(ref m)) if m.contains("boot_media") && !m.contains("ram-resident")), "{:?}", e);
+        assert_eq!(fx.get("vde8", 0, 16), vec![0; 16]);
+    }
+    // a mount from the disk on an otherwise RAM-resident host: absolute
+    mountinfo("1 0 0:2 / / rw - rootfs rootfs rw\n30 1 252:8 / /data rw - vfat /dev/vde8 rw\n");
+    pr.allow_boot_media = true;
+    let e = flash(&mut t, "vde8", &pr, &mut ui).unwrap_err();
+    assert!(matches!(e, FlashError::Client(ClientError::Safety(ref m)) if m.contains("boot_media")), "{:?}", e);
+    assert_eq!(fx.get("vde8", 0, 16), vec![0; 16]);
+
+    // RAM-resident: refused without the flag (reason says how to lift it), written with it
+    mountinfo("1 0 0:2 / / rw - rootfs rootfs rw\n");
+    pr.allow_boot_media = false;
+    let e = flash(&mut t, "vde8", &pr, &mut ui).unwrap_err();
+    assert!(matches!(e, FlashError::Client(ClientError::Safety(ref m)) if m.contains("ram-resident")), "{:?}", e);
+    assert_eq!(fx.get("vde8", 0, 16), vec![0; 16]);
+    pr.allow_boot_media = true;
+    let o = flash(&mut t, "vde8", &pr, &mut ui).unwrap();
+    assert!(o.verified);
+    assert_eq!(fx.get("vde8", 0, img.len()), img);
+    let log = std::fs::read_to_string(fx.root.join("run/i7lab/audit.log")).unwrap();
+    assert!(log.contains("allow_boot_media=true") && log.contains("BOOT-MEDIA-OVERRIDE ram-resident"), "{}", log);
+    let _ = std::fs::remove_file(p);
 }
 
 // ------------------------------------------------------------------ real HTTP server + real HTTP client

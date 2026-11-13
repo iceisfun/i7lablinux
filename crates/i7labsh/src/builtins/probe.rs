@@ -216,7 +216,7 @@ fn blk_read(args: &[String], io: &mut Io) -> i32 {
 
 fn blk_test(write: bool, args: &[String], io: &mut Io) -> i32 {
     // `blk write DEV ...`  ==  `blk test DEV write ...`
-    let o = match Opts::parse(args, &["destructive"], &["serial", "mb", "pattern", "seed"]) {
+    let o = match Opts::parse(args, &["destructive", "allow-boot-media"], &["serial", "mb", "pattern", "seed"]) {
         Ok(o) => o,
         Err(e) => return fail(io, "blk", e),
     };
@@ -255,7 +255,7 @@ fn blk_test(write: bool, args: &[String], io: &mut Io) -> i32 {
 
     // Writes only through the gate: a refused request never reaches the device.
     let guard = if mode == TestMode::Write {
-        let req = WriteRequest { dev: dev.clone(), destructive: o.flag("destructive"), serial: o.value("serial").map(str::to_string), actor: "console".to_string() };
+        let req = WriteRequest { dev: dev.clone(), destructive: o.flag("destructive"), serial: o.value("serial").map(str::to_string), allow_boot_media: o.flag("allow-boot-media"), actor: "console".to_string() };
         match WriteGuard::acquire(&ctx, &req) {
             Ok(g) => Some(g),
             Err(r) => {
@@ -263,7 +263,7 @@ fn blk_test(write: bool, args: &[String], io: &mut Io) -> i32 {
                 for reason in &r.reasons {
                     io.err(&format!("  - {}{}\n", reason.code(), reason.detail().map(|d| format!(": {d}")).unwrap_or_default()));
                 }
-                io.err("  (a write needs --destructive and --serial <the disk's serial>; mounted, boot, partitioned or signed disks stay refused unless the policy says otherwise; see docs/SAFETY.md)\n");
+                io.err("  (a write needs --destructive and --serial <the disk's serial>; mounted or held disks and the boot media stay refused; a partitioned or signed disk needs just those two; the boot media of a proven RAM-resident host also needs --allow-boot-media; see docs/PLAN.md section 6)\n");
                 return 3;
             }
         }

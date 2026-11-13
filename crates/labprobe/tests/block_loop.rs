@@ -62,7 +62,7 @@ fn setup() -> Loop {
 }
 
 fn req(dev: &str) -> WriteRequest {
-    WriteRequest { dev: dev.into(), destructive: true, serial: Some("irrelevant".into()), actor: "loop-test".into() }
+    WriteRequest { dev: dev.into(), destructive: true, serial: Some("irrelevant".into()), allow_boot_media: false, actor: "loop-test".into() }
 }
 
 #[test]

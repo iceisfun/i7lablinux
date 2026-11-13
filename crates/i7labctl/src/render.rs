@@ -294,6 +294,8 @@ fn safety_text(d: &Value) -> String {
     let reason = |x: &Value| match x {
         Value::Str(s) => s.clone(),
         Value::Obj(_) => match (jv::s(x, "code"), jv::s(x, "detail")) {
+            // the RAM-resident boot media: the one reason that names the client flag that lifts it
+            (Some("boot_media"), Some(det)) if jv::b(x, "overridable") == Some(true) => format!("boot_media({}: --allow-boot-media)", det),
             (Some(c), Some(det)) => format!("{}({})", c, det),
             (Some(c), None) => c.to_string(),
             _ => jv::to_json(x),
@@ -319,7 +321,7 @@ pub fn blk_ls(body: &str, p: Paint) -> String {
 
 fn blk_ls_value(v: &Value, p: Paint) -> String {
     let devs = jv::arr(v, "devices");
-    let mut t = Table::new(&["NAME", "SIZE", "KIND", "MODEL", "SERIAL", "TABLE", "FS", "MOUNTED", "BOOT", "SMART", "WRITE SAFETY"]).right(1);
+    let mut t = Table::new(&["NAME", "SIZE", "KIND", "MODEL", "SERIAL", "TABLE", "FS", "MOUNTED", "BOOT", "SMART", "WRITE SAFETY"]).right(1).max_cell(100);
     for d in devs {
         let fs: Vec<String> = jv::arr(d, "signatures").iter().map(|s| match s {
             Value::Str(x) => x.clone(),
@@ -331,7 +333,7 @@ fn blk_ls_value(v: &Value, p: Paint) -> String {
             _ => "-".into(),
         };
         let safety = safety_text(d);
-        let safety = if safety == "WRITE-SAFE" { p.green(&safety) } else { p.yellow(&cell(&safety, 60)) };
+        let safety = if safety == "WRITE-SAFE" { p.green(&safety) } else { p.yellow(&cell(&safety, 100)) };
         t.row(&[
             s_of(d, "name"),
             bytes_of(d, "size_bytes"),
@@ -548,6 +550,10 @@ mod tests {
 
     #[test]
     fn blk_ls_reasons_as_objects() {
+        let ram = r#"{"v":1,"devices":[{"name":"sda","size_bytes":1,"kind":"usb","serial":"X","boot_media":true,"write_safety":{"verdict":"needs_override","absolute":[],"overridable":[{"code":"boot_media","detail":"ram-resident","overridable":true}]}},{"name":"sdb","size_bytes":1,"kind":"usb","serial":"Y","boot_media":true,"write_safety":{"verdict":"refused","absolute":[{"code":"boot_media","detail":null,"overridable":false}],"overridable":[]}}]}"#;
+        let s = blk_ls(ram, NOP);
+        assert!(s.contains("UNSAFE: boot_media(ram-resident: --allow-boot-media)"), "{s}");
+        assert!(s.contains("UNSAFE: boot_media ") || s.contains("UNSAFE: boot_media\n"), "{s}");
         let body = r#"{"v":1,"devices":[{"name":"vdb","size_bytes":134217728,"kind":"virtio","serial":"X","write_safety":{"verdict":"refused","absolute":[{"code":"mounted","detail":"/mnt","overridable":false}],"overridable":[{"code":"partition_table","detail":"gpt","overridable":true},{"code":"boot_media","detail":null,"overridable":false}]}}]}"#;
         let s = blk_ls(body, NOP);
         assert!(s.contains("UNSAFE: mounted(/mnt) | partition_table"), "{}", s);

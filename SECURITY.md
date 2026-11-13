@@ -38,12 +38,12 @@ Out of scope or accepted:
 * Ether replies and HTTP are on every NIC and address unless you narrow them with `i7lab.ether=` and `i7lab.http_bind=`.
 * The audit log is held by the daemon but an admin can stop local logging through `exec`.
 * No Secure Boot: the image needs Secure Boot off. No measured boot.
-* The image is RAM-resident and does not write to its boot media, but it can write to **other** disks if you ask it to.
+* The image is RAM-resident and does not write to its boot media on its own, but it can write to **other** disks if you ask it to, and, because it runs entirely from RAM, it can overwrite its own boot disk when an admin passes `--allow-boot-media` with `--destructive` and the serial. The host allows that only after proving it is RAM-resident (root on rootfs/tmpfs/ramfs, nothing mounted from, held on, swapped on, or executing from that disk); otherwise the boot media stays absolutely refused.
 
 ## Destructive operations
 
 Block write tests never write a device that is mounted, held (md/dm), swap, read-only, without a serial/WWID, or the boot
-media. A device with a partition table or a filesystem/RAID/LVM signature is written only when you pass both
+media (the boot media only becomes writable on a host proven RAM-resident, with the extra `--allow-boot-media` flag). A device with a partition table or a filesystem/RAID/LVM signature is written only when you pass both
 `--destructive` and its serial. The default is read-only. The gate decides again on the
 host regardless of what a client or the web page does. Block names are never trusted; devices are selected by serial.
 

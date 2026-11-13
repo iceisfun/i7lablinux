@@ -787,13 +787,13 @@ pub fn blk(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
 fn blk_test(run: &mut Run, verb: &str, args: &[String]) -> Result<i32, ClientError> {
     let usage = match verb {
         "read" => "blk read <host> DEV [--mb N] [--regions start,mid,end | --offset B --len B] [--bs 1m] [--direct]",
-        "write" => "blk write <host> DEV --destructive --serial SERIAL [--mb N] [--regions ..] [--offset B --len B] [--seed N]",
+        "write" => "blk write <host> DEV --destructive --serial SERIAL [--allow-boot-media] [--mb N] [--regions ..] [--offset B --len B] [--seed N]",
         _ => "blk verify <host> DEV --seed N [--mb N] [--regions ..]",
     };
     let mut spec = Spec::new(usage).pos(1, 1);
     spec = match verb {
         "read" => spec.flags(&["direct"]).valued(&["mb", "regions", "offset", "len", "bs"]),
-        "write" => spec.flags(&["destructive", "direct"]).valued(&["mb", "regions", "offset", "len", "bs", "serial", "seed"]),
+        "write" => spec.flags(&["destructive", "allow-boot-media", "direct"]).valued(&["mb", "regions", "offset", "len", "bs", "serial", "seed"]),
         _ => spec.valued(&["mb", "regions", "offset", "len", "bs", "seed"]),
     };
     let p = run.parse(args, &spec)?;
@@ -816,7 +816,7 @@ fn blk_test(run: &mut Run, verb: &str, args: &[String]) -> Result<i32, ClientErr
                 dev
             )));
         }
-        if !run.confirm(&format!("Write test DESTROYS the contents of {} (serial {}) on the host. Continue?", dev, serial.unwrap())) {
+        if !run.confirm(&format!("Write test DESTROYS the contents of {} (serial {}) on the host{}. Continue?", dev, serial.unwrap(), if p.opts.flag("allow-boot-media") { " (--allow-boot-media: it may be the disk the host booted from)" } else { "" })) {
             return Err(ClientError::Safety("not confirmed".into()));
         }
         if seed.is_none() {
@@ -832,6 +832,9 @@ fn blk_test(run: &mut Run, verb: &str, args: &[String]) -> Result<i32, ClientErr
     if verb == "write" {
         wire.push("--destructive".into());
         wire.extend(["--serial".to_string(), p.opts.value("serial").unwrap().to_string()]);
+        if p.opts.flag("allow-boot-media") {
+            wire.push("--allow-boot-media".into());
+        }
     }
     for v in ["mb", "regions", "offset", "len", "bs"] {
         if let Some(x) = p.opts.value(v) {

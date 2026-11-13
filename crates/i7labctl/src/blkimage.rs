@@ -314,6 +314,9 @@ pub struct Params {
     pub resume: bool,
     pub grow_last: bool,
     pub no_relocate: bool,
+    /// `--allow-boot-media`: also needed (with `--destructive` and the serial) to overwrite the boot media of a
+    /// RAM-resident host; the host decides whether that is allowed
+    pub allow_boot_media: bool,
     /// override of the transport's tuning (tests)
     pub tuning: Option<Tuning>,
 }
@@ -487,6 +490,9 @@ pub fn flash(t: &mut dyn Transport, dev: &str, p: &Params, ui: &mut dyn Ui) -> R
             None => summary.push_str("resume   nothing to resume on the host: starting at byte 0\n"),
         }
     }
+    if p.allow_boot_media {
+        summary.push_str(&format!("boot     --allow-boot-media: {} may be the disk this host booted from; it runs from RAM and keeps running, but cannot boot again from it afterwards\n", dev));
+    }
     summary.push_str(&format!("THIS OVERWRITES {} of {} (everything on it is lost). Continue?", fmt_bytes(size), dev));
     if !ui.confirm(&summary) {
         return Err(ClientError::Safety("not confirmed".into()).into());
@@ -500,6 +506,9 @@ pub fn flash(t: &mut dyn Transport, dev: &str, p: &Params, ui: &mut dyn Ui) -> R
         attempts += 1;
         let start = resume_at.unwrap_or(0);
         let mut args = vec![dev.to_string(), "--size".into(), size.to_string(), "--image-id".into(), id.clone(), "--serial".into(), p.serial.clone(), "--destructive".into()];
+        if p.allow_boot_media {
+            args.push("--allow-boot-media".into());
+        }
         if resume_at.is_some() {
             args.push("--resume".into());
         }
@@ -690,8 +699,8 @@ impl Ui for CliUi<'_, '_> {
 }
 
 pub fn run_cli(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
-    let spec = Spec::new("blk image <host> DISK --file IMG --serial SERIAL --destructive [--yes] [--verify] [--offset N] [--resume] [--grow-last] [--no-relocate]")
-        .flags(&["destructive", "verify", "resume", "grow-last", "no-relocate"])
+    let spec = Spec::new("blk image <host> DISK --file IMG --serial SERIAL --destructive [--allow-boot-media] [--yes] [--verify] [--offset N] [--resume] [--grow-last] [--no-relocate]")
+        .flags(&["destructive", "allow-boot-media", "verify", "resume", "grow-last", "no-relocate"])
         .valued(&["file", "serial", "offset"])
         .pos(1, 1);
     let p = run.parse(args, &spec)?;
@@ -719,6 +728,7 @@ pub fn run_cli(run: &mut Run, args: &[String]) -> Result<i32, ClientError> {
         resume: p.opts.flag("resume"),
         grow_last: p.opts.flag("grow-last"),
         no_relocate: p.opts.flag("no-relocate"),
+        allow_boot_media: p.opts.flag("allow-boot-media"),
         tuning: None,
     };
     let mut prep = run.prepare(p.host.as_deref(), 0.0)?;
@@ -954,7 +964,7 @@ mod tests {
     }
 
     fn params(p: &PathBuf) -> Params {
-        Params { file: p.clone(), serial: "SER1".into(), verify: true, dest_offset: 0, resume: false, grow_last: false, no_relocate: false, tuning: Some(Tuning { chunk: 256 << 10, window: 1 << 20 }) }
+        Params { file: p.clone(), serial: "SER1".into(), verify: true, dest_offset: 0, resume: false, grow_last: false, no_relocate: false, allow_boot_media: false, tuning: Some(Tuning { chunk: 256 << 10, window: 1 << 20 }) }
     }
 
     const OK_BODY: &str = "{\"v\":1,\"done\":true,\"sha256\":\"ab\",\"verified\":true,\"gpt\":{\"action\":\"moved\"},\"rrpart\":\"ok\"}";

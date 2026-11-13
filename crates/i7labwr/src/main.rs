@@ -4,6 +4,8 @@
 //! host booted from (the /sys/firmware mount of the boot media is detected through /proc/self/mountinfo and the
 //! i7lab.bootdisk marker in /proc/cmdline when present). Then it writes, fsyncs, drops the page cache for the range and reads
 //! the data back and compares SHA-256. Exit 0 only when the read-back matches.
+//! i7labwr keeps its own, stricter rule and never writes the boot disk; overwriting the boot media of a RAM-resident host
+//! goes through the host gate instead (`i7labctl blk image|write ... --allow-boot-media`, docs/PLAN.md section 6).
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::io::AsRawFd;

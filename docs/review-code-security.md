@@ -126,6 +126,8 @@ traffic only); a size cap with rotation would be cheap.
 client cancels. Recommendation: refuse non-regular files for ro except under `/proc` and `/sys`, and read those with the
 labprobe budget.
 
+> Update 2026-11-13: the boot-media refusal is no longer unconditional; a host proven RAM-resident may overwrite its own boot media with `--allow-boot-media` (docs/PLAN.md section 6). Findings below predate that.
+
 ### O8 (LOW) Boot media identity on ISO boot
 
 With `i7lab.boot=iso` there is no PARTUUID, so nothing is marked `boot_media`. In CD mode the medium is read-only (refused

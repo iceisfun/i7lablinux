@@ -79,7 +79,7 @@ tell the person by phone/chat and use `i7labctl id <host>` plus the host name on
 Different VLAN: `i7labctl --vlan 13 discover` (802.1Q tagging is unit-tested but not yet proven end to end, see
 BRIEF-CHECKLIST item 6). No IP is needed anywhere. After the first command, `i7labctl blk ls <host>` shows the internal
 disk as `UNSAFE: partition_table(..)` (writable only with `--destructive --serial`) and the stick as `BOOT UNSAFE:
-boot_media` (never writable).
+boot_media`; on a RAM-resident host it reads `boot_media(ram-resident: --allow-boot-media)` and the stick is writable only with that extra flag (see I7LABCTL.md).
 
 ## C. JetKVM virtual media (no stick at all)
 

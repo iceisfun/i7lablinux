@@ -112,3 +112,29 @@ fn json_output_and_remote_refusal() {
     assert_eq!(code, 7, "{}", e);
     assert!(e.contains("mounted (/mnt)"), "{}", e);
 }
+
+#[test]
+fn allow_boot_media_is_only_an_addition_to_destructive_and_serial() {
+    let t = T::new("bi-abm");
+    t.add_host(MAC, 3, &[]);
+    let img = image(&t, 1 << 20);
+    host_reply(&t, 8 << 20, "S1");
+    // the flag alone never gets past the local checks
+    for args in [
+        vec!["--yes", "blk", "image", MAC, "nvme0n1", "--file", &img, "--allow-boot-media"],
+        vec!["--yes", "blk", "image", MAC, "nvme0n1", "--file", &img, "--allow-boot-media", "--serial", "S1"],
+        vec!["--yes", "blk", "image", MAC, "nvme0n1", "--file", &img, "--allow-boot-media", "--destructive"],
+    ] {
+        let (code, _, e) = t.run(&args);
+        assert_eq!(code, 7, "{:?}: {}", args, e);
+    }
+    assert!(t.calls().is_empty());
+    // without the flag it is not sent; with it, it is, and the prompt says what it means
+    let (code, _, _) = t.run(&["--yes", "blk", "image", MAC, "nvme0n1", "--file", &img, "--destructive", "--serial", "S1"]);
+    assert_eq!(code, 0);
+    assert!(!argv(t.calls().last().unwrap()).iter().any(|a| a == "--allow-boot-media"));
+    let (code, _, e) = t.run(&["--yes", "blk", "image", MAC, "nvme0n1", "--file", &img, "--destructive", "--serial", "S1", "--allow-boot-media"]);
+    assert_eq!(code, 0, "{}", e);
+    assert!(argv(t.calls().last().unwrap()).iter().any(|a| a == "--allow-boot-media"));
+    assert!(e.contains("--allow-boot-media") && e.contains("cannot boot again"), "{}", e);
+}

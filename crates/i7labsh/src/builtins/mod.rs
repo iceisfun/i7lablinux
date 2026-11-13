@@ -70,7 +70,7 @@ pub static TABLE: &[BuiltinSpec] = &[
     b!("lsusb", "lsusb", probe::lsusb),
     b!("sensors", "sensors", probe::sensors),
     b!("probe", "probe [SECTION|all]   (JSON; no argument lists the sections)", probe::probe),
-    b!("blk", "blk ls | read DEV [--offset N] [--count N] | test DEV read|verify [--mb N] | write DEV --destructive --serial S [--mb N] [--pattern zeros|ones|aa55|seed=N]", probe::blk),
+    b!("blk", "blk ls | read DEV [--offset N] [--count N] | test DEV read|verify [--mb N] | write DEV --destructive --serial S [--allow-boot-media] [--mb N] [--pattern zeros|ones|aa55|seed=N]", probe::blk),
     b!("lab", "lab CMD [ARG..]   (command of the local agent over /run/i7lab/ctl.sock; `lab help` lists them)", probe::lab),
 ];
 

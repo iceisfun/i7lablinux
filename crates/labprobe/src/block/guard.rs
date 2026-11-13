@@ -21,7 +21,11 @@ pub enum Reason {
     SerialMismatch,
     /// device has neither serial nor WWID: writes are impossible to confirm, always refused
     NoSerial,
+    /// the boot media, host NOT proven RAM-resident: never writable
     BootMedia,
+    /// the boot media of a host that proved it is fully RAM-resident (`ram::ram_resident`): writable with
+    /// `--allow-boot-media` in addition to `--destructive` + the serial. Same code `boot_media`, detail `ram-resident`.
+    BootMediaRam,
     BacksRunningSystem,
     Mounted(String),
     Held(String),
@@ -39,9 +43,10 @@ pub enum Reason {
 }
 
 impl Reason {
-    /// true only for the "has data structures" class: allowed when `--destructive` and the matching serial are given.
+    /// true only for the "has data structures" class (allowed when `--destructive` and the matching serial are
+    /// given) and the RAM-resident boot media (which also needs `--allow-boot-media`, see `decide`).
     pub fn overridable(&self) -> bool {
-        matches!(self, Reason::PartitionTable(_) | Reason::Signature(_))
+        matches!(self, Reason::PartitionTable(_) | Reason::Signature(_) | Reason::BootMediaRam)
     }
 
     pub fn code(&self) -> &'static str {
@@ -50,7 +55,7 @@ impl Reason {
             Reason::SerialMissing => "serial_missing",
             Reason::SerialMismatch => "serial_mismatch",
             Reason::NoSerial => "no_serial",
-            Reason::BootMedia => "boot_media",
+            Reason::BootMedia | Reason::BootMediaRam => "boot_media",
             Reason::BacksRunningSystem => "backs_running_system",
             Reason::Mounted(_) => "mounted",
             Reason::Held(_) => "held",
@@ -68,6 +73,7 @@ impl Reason {
 
     pub fn detail(&self) -> Option<&str> {
         match self {
+            Reason::BootMediaRam => Some("ram-resident"),
             Reason::Mounted(s) | Reason::Held(s) | Reason::PartitionTable(s) | Reason::Signature(s) => Some(s),
             _ => None,
         }
@@ -124,7 +130,11 @@ fn assess_parts(dev: &BlockDevice) -> WriteSafety {
     let mut absolute = Vec::new();
     let mut overridable = Vec::new();
     if dev.boot_media {
-        absolute.push(Reason::BootMedia);
+        if dev.ram_resident {
+            overridable.push(Reason::BootMediaRam);
+        } else {
+            absolute.push(Reason::BootMedia);
+        }
     }
     if dev.read_only {
         absolute.push(Reason::ReadOnly);
@@ -166,6 +176,9 @@ pub struct WriteRequest {
     pub dev: String,
     pub destructive: bool,
     pub serial: Option<String>,
+    /// `--allow-boot-media`: required in addition to `destructive` + `serial` to overwrite the boot media of a host
+    /// that is proven RAM-resident; ignored (never enough) otherwise
+    pub allow_boot_media: bool,
     /// key id + source (MAC/IP) or "console", for the audit log
     pub actor: String,
 }
@@ -220,6 +233,8 @@ pub fn decide(dev: &BlockDevice, req: &WriteRequest) -> Result<(), Refusal> {
     let confirmed = !reasons.iter().any(|r| matches!(r, Reason::NotDestructive | Reason::SerialMissing | Reason::SerialMismatch | Reason::NoSerial));
     if !confirmed {
         reasons.extend(safety.overridable);
+    } else if !req.allow_boot_media && safety.overridable.contains(&Reason::BootMediaRam) {
+        reasons.push(Reason::BootMediaRam);
     }
     if reasons.is_empty() {
         Ok(())
@@ -265,17 +280,22 @@ impl WriteGuard {
     pub fn acquire(ctx: &ProbeCtx, req: &WriteRequest) -> Result<WriteGuard, Refusal> {
         let r = Self::acquire_inner(ctx, req);
         let outcome = match &r {
-            Ok(g) => format!("ALLOWED serial={}", g.dev.serial.as_deref().or(g.dev.wwid.as_deref()).unwrap_or("-")),
+            Ok(g) => format!(
+                "ALLOWED serial={}{}",
+                g.dev.serial.as_deref().or(g.dev.wwid.as_deref()).unwrap_or("-"),
+                if g.dev.boot_media { " BOOT-MEDIA-OVERRIDE ram-resident" } else { "" }
+            ),
             Err(f) => format!("REFUSED reasons={}", f.reasons.iter().map(|x| x.code()).collect::<Vec<_>>().join(",")),
         };
         let _ = audit_write_in(
             ctx,
             &format!(
-                "blk.write dev={} actor={} destructive={} serial_given={} {}",
+                "blk.write dev={} actor={} destructive={} serial_given={} allow_boot_media={} {}",
                 req.dev,
                 req.actor,
                 req.destructive,
                 req.serial.as_deref().unwrap_or("-"),
+                req.allow_boot_media,
                 outcome
             ),
         );
@@ -400,7 +420,7 @@ mod tests {
     #[test]
     fn missing_device_is_refused() {
         let ctx = ProbeCtx::fixture("/nonexistent");
-        let r = WriteGuard::acquire(&ctx, &WriteRequest { dev: "sda".into(), destructive: true, serial: Some("X".into()), actor: "t".into() });
+        let r = WriteGuard::acquire(&ctx, &WriteRequest { dev: "sda".into(), destructive: true, serial: Some("X".into()), allow_boot_media: false, actor: "t".into() });
         assert!(r.is_err());
         assert!(Reason::Signature("ext4".into()).overridable());
         assert!(!Reason::BootMedia.overridable());
@@ -431,12 +451,13 @@ mod tests {
             holders: vec![],
             swap: false,
             boot_media: false,
+            ram_resident: false,
             write_safety: Default::default(),
         }
     }
 
     fn req(destructive: bool, serial: Option<&str>) -> WriteRequest {
-        WriteRequest { dev: "vda".into(), destructive, serial: serial.map(str::to_string), actor: "t".into() }
+        WriteRequest { dev: "vda".into(), destructive, serial: serial.map(str::to_string), allow_boot_media: false, actor: "t".into() }
     }
 
     fn codes(r: Result<(), Refusal>) -> Vec<&'static str> {
@@ -460,6 +481,32 @@ mod tests {
         let mut boot = gpt.clone();
         boot.boot_media = true;
         assert_eq!(codes(decide(&boot, &req(true, Some("S1")))), vec!["boot_media"]);
+        let mut with_flag = req(true, Some("S1"));
+        with_flag.allow_boot_media = true;
+        assert_eq!(codes(decide(&boot, &with_flag)), vec!["boot_media"], "not proven RAM-resident: absolute even with the flag");
+        assert!(!assess_parts(&boot).absolute.is_empty());
+
+        // RAM-resident boot media: overridable, but only with --allow-boot-media on top of --destructive + serial
+        let mut ram = dev(Some("S1"));
+        ram.boot_media = true;
+        ram.ram_resident = true;
+        let s = assess_parts(&ram);
+        assert!(s.absolute.is_empty() && s.verdict == Verdict::NeedsOverride);
+        assert_eq!((s.overridable[0].code(), s.overridable[0].detail(), s.overridable[0].overridable()), ("boot_media", Some("ram-resident"), true));
+        assert_eq!(codes(decide(&ram, &req(true, Some("S1")))), vec!["boot_media"], "needs the flag");
+        assert_eq!(decide(&ram, &with_flag), Ok(()));
+        let mut no_destructive = with_flag.clone();
+        no_destructive.destructive = false;
+        assert_eq!(codes(decide(&ram, &no_destructive)), vec!["not_destructive", "boot_media"]);
+        let mut no_serial = with_flag.clone();
+        no_serial.serial = None;
+        assert_eq!(codes(decide(&ram, &no_serial)), vec!["serial_missing", "boot_media"]);
+        let mut wrong = with_flag.clone();
+        wrong.serial = Some("S2".into());
+        assert_eq!(codes(decide(&ram, &wrong)), vec!["serial_mismatch", "boot_media"]);
+        // the flag never lifts the other absolute reasons
+        ram.mounts.push("/mnt".into());
+        assert_eq!(codes(decide(&ram, &with_flag)), vec!["mounted"]);
         let mut mounted = dev(Some("S1"));
         mounted.mounts.push("/mnt".into());
         assert_eq!(codes(decide(&mounted, &req(true, Some("S1")))), vec!["mounted"]);

@@ -17,7 +17,7 @@ fn setup(size: u64) -> Fx {
 }
 
 fn guard(fx: &Fx) -> WriteGuard {
-    WriteGuard::acquire(&fx.ctx(), &WriteRequest { dev: "vda".into(), destructive: true, serial: Some("SER-A".into()), actor: "t".into() }).unwrap()
+    WriteGuard::acquire(&fx.ctx(), &WriteRequest { dev: "vda".into(), destructive: true, serial: Some("SER-A".into()), allow_boot_media: false, actor: "t".into() }).unwrap()
 }
 
 fn spec(mode: TestMode, pat: Pattern, regions: Vec<Region>) -> TestSpec {
@@ -120,7 +120,7 @@ fn write_without_a_guard_is_unsupported_and_touches_nothing() {
     assert!(fx.get("vda", 0, 8192).iter().all(|b| *b == 0));
     // a guard for another disk does not unlock this one
     fx.disk(&DiskSpec::virtio("vdb", MIB, 16, "SER-B"));
-    let gb = WriteGuard::acquire(&fx.ctx(), &WriteRequest { dev: "vdb".into(), destructive: true, serial: Some("SER-B".into()), actor: "t".into() }).unwrap();
+    let gb = WriteGuard::acquire(&fx.ctx(), &WriteRequest { dev: "vdb".into(), destructive: true, serial: Some("SER-B".into()), allow_boot_media: false, actor: "t".into() }).unwrap();
     let r = block::run_test(&fx.ctx(), &s, Some(&gb), &mut |_| {}, &cancel);
     assert!(matches!(r, Err(labprobe::ProbeError::Unsupported)));
     assert!(fx.get("vda", 0, 8192).iter().all(|b| *b == 0));

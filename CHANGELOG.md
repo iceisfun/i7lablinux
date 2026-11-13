@@ -6,6 +6,8 @@ the wire protocol is frozen; the protocol carries its own version number.
 ## [Unreleased]
 
 ### Added
+- `--allow-boot-media` for `blk write` and `blk image`: the boot media is overwritable when the host proves it is fully
+  RAM-resident (`labprobe::block::ram::ram_resident`); otherwise `boot_media` stays an absolute refusal.
 - Project documentation set: README, docs index, CONTRIBUTING, SECURITY, ROADMAP, licence decision page, THIRD_PARTY,
   CI workflow and Makefile.
 

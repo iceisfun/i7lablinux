@@ -220,7 +220,7 @@ A write mode (`rw`, `rw-restore`, `wipe`, `clone` target, `secure-erase`) refuse
 
 1. The device is not mounted, not swap, not an md/dm member, `O_EXCL` open succeeds.
 2. The device does NOT hold the boot media (`i7lab.boot` match, label `I7LABBOOT`, or it backs the
-   running rootfs/initramfs source). This refusal can never be overridden.
+   running rootfs/initramfs source). This refusal can only be lifted on a host proven fully RAM-resident, with the explicit `--allow-boot-media` flag (docs/PLAN.md section 6).
 3. The device has no partition table, no recognised filesystem signature and no RAID/LVM/LUKS
    signature, OR the caller passes the explicit destructive flag for a device that does.
 4. For case 3-with-override: the caller passes BOTH `--i-understand-this-destroys-data` AND

@@ -7,6 +7,7 @@ pub mod guard;
 pub mod image;
 pub mod ioctl;
 pub mod parttable;
+pub mod ram;
 pub mod signatures;
 pub mod smart;
 pub mod test;
@@ -98,6 +99,9 @@ pub struct BlockDevice {
     /// the disk or one of its partitions is an active swap area
     pub swap: bool,
     pub boot_media: bool,
+    /// meaningful only with `boot_media`: the host proves it is fully RAM-resident (`ram::ram_resident`), so the boot
+    /// media may be overwritten with the explicit `--allow-boot-media` flag
+    pub ram_resident: bool,
     pub write_safety: WriteSafety,
 }
 

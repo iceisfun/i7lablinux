@@ -1,0 +1,223 @@
+### guest: pid 1487549, boot disk = USB stick serial I7STICK0001 (sda), L2 segment mcast 239.255.71.1:36055
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 id 52:54:00:17:0b:01
+v             1
+version       0.1.0
+build         7.3.4-nogit
+hostname      i7lab
+boot_id       36d8118f114cae42
+role          admin
+kid           a:7be2560e,r:ffc30079
+state         ready
+proto         1
+caps          1023
+product       Standard PC (Q35 + ICH9, 2009)
+vendor        QEMU
+serial        
+board         
+board_serial  
+kernel        7.3.4-i7lab
+uptime_s      3
+http_port     8080
+ether         true
+role granted to your key: admin
+[rc=0]
+PASS guest answers: id
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 blk ls 52:54:00:17:0b:01
+NAME        SIZE  KIND    MODEL          SERIAL       TABLE  FS    MOUNTED  BOOT  SMART    WRITE SAFETY
+sda    109.0 MiB  usb     QEMU HARDDISK  I7STICK0001  gpt    vfat  -        BOOT  -        UNSAFE: boot_media(ram-resident: --allow-boot-media) | partition_table(gpt) | signature(vfat)
+sdb    109.0 MiB  usb     QEMU HARDDISK  I7USB0002    -      -     -        -     -        WRITE-SAFE
+sr0   1024.0 MiB  sata    QEMU DVD-ROM   -            -      -     -        -     UNKNOWN  UNSAFE: read_only | no_serial
+vda    256.0 MiB  virtio  -              I7VIRT0001   -      -     -        -     -        WRITE-SAFE
+[rc=0]
+PASS blk ls: boot disk is overridable (ram-resident), names the flag
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 sh 52:54:00:17:0b:01 grep ' / ' /proc/self/mountinfo
+2 1 0:3 / / rw - rootfs rootfs rw,size=969532k,nr_inodes=242383
+23 2 0:21 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+24 2 0:22 / /sys rw,nosuid,nodev,noexec,relatime - sysfs sysfs rw
+25 2 0:9 / /dev rw,nosuid,relatime - devtmpfs devtmpfs rw,size=969532k,nr_inodes=242383,mode=755
+26 25 0:23 / /dev/pts rw,nosuid,noexec,relatime - devpts devpts rw,mode=620,ptmxmode=666
+27 25 0:24 / /dev/shm rw,nosuid,nodev,noexec,relatime - tmpfs tmpfs rw
+28 2 0:25 / /run rw,nosuid,nodev,relatime - tmpfs tmpfs rw,size=65536k,mode=755
+29 2 0:26 / /tmp rw,nosuid,nodev,relatime - tmpfs tmpfs rw,size=262144k
+30 24 0:20 / /sys/kernel/config rw,nosuid,nodev,noexec,relatime - configfs configfs rw
+[rc=0]
+PASS root is RAM (rootfs/tmpfs/ramfs) in the guest
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 blk image 52:54:00:17:0b:01 sda --file /tmp/i7ll-bm/out/e2e/20261113T172901Z-bootmedia/guest/new.img --serial I7STICK0001 --destructive --yes
+target   sda  QEMU QEMU HARDDISK  serial I7STICK0001  109.0 MiB  usb
+image    /tmp/i7ll-bm/out/e2e/20261113T172901Z-bootmedia/guest/new.img  64.0 MiB (67108864 bytes)
+current  partition table: gpt, 2 partition(s)
+            1: LBA 2048..4095  i7lab-bios  21686148-6449-6e6f-744e-656564454649
+            2: LBA 4096..221183  i7lab-esp  c12a7328-f81f-11d2-ba4b-00a0c93ec93b
+           signatures: vfat@2097234
+verdict  needs_override
+i7labctl: blk: refused: REFUSED: write refused by the safety gate
+  reason: boot_media (ram-resident)
+[rc=7]
+PASS NEGATIVE: blk image on the boot disk without --allow-boot-media -> refused (exit 7)
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 blk write 52:54:00:17:0b:01 sda --destructive --serial I7STICK0001 --mb 4 --yes
+i7labctl: blk.write: REFUSED: write refused by the safety gate
+[rc=7]
+PASS NEGATIVE: blk write on the boot disk without --allow-boot-media -> refused (exit 7)
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 blk image 52:54:00:17:0b:01 sda --file /tmp/i7ll-bm/out/e2e/20261113T172901Z-bootmedia/guest/new.img --serial I7STICK0001 --allow-boot-media --yes
+i7labctl: blk: refused: blk image overwrites the whole disk and needs BOTH --destructive and --serial SERIAL (the real serial of sda from `i7labctl blk ls`). Nothing was sent.
+[rc=7]
+PASS NEGATIVE: --allow-boot-media alone (no --destructive) -> refused locally (exit 7)
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 blk image 52:54:00:17:0b:01 sda --file /tmp/i7ll-bm/out/e2e/20261113T172901Z-bootmedia/guest/new.img --serial WRONG --destructive --allow-boot-media --yes
+i7labctl: blk: refused: serial mismatch: sda has serial 'I7STICK0001', you gave 'WRONG'. Nothing was sent.
+[rc=7]
+PASS NEGATIVE: wrong serial with the flag -> refused (exit 7)
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 blk ls 52:54:00:17:0b:01
+NAME        SIZE  KIND    MODEL          SERIAL       TABLE  FS    MOUNTED  BOOT  SMART    WRITE SAFETY
+sda    109.0 MiB  usb     QEMU HARDDISK  I7STICK0001  gpt    vfat  -        BOOT  -        UNSAFE: boot_media(ram-resident: --allow-boot-media) | partition_table(gpt) | signature(vfat)
+sdb    109.0 MiB  usb     QEMU HARDDISK  I7USB0002    -      -     -        -     -        WRITE-SAFE
+sr0   1024.0 MiB  sata    QEMU DVD-ROM   -            -      -     -        -     UNKNOWN  UNSAFE: read_only | no_serial
+vda    256.0 MiB  virtio  -              I7VIRT0001   -      -     -        -     -        WRITE-SAFE
+[rc=0]
+PASS boot disk unchanged after the refusals (old table still there)
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 blk image 52:54:00:17:0b:01 vda --file /tmp/i7ll-bm/out/e2e/20261113T172901Z-bootmedia/guest/new.img --serial I7VIRT0001 --destructive --yes --verify
+target   vda  0x1af4 -  serial I7VIRT0001  256.0 MiB  virtio
+image    /tmp/i7ll-bm/out/e2e/20261113T172901Z-bootmedia/guest/new.img  64.0 MiB (67108864 bytes)
+current  partition table: none, 0 partition(s)
+verdict  safe
+wrote 64.0 MiB to vda in 0m05s (12.4 MiB/s image rate; 3.0 MiB sent, 61.0 MiB zero ranges skipped)
+sha256 b9ff91e80bc291078fbf6fe673ec2f47a824c4b2b7ace43c585b92a23ef4e248 (verified by reading the disk back)
+gpt backup: moved; partition table re-read: ok
+[rc=0]
+PASS CONTROL: the same image onto a blank virtio disk needs no boot flag
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 blk image 52:54:00:17:0b:01 sdb --file /tmp/i7ll-bm/out/e2e/20261113T172901Z-bootmedia/guest/new.img --serial I7USB0002 --destructive --yes --verify
+target   sdb  QEMU QEMU HARDDISK  serial I7USB0002  109.0 MiB  usb
+image    /tmp/i7ll-bm/out/e2e/20261113T172901Z-bootmedia/guest/new.img  64.0 MiB (67108864 bytes)
+current  partition table: none, 0 partition(s)
+verdict  safe
+wrote 64.0 MiB to sdb in 0m07s (8.3 MiB/s image rate; 3.0 MiB sent, 61.0 MiB zero ranges skipped)
+sha256 b9ff91e80bc291078fbf6fe673ec2f47a824c4b2b7ace43c585b92a23ef4e248 (verified by reading the disk back)
+gpt backup: moved; partition table re-read: ok
+[rc=0]
+PASS CONTROL: the same image onto a blank, non-boot USB disk
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 sh 52:54:00:17:0b:01 mkdir -p /mnt/esp && mount -t vfat /dev/sda2 /mnt/esp
+
+[rc=0]
+PASS mount the stick's ESP in the guest
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 blk ls 52:54:00:17:0b:01
+NAME        SIZE  KIND    MODEL          SERIAL       TABLE  FS    MOUNTED   BOOT  SMART    WRITE SAFETY
+sda    109.0 MiB  usb     QEMU HARDDISK  I7STICK0001  gpt    vfat  /mnt/esp  BOOT  -        UNSAFE: boot_media | mounted(/mnt/esp) | partition_table(gpt) | signature(vfat)
+sdb    109.0 MiB  usb     QEMU HARDDISK  I7USB0002    gpt    -     -         -     -        UNSAFE: partition_table(gpt)
+sr0   1024.0 MiB  sata    QEMU DVD-ROM   -            -      -     -         -     UNKNOWN  UNSAFE: read_only | no_serial
+vda    256.0 MiB  virtio  -              I7VIRT0001   gpt    -     -         -     -        UNSAFE: partition_table(gpt)
+[rc=0]
+PASS blk ls: boot_media is now absolute (a mount from the disk)
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 blk image 52:54:00:17:0b:01 sda --file /tmp/i7ll-bm/out/e2e/20261113T172901Z-bootmedia/guest/new.img --serial I7STICK0001 --destructive --allow-boot-media --yes
+target   sda  QEMU QEMU HARDDISK  serial I7STICK0001  109.0 MiB  usb
+image    /tmp/i7ll-bm/out/e2e/20261113T172901Z-bootmedia/guest/new.img  64.0 MiB (67108864 bytes)
+current  partition table: gpt, 2 partition(s)
+            1: LBA 2048..4095  i7lab-bios  21686148-6449-6e6f-744e-656564454649
+            2: LBA 4096..221183  i7lab-esp  c12a7328-f81f-11d2-ba4b-00a0c93ec93b
+           signatures: vfat@2097234
+           MOUNTED: /mnt/esp
+verdict  refused
+boot     --allow-boot-media: sda may be the disk this host booted from; it runs from RAM and keeps running, but cannot boot again from it afterwards
+i7labctl: blk: refused: REFUSED: write refused by the safety gate
+  reason: busy
+[rc=7]
+PASS NEGATIVE: with a mount from the boot disk, --allow-boot-media is still refused (exit 7)
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 sh 52:54:00:17:0b:01 umount /mnt/esp
+
+[rc=0]
+PASS umount
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 blk image 52:54:00:17:0b:01 sda --file /tmp/i7ll-bm/out/e2e/20261113T172901Z-bootmedia/guest/new.img --serial I7STICK0001 --destructive --allow-boot-media --yes --verify
+target   sda  QEMU QEMU HARDDISK  serial I7STICK0001  109.0 MiB  usb
+image    /tmp/i7ll-bm/out/e2e/20261113T172901Z-bootmedia/guest/new.img  64.0 MiB (67108864 bytes)
+current  partition table: gpt, 2 partition(s)
+            1: LBA 2048..4095  i7lab-bios  21686148-6449-6e6f-744e-656564454649
+            2: LBA 4096..221183  i7lab-esp  c12a7328-f81f-11d2-ba4b-00a0c93ec93b
+           signatures: vfat@2097234
+verdict  needs_override
+boot     --allow-boot-media: sda may be the disk this host booted from; it runs from RAM and keeps running, but cannot boot again from it afterwards
+wrote 64.0 MiB to sda in 0m07s (8.4 MiB/s image rate; 3.0 MiB sent, 61.0 MiB zero ranges skipped)
+sha256 b9ff91e80bc291078fbf6fe673ec2f47a824c4b2b7ace43c585b92a23ef4e248 (verified by reading the disk back)
+gpt backup: moved; partition table re-read: ok
+[rc=0]
+PASS POSITIVE: blk image onto the boot disk with --allow-boot-media --verify
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 id 52:54:00:17:0b:01
+v             1
+version       0.1.0
+build         7.3.4-nogit
+hostname      i7lab
+boot_id       36d8118f114cae42
+role          admin
+kid           a:7be2560e,r:ffc30079
+state         ready
+proto         1
+caps          1023
+product       Standard PC (Q35 + ICH9, 2009)
+vendor        QEMU
+serial        
+board         
+board_serial  
+kernel        7.3.4-i7lab
+uptime_s      27
+http_port     8080
+ether         true
+role granted to your key: admin
+[rc=0]
+PASS guest still answers after overwriting its own boot disk: id
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 --ether 52:54:00:17:0b:01 --cmd ping
+{"echo":"","uptime_ms":27080,"boot_id":"36d8118f114cae42","load":[0.46,0.11,0.04],"time":1794591001}
+[rc=0]
+PASS guest still answers: ping
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 --json blk ls 52:54:00:17:0b:01
+{"ok":true,"transport":"ether","host":{"mac":"52:54:00:17:0b:01","ip":null,"vlan":null,"serial":null,"boot":null},"cmd":"blk.ls","rtt_ms":131.2,"data":{"v":1,"devices":[{"name":"sda","devno":"8:0","size_bytes":114294784,"logical_block":512,"physical_block":512,"kind":"usb","model":"QEMU HARDDISK","vendor":"QEMU","serial":"I7STICK0001","serial_source":"usb","wwid":null,"firmware_rev":"2.5+","rotati
+[rc=0]
+PASS blk ls shows the NEW table on sda (partition NEWDISK)
+
+$ bash -c "$0" --link mcast:239.255.71.1:36055 --json blk ls 52:54:00:17:0b:01 | { grep -q NEWDISK && ! grep -q i7lab-esp && echo NEWDISK-only; } /tmp/i7ll-bm/out/bin/i7labctl
+NEWDISK-only
+[rc=0]
+PASS the old ESP partition is gone from sda
+
+$ /tmp/i7ll-bm/out/bin/i7labctl --link mcast:239.255.71.1:36055 sh 52:54:00:17:0b:01 cat /run/i7lab/audit.log
+1794590978 ether eth0 02:49:37:16:c2:ac actor=admin:7be2560e cmd=exec args=["--", "i7labsh", "-c", "grep ' / ' /proc/self/mountinfo"] status=OK
+1794590978 ether eth0 02:49:37:16:c2:b5 actor=admin:7be2560e cmd=blk.image args=["sda", "--status", "--image-id", "fe5486ecb9a9965bfb1cd1d9dca6b726"] status=OK
+1794590978 blk.write dev=sda actor=admin:7be2560e ether eth0 02:49:37:16:c2:b5 destructive=true serial_given=I7STICK0001 allow_boot_media=false REFUSED reasons=boot_media
+1794590978 ether eth0 02:49:37:16:c2:b5 actor=admin:7be2560e cmd=blk.image args=["sda", "--size", "67108864", "--image-id", "fe5486ecb9a9965bfb1cd1d9dca6b726", "--serial", "I7STICK0001", "--destructive"] status=REFUSED
+1794590979 blk.write dev=sda actor=admin:7be2560e ether eth0 02:49:37:16:c2:c2 destructive=true serial_given=I7STICK0001 allow_boot_media=false REFUSED reasons=boot_media
+1794590979 ether eth0 02:49:37:16:c2:c2 actor=admin:7be2560e cmd=blk.write args=["sda", "--destructive", "--serial", "I7STICK0001", "--mb", "4", "--seed", "265729902490247"] status=REFUSED
+1794590979 ether eth0 02:49:37:16:c2:e1 actor=admin:7be2560e cmd=blk.image args=["sda", "--status", "--image-id", "fe5486ecb9a9965bfb1cd1d9dca6b726"] status=OK
+1794590979 ether eth0 02:49:37:16:c3:95 actor=admin:7be2560e cmd=blk.image args=["vda", "--status", "--image-id", "fe5486ecb9a9965bfb1cd1d9dca6b726"] status=OK
+1794590979 blk.write dev=vda actor=admin:7be2560e ether eth0 02:49:37:16:c3:95 destructive=true serial_given=I7VIRT0001 allow_boot_media=false ALLOWED serial=I7VIRT0001
+1794590985 blk.image dev=vda done bytes=67108864 sha256=b9ff91e80bc291078fbf6fe673ec2f47a824c4b2b7ace43c585b92a23ef4e248 actor=admin:7be2560e
+1794590985 ether eth0 02:49:37:16:c3:95 actor=admin:7be2560e cmd=blk.image args=["vda", "--size", "67108864", "--image-id", "fe5486ecb9a9965bfb1cd1d9dca6b726", "--serial", "I7VIRT0001", "--destructive", "--verify"] status=OK
+1794590985 ether eth0 02:49:37:16:c5:df actor=admin:7be2560e cmd=blk.image args=["sdb", "--status", "--image-id", "fe5486ecb9a9965bfb1cd1d9dca6b726"] status=OK
+1794590985 blk.write dev=sdb actor=admin:7be2560e ether eth0 02:49:37:16:c5:df destructive=true serial_given=I7USB0002 allow_boot_media=false ALLOWED serial=I7USB0002
+1794590992 blk.image dev=sdb done bytes=67108864 sha256=b9ff91e80bc291078fbf6fe673ec2f47a824c4b2b7ace43c585b92a23ef4e248 actor=admin:7be2560e
+1794590992 ether eth0 02:49:37:16:c5:df actor=admin:7be2560e cmd=blk.image args=["sdb", "--size", "67108864", "--image-id", "fe5486ecb9a9965bfb1cd1d9dca6b726", "--serial", "I7USB0002", "--destructive", "--verify"] status=OK
+1794590992 ether eth0 02:49:37:16:c9:7d actor=admin:7be2560e cmd=exec args=["--", "i7labsh", "-c", "mkdir -p /mnt/esp && mount -t vfat /dev/sda2 /mnt/esp"] status=OK
+1794590993 ether eth0 02:49:37:16:c9:91 actor=admin:7be2560e cmd=blk.image args=["sda", "--status", "--image-id", "fe5486ecb9a9965bfb1cd1d9dca6b726"] status=OK
+1794590993 blk.write dev=sda actor=admin:7be2560e ether eth0 02:49:37:16:c9:91 destructive=true serial_given=I7STICK0001 allow_boot_media=true REFUSED reasons=busy
+1794590993 ether eth0 02:49:37:16:c9:91 actor=admin:7be2560e cmd=blk.image args=["sda", "--size", "67108864", "--image-id", "fe5486ecb9a9965bfb1cd1d9dca6b726", "--serial", "I7STICK0001", "--destructive", "--allow-boot-media"] status=REFUSED
+1794590993 ether eth0 02:49:37:16:c9:9b actor=admin:7be2560e cmd=exec args=["--", "i7labsh", "-c", "umount /mnt/esp"] status=OK
+1794590993 ether eth0 02:49:37:16:c9:a3 actor=admin:7be2560e cmd=blk.image args=["sda", "--status", "--image-id", "fe5486ecb9a9965bfb1cd1d9dca6b726"] status=OK
+1794590993 blk.write dev=sda actor=admin:7be2560e ether eth0 02:49:37:16:c9:a3 destructive=true serial_given=I7STICK0001 allow_boot_media=true ALLOWED serial=I7STICK0001 BOOT-MEDIA-OVERRIDE ram-resident
+1794591001 blk.image dev=sda done bytes=67108864 sha256=b9ff91e80bc291078fbf6fe673ec2f47a824c4b2b7ace43c585b92a23ef4e248 actor=admin:7be2560e
+1794591001 ether eth0 02:49:37:16:c9:a3 actor=admin:7be2560e cmd=blk.image args=["sda", "--size", "67108864", "--image-id", "fe5486ecb9a9965bfb1cd1d9dca6b726", "--serial", "I7STICK0001", "--destructive", "--allow-boot-media", "--verify"] status=OK
+[rc=0]
+PASS audit log records the override
+RESULT: 20 passed, 0 failed

@@ -392,6 +392,16 @@ pub fn is_boot_media(ctx: &ProbeCtx, devno: (u32, u32), partitions: &[Partition]
     }
 }
 
+/// `block::ram::ram_resident` over the live (or fixture) /proc: false (fail closed) when anything cannot be read.
+fn ram_resident_now(ctx: &ProbeCtx, d: &BlockDevice) -> bool {
+    let Ok(mi) = std::fs::read_to_string(ctx.path("/proc/self/mountinfo")) else { return false };
+    let Ok(exe) = std::fs::read_link(ctx.path("/proc/self/exe")) else { return false };
+    let swaps = std::fs::read_to_string(ctx.path("/proc/swaps")).unwrap_or_default();
+    let mut devnos = vec![d.devno];
+    devnos.extend(sysfs_partitions(ctx, &d.name).into_iter().map(|p| p.1));
+    super::ram::ram_resident(&mi, &exe.to_string_lossy(), &swaps, d, &devnos).is_ok()
+}
+
 /// Find the whole disk carrying `partuuid` (GPT unique GUID or MBR `<sig>-<nn>`), once at daemon start. Scans every
 /// disk's partition table (no udev in the image, so /dev/disk/by-partuuid does not exist).
 pub fn resolve_boot_disk(ctx: &ProbeCtx, partuuid: &str) -> Option<(u32, u32)> {
@@ -459,6 +469,7 @@ fn finish(ctx: &ProbeCtx, d: &mut BlockDevice) {
     d.holders = u.holders;
     d.swap = u.swap;
     d.boot_media = is_boot_media(ctx, d.devno, &d.partitions);
+    d.ram_resident = d.boot_media && ram_resident_now(ctx, d);
     d.write_safety = super::guard::assess(ctx, d);
 }
 
@@ -496,6 +507,7 @@ pub fn describe_basic(ctx: &ProbeCtx, name: &str) -> Result<BlockDevice, ProbeEr
         holders: vec![],
         swap: false,
         boot_media: false,
+        ram_resident: false,
         write_safety: Default::default(),
     })
 }

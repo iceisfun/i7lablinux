@@ -342,6 +342,25 @@ fn blk_write_needs_destructive_and_serial_locally() {
 }
 
 #[test]
+fn blk_write_allow_boot_media_needs_the_other_two_and_is_forwarded() {
+    need_json!();
+    let t = T::new("blkw-abm");
+    t.add_host(MAC, 3, &[]);
+    for args in [vec!["blk", "write", MAC, "sdb", "--allow-boot-media"], vec!["blk", "write", MAC, "sdb", "--allow-boot-media", "--destructive"], vec!["blk", "write", MAC, "sdb", "--allow-boot-media", "--serial", "S1"]] {
+        let (code, _, e) = t.run(&args);
+        assert_eq!(code, 7, "{:?}: {}", args, e);
+    }
+    assert!(t.calls().is_empty());
+    t.reply(|_, _| Ok(MockOut::ok("{\"v\":1,\"dev\":\"sdb\",\"serial\":\"S1\",\"mode\":\"Write\",\"seed\":5,\"ok\":true,\"regions\":[]}")));
+    let (code, _, e) = t.run(&["blk", "write", MAC, "sdb", "--destructive", "--serial", "S1", "--yes"]);
+    assert_eq!(code, 0, "{}", e);
+    assert!(!argv(&t.last()).iter().any(|x| *x == "--allow-boot-media"));
+    let (code, _, e) = t.run(&["blk", "write", MAC, "sdb", "--destructive", "--serial", "S1", "--allow-boot-media", "--yes"]);
+    assert_eq!(code, 0, "{}", e);
+    assert!(argv(&t.last()).iter().any(|x| *x == "--allow-boot-media"));
+}
+
+#[test]
 fn blk_write_asks_unless_yes_and_picks_a_seed() {
     need_json!();
     let mut t = T::new("blkw2");

@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# End-to-end test of `--allow-boot-media`: the lab image runs from RAM in QEMU, booted from a virtual USB disk (sda); the
+# host overwrites that very disk with `i7labctl blk image ... --allow-boot-media` while the guest keeps answering.
+# usage: e2e-bootmedia [--image FILE] [--port N] [--image-mib N] [--keep]            (run on the BUILD host, ONE guest)
+#   Needs out/image/i7lablinux.img, out/bin/i7labctl, qemu-system-x86_64, sgdisk, mcopy. Keys: a THROWAWAY set per run
+#   (scripts/gen-keys --out TMP --throwaway), baked into a scratch copy of the image; ~/.config/i7labctl and ./keys are never read.
+#   Writes out/e2e/<ts>-bootmedia/transcript.txt and prints PASS/FAIL per check. The guest runs under `timeout`; only the
+#   QEMU pid we started is killed. The stick is attached snapshot=on, so nothing here ever touches the image file itself.
+. "$(dirname "$0")/lib/common.sh"
+need qemu-system-x86_64 timeout mcopy sgdisk
+
+IMG="$I7_OUT/image/i7lablinux.img" PORT=$((30000 + RANDOM % 20000)) KEEP=0 WMIB=64
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --image) IMG="${2:?}"; shift 2;;
+    --port) PORT="${2:?}"; shift 2;;
+    --image-mib) WMIB="${2:?}"; shift 2;;
+    --keep) KEEP=1; shift;;
+    -h|--help) sed -n '2,8p' "$0"; exit 0;;
+    *) die "unknown option $1";;
+  esac
+done
+[ -f "$IMG" ] || die "$IMG missing: scripts/build-image --full"
+CTL="$I7_OUT/bin/i7labctl"; [ -x "$CTL" ] || die "$CTL missing: scripts/build-userland"
+KTMP="$(mktemp -d)"; KD="$KTMP/keys"; make_throwaway_keys "$KD" || die "gen-keys failed"
+export I7LABCTL_KEYDIR="$KD"
+TS="$(date -u +%Y%m%dT%H%M%SZ)"; EV="$I7_OUT/e2e/$TS-bootmedia"; mkdir -p "$EV"; T="$EV/transcript.txt"; : >"$T"
+MAC=52:54:00:17:0b:01; ESP_OFF=$((4096 * 512)) MP=$((PORT + 2)); CL=("$CTL" --link "mcast:239.255.71.1:$MP")
+PASS=0 FAILN=0 QPID=""
+log() { printf '%s\n' "$*" | tee -a "$T" >/dev/null; }
+chk() {
+  local name=$1 want=$2 pat=$3; shift 4
+  local out rc
+  out=$(timeout 180 "$@" 2>&1) && rc=0 || rc=$?
+  { printf '\n$ %s\n' "$*"; { printf '%s\n' "$out" | cut -c1-400 | head -40; } || true; printf '[rc=%s]\n' "$rc"; } >>"$T"
+  if { [ "$rc" = "$want" ] || { [ "$want" = nz ] && [ "$rc" != 0 ]; }; } && { [ -z "$pat" ] || grep -Eq -- "$pat" <<<"$out"; }; then
+    PASS=$((PASS + 1)); echo "PASS $name"; log "PASS $name"
+  else
+    FAILN=$((FAILN + 1)); echo "FAIL $name (rc=$rc want $want, pattern '$pat')"; log "FAIL $name (rc=$rc want $want, pattern '$pat')"
+  fi
+}
+stop_guest() { [ -n "$QPID" ] && kill "$QPID" 2>/dev/null; QPID=""; sleep 1; }
+trap 'stop_guest; rm -rf "$KTMP"' EXIT
+
+D="$EV/guest"; mkdir -p "$D"
+cp --reflink=auto "$IMG" "$D/disk.img"; truncate -s 256M "$D/virtio.img"; truncate -s 109M "$D/usb2.img"
+"$I7_ROOT/scripts/bake-keys" --keys "$KD" --image "$D/disk.img" >/dev/null 2>&1 || die "bake-keys failed"
+# the image to write: a small GPT disk with one partition and a recognisable marker (NOT a bootable system)
+W="$D/new.img"; truncate -s "${WMIB}M" "$W"; sgdisk -n1:2048:+8M -c1:NEWDISK "$W" >/dev/null
+printf 'I7LAB-OVERWRITTEN-BOOT-DISK' | dd of="$W" bs=512 seek=2048 conv=notrunc status=none
+kacc=kvm; [ -w /dev/kvm ] || kacc=tcg
+q=(qemu-system-x86_64 -name "i7ll-e2e-bootmedia" -machine "q35,accel=$kacc" -cpu max -smp 4 -m 2048 -display none -no-reboot
+  -serial "file:$D/serial.log" -pidfile "$D/pid"
+  -device qemu-xhci,id=xhci -drive "if=none,id=stick,format=raw,file=$D/disk.img,snapshot=on" -device usb-storage,bus=xhci.0,drive=stick,serial=I7STICK0001,bootindex=0
+  -drive "if=none,id=usb2,format=raw,file=$D/usb2.img" -device usb-storage,bus=xhci.0,drive=usb2,serial=I7USB0002
+  -device pcie-root-port,id=rp2,chassis=2,slot=2 -drive "if=none,id=vd0,format=raw,file=$D/virtio.img" -device virtio-blk-pci,bus=rp2,drive=vd0,serial=I7VIRT0001
+  -netdev "dgram,id=l2,remote.type=inet,remote.host=239.255.71.1,remote.port=$MP" -device "virtio-net-pci,netdev=l2,mac=$MAC")
+printf '%q ' "${q[@]}" >"$D/qemu.cmd"
+# snapshot=on keeps its overlay in $TMPDIR (default /var/tmp, which can be full on a shared build host): keep it next to the run
+TMPDIR="$D" timeout 900 "${q[@]}" >"$D/qemu.out" 2>&1 &
+sleep 1; QPID=$(cat "$D/pid" 2>/dev/null || true)
+[ -n "$QPID" ] || die "QEMU did not start: $(cat "$D/qemu.out")"
+log "### guest: pid $QPID, boot disk = USB stick serial I7STICK0001 (sda), L2 segment mcast 239.255.71.1:$MP"
+up=0; for i in $(seq 1 30); do "${CL[@]}" discover --listen 3 2>/dev/null | grep -qi "$MAC" && { up=1; break; }; done
+[ "$up" = 1 ] || { echo "FAIL beacon never seen (see $D/qemu.out, $D/serial.log)"; exit 1; }
+
+chk "guest answers: id" 0 'role +admin' -- "${CL[@]}" id $MAC
+chk "blk ls: boot disk is overridable (ram-resident), names the flag" 0 'sda.*boot_media\(ram-resident: --allow-boot-media\)' -- "${CL[@]}" blk ls $MAC
+chk "root is RAM (rootfs/tmpfs/ramfs) in the guest" 0 'rootfs|tmpfs|ramfs' -- "${CL[@]}" sh $MAC "grep ' / ' /proc/self/mountinfo"
+chk "NEGATIVE: blk image on the boot disk without --allow-boot-media -> refused (exit 7)" 7 'REFUSED|boot_media' -- "${CL[@]}" blk image $MAC sda --file "$W" --serial I7STICK0001 --destructive --yes
+chk "NEGATIVE: blk write on the boot disk without --allow-boot-media -> refused (exit 7)" 7 'REFUSED|boot_media' -- "${CL[@]}" blk write $MAC sda --destructive --serial I7STICK0001 --mb 4 --yes
+chk "NEGATIVE: --allow-boot-media alone (no --destructive) -> refused locally (exit 7)" 7 'needs BOTH' -- "${CL[@]}" blk image $MAC sda --file "$W" --serial I7STICK0001 --allow-boot-media --yes
+chk "NEGATIVE: wrong serial with the flag -> refused (exit 7)" 7 'serial mismatch|REFUSED' -- "${CL[@]}" blk image $MAC sda --file "$W" --serial WRONG --destructive --allow-boot-media --yes
+chk "boot disk unchanged after the refusals (old table still there)" 0 'sda.*gpt' -- "${CL[@]}" blk ls $MAC
+chk "CONTROL: the same image onto a blank virtio disk needs no boot flag" 0 'verified' -- "${CL[@]}" blk image $MAC vda --file "$W" --serial I7VIRT0001 --destructive --yes --verify
+chk "CONTROL: the same image onto a blank, non-boot USB disk" 0 'verified' -- "${CL[@]}" blk image $MAC sdb --file "$W" --serial I7USB0002 --destructive --yes --verify
+# not RAM-resident: anything mounted from the boot disk keeps boot_media absolute, even with the flag
+chk "mount the stick's ESP in the guest" 0 '' -- "${CL[@]}" sh $MAC "mkdir -p /mnt/esp && mount -t vfat /dev/sda2 /mnt/esp"
+chk "blk ls: boot_media is now absolute (a mount from the disk)" 0 'sda.*UNSAFE.*boot_media' -- "${CL[@]}" blk ls $MAC
+chk "NEGATIVE: with a mount from the boot disk, --allow-boot-media is still refused (exit 7)" 7 'REFUSED|boot_media|mounted' -- "${CL[@]}" blk image $MAC sda --file "$W" --serial I7STICK0001 --destructive --allow-boot-media --yes
+chk "umount" 0 '' -- "${CL[@]}" sh $MAC "umount /mnt/esp"
+chk "POSITIVE: blk image onto the boot disk with --allow-boot-media --verify" 0 'verified' -- "${CL[@]}" blk image $MAC sda --file "$W" --serial I7STICK0001 --destructive --allow-boot-media --yes --verify
+chk "guest still answers after overwriting its own boot disk: id" 0 'role +admin' -- "${CL[@]}" id $MAC
+chk "guest still answers: ping" 0 '"uptime_ms"' -- "${CL[@]}" --ether $MAC --cmd ping
+chk "blk ls shows the NEW table on sda (partition NEWDISK)" 0 'NEWDISK' -- "${CL[@]}" --json blk ls $MAC
+chk "the old ESP partition is gone from sda" 0 'NEWDISK' -- bash -c "\"\$0\" --link mcast:239.255.71.1:$MP --json blk ls $MAC | { grep -q NEWDISK && ! grep -q i7lab-esp && echo NEWDISK-only; }" "$CTL"
+chk "audit log records the override" 0 'allow_boot_media=true.*BOOT-MEDIA-OVERRIDE' -- "${CL[@]}" sh $MAC "cat /run/i7lab/audit.log"
+log "RESULT: $PASS passed, $FAILN failed"
+echo "RESULT: $PASS passed, $FAILN failed; transcript $T"
+[ "$KEEP" = 1 ] || rm -f "$D/disk.img" "$D/new.img" "$D/virtio.img" "$D/usb2.img"
+[ "$FAILN" = 0 ]

@@ -38,6 +38,7 @@ pub fn reason_text(r: &Reason) -> String {
         Reason::SerialMismatch => "the given serial does not match".into(),
         Reason::NoSerial => "the device has no serial or WWID to confirm against".into(),
         Reason::BootMedia => "this is the boot media".into(),
+        Reason::BootMediaRam => "boot media of a RAM-resident host: needs --allow-boot-media".into(),
         Reason::BacksRunningSystem => "backs the running system".into(),
         Reason::Mounted(m) => format!("mounted at {}", m),
         Reason::Held(h) => format!("held by {}", h),

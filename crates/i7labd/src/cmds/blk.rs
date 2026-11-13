@@ -89,7 +89,7 @@ struct Parsed {
 /// Shared argument parsing of the three test commands.
 fn parse_test(ctx: &mut Ctx, mode: TestMode) -> Result<Parsed, Reply> {
     let bad = |m: &str| Reply::error(Status::BadArgs, m);
-    let o = match labproto::args::Opts::parse(&ctx.args, &["direct", "random", "destructive"], &["mb", "regions", "offset", "len", "bs", "seed", "generation", "serial"]) {
+    let o = match labproto::args::Opts::parse(&ctx.args, &["direct", "random", "destructive", "allow-boot-media"], &["mb", "regions", "offset", "len", "bs", "seed", "generation", "serial"]) {
         Ok(o) => o,
         Err(e) => return Err(bad(&e.to_string())),
     };
@@ -197,7 +197,7 @@ fn verify(ctx: &mut Ctx) -> Reply {
 
 /// `DEV --destructive --serial S [...]`: the gate decides; every refusal comes back with its reason list.
 fn write(ctx: &mut Ctx) -> Reply {
-    let o = opts_or_bad!(ctx, &["destructive", "direct", "random"], &["serial", "mb", "regions", "offset", "len", "bs", "seed", "generation"]);
+    let o = opts_or_bad!(ctx, &["destructive", "allow-boot-media", "direct", "random"], &["serial", "mb", "regions", "offset", "len", "bs", "seed", "generation"]);
     let parsed = match parse_test(ctx, TestMode::Write) {
         Ok(p) => p,
         Err(r) => return r,
@@ -206,6 +206,7 @@ fn write(ctx: &mut Ctx) -> Reply {
         dev: parsed.dev.clone(),
         destructive: o.flag("destructive"),
         serial: o.value("serial").map(str::to_string),
+        allow_boot_media: o.flag("allow-boot-media"),
         actor: format!("{} {}", ctx.actor, ctx.source.describe()),
     };
     let guard = match WriteGuard::acquire(&ctx.daemon.probe, &req) {

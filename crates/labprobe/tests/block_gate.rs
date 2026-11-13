@@ -11,7 +11,7 @@ use labproto::json::to_json;
 const MIB: u64 = 1 << 20;
 
 fn req(dev: &str, destructive: bool, serial: Option<&str>) -> WriteRequest {
-    WriteRequest { dev: dev.into(), destructive, serial: serial.map(str::to_string), actor: "test key=0 console".into() }
+    WriteRequest { dev: dev.into(), destructive, serial: serial.map(str::to_string), allow_boot_media: false, actor: "test key=0 console".into() }
 }
 
 fn codes(r: Result<WriteGuard, block::Refusal>) -> Vec<&'static str> {
@@ -257,4 +257,68 @@ fn unreadable_device_is_refused_not_assumed_blank() {
     // zero-size device
     std::fs::write(fx.dev("vda"), b"").unwrap();
     assert_eq!(codes(WriteGuard::acquire(&fx.ctx(), &req("vda", true, Some("SER-A")))), ["unreadable"]);
+}
+
+fn req_boot(dev: &str, destructive: bool, serial: Option<&str>) -> WriteRequest {
+    WriteRequest { allow_boot_media: true, ..req(dev, destructive, serial) }
+}
+
+#[test]
+fn ram_resident_boot_media_is_overridable_only_with_the_flag_and_the_proof() {
+    let fx = Fx::new("bootram");
+    blank(&fx, "vda", "SER-A");
+    fx.partition("vda", "vda1", 252, 1);
+    fx.put("vda", 0, &build_gpt(512, 8 * MIB / 512, &[(2048, 4095, "i7lab.boot")]));
+    let mut ctx = fx.ctx();
+    ctx.boot_disk = Some((252, 0));
+    let ram = "1 0 0:2 / / rw - rootfs rootfs rw\n";
+    fx.mountinfo(ram);
+    let _ = std::fs::remove_file(fx.root.join("proc/self/exe"));
+    std::os::unix::fs::symlink("/usr/sbin/i7labd", fx.root.join("proc/self/exe")).unwrap();
+
+    let d = block::enumerate::describe(&ctx, "vda").unwrap();
+    assert!(d.boot_media && d.ram_resident);
+    assert!(d.write_safety.absolute.is_empty());
+    let o = d.write_safety.overridable.iter().find(|r| r.code() == "boot_media").unwrap();
+    assert_eq!((o.detail(), o.overridable()), (Some("ram-resident"), true));
+    assert!(labproto::json::to_json(&d.write_safety).contains("{\"code\":\"boot_media\",\"detail\":\"ram-resident\",\"overridable\":true}"));
+
+    // no flag, flag without the other two, wrong serial: refused; with all three: allowed
+    assert_eq!(codes(WriteGuard::acquire(&ctx, &req("vda", true, Some("SER-A")))), ["boot_media"]);
+    assert_eq!(codes(WriteGuard::acquire(&ctx, &req_boot("vda", false, Some("SER-A")))), ["not_destructive", "boot_media", "partition_table"]);
+    assert_eq!(codes(WriteGuard::acquire(&ctx, &req_boot("vda", true, None))), ["serial_missing", "boot_media", "partition_table"]);
+    assert_eq!(codes(WriteGuard::acquire(&ctx, &req_boot("vda", true, Some("WRONG")))), ["serial_mismatch", "boot_media", "partition_table"]);
+    assert_eq!(codes(WriteGuard::acquire(&ctx, &req_boot("vda", true, Some("SER-A")))), ["OK"]);
+    let log = fx.audit_log();
+    assert!(log.contains("allow_boot_media=true") && log.contains("ALLOWED serial=SER-A BOOT-MEDIA-OVERRIDE ram-resident"), "{log}");
+    assert!(log.contains("allow_boot_media=false") && log.contains("REFUSED"), "{log}");
+
+    // not RAM-resident: root on the disk, or anything mounted from it, or swap, or a holder: absolute even with the flag
+    for (why, mi) in [
+        ("root on the disk", "1 0 252:1 / / rw - ext4 /dev/vda1 rw\n"),
+        ("mount from the disk", "1 0 0:2 / / rw - rootfs rootfs rw\n30 1 252:1 / /data rw - vfat /dev/vda1 rw\n"),
+        ("root on another disk", "1 0 8:1 / / rw - ext4 /dev/sda1 rw\n"),
+    ] {
+        fx.mountinfo(mi);
+        let d = block::enumerate::describe(&ctx, "vda").unwrap();
+        assert!(d.boot_media && !d.ram_resident, "{why}");
+        assert!(d.write_safety.absolute.iter().any(|r| r.code() == "boot_media" && !r.overridable()), "{why}");
+        let r = codes(WriteGuard::acquire(&ctx, &req_boot("vda", true, Some("SER-A"))));
+        assert!(r.contains(&"boot_media"), "{why}: {r:?}");
+        assert!(!r.contains(&"OK"), "{why}");
+    }
+    fx.mountinfo(ram);
+    fx.write("proc/swaps", "Filename Type Size Used Priority\n/dev/vda1 partition 1024 0 -2\n");
+    assert_eq!(codes(WriteGuard::acquire(&ctx, &req_boot("vda", true, Some("SER-A")))), ["boot_media", "swap"]);
+    fx.write("proc/swaps", "Filename Type Size Used Priority\n");
+    fx.write("sys/block/vda/vda1/holders/dm-0/x", "");
+    let r = codes(WriteGuard::acquire(&ctx, &req_boot("vda", true, Some("SER-A"))));
+    assert!(r.contains(&"boot_media") && r.contains(&"held"), "{r:?}");
+    std::fs::remove_dir_all(fx.root.join("sys/block/vda/vda1/holders")).unwrap();
+    // exe unknown: fail closed
+    std::fs::remove_file(fx.root.join("proc/self/exe")).unwrap();
+    assert!(codes(WriteGuard::acquire(&ctx, &req_boot("vda", true, Some("SER-A")))).contains(&"boot_media"));
+    // the flag on a disk that is not boot media changes nothing
+    fx.disk(&DiskSpec::virtio("vdb", 8 * MIB, 32, "SER-B"));
+    assert_eq!(codes(WriteGuard::acquire(&ctx, &req_boot("vdb", true, Some("SER-B")))), ["OK"]);
 }
