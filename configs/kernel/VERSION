@@ -1,0 +1,9 @@
+# Pinned kernel source (owner: P10). Format: key=value, one per line. build-kernel refuses anything else.
+# Policy: newest LTS, exact version + sha256, never "latest". Bump = edit these three lines, rebuild, commit.
+version=6.18.63
+url=https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.63.tar.xz
+sha256=81764a545072d160748beff4d9de2e7d95aa9f16e8261110288f067a2cc61d71
+# Detached signature of the uncompressed tar (checked when gpg + the kernel.org keys are available, see docs/BUILD.md).
+sign_url=https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.63.tar.sign
+# SOURCE_DATE_EPOCH for every artifact (kernel build time, initramfs mtimes, image timestamps): ours, not the release date.
+epoch=1767225600

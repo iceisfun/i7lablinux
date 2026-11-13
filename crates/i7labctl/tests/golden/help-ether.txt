@@ -1,0 +1,71 @@
+wire commands: i7labctl --ether <mac> --cmd NAME [params..]   (offline copy; live list: i7labctl ether cmds <mac>)
+  id      name         role arguments / summary
+  0x0001  ping         R    round trip, uptime, boot id
+                           [ECHO]
+  0x0002  id           R    identity, versions, key fingerprints, build id
+  0x0003  cmds         R    list supported commands
+  0x0004  stats        R    protocol counters
+  0x0005  time.set     W    set the host clock (audit timestamps before SNTP)
+                           UNIX_SECONDS
+  0x0010  inv          R    system inventory (sections = probe names)
+                           [--section S,S..]
+  0x0011  pcie         R    PCIe devices
+                           [--tree] [--id VVVV:DDDD] [--class CC] [--verbose]
+  0x0012  usb          R    USB devices
+                           [--tree]
+  0x0013  blk.ls       R    block devices with write-safety verdict
+                           [--all]
+  0x0014  blk.smart    R    SMART / NVMe health
+                           DEV [--attrs]
+  0x0015  blk.read     R    read test (never writes)
+                           DEV [--mb N] [--regions start,mid,end | --offset B --len B] [--bs 1m] [--direct]
+  0x0016  blk.write    W    destructive write+verify test behind the safety gate
+                           DEV --destructive --serial S [--mb N] [--regions ..] [--offset B --len B] [--seed N]
+  0x0017  blk.verify   R    re-read and compare a seeded pattern
+                           DEV --seed N [--mb N] [--regions ..]
+  0x0018  net.ls       R    network interfaces
+                           [IFACE]
+  0x0019  thermal      R    temperatures, fans
+                           [--follow]
+  0x0020  exec         W    run a program (no shell)
+                           [--timeout S] [--env K=V].. [--cwd D] [--tty CxR] [--detach] [--stdin] -- ARGV..
+  0x0021  shell        W    i7labsh on a pty
+                           [--cols N --rows N] [--term T]
+  0x0030  put          W    upload a file (PATH must be the first word)
+                           PATH --size N --sha256 HEX [--mode 0644] [--offset N] [--mkdirs]
+  0x0031  get          R/W  download a file (PATH must be the first word)
+                           PATH [--offset N] [--len N]
+  0x0032  fs.ls        R/W  list a directory
+                           PATH [--long]
+  0x0033  fs.stat      R/W  stat a path
+                           PATH
+  0x0034  fs.rm        W    remove a path
+                           PATH [--recursive]
+  0x0040  reboot       W    reboot (firmware setup, or installed OS once; --to-os UEFI only in v0.1)
+                           [--force] [--delay S] [--uefi] [--to-os]
+  0x0041  poweroff     W    power off
+                           [--delay S]
+  0x0042  kexec        W    load and exec another kernel (planned v0.4)
+                           --kernel PATH [--initrd PATH] [--cmdline STR]
+  0x0050  net.set      W    configure an interface
+                           IFACE (--dhcp | --ip A.B.C.D/N [--gw A.B.C.D] [--dns A,..]) [--mtu N] [--confirm S]
+  0x0051  net.vlan     W    802.1Q sub-interfaces
+                           add IFACE VID [--ip ..] | del IFACE VID
+  0x0052  net.confirm  W    keep a net.set made with --confirm
+  0x0053  net.link     W    link up/down
+                           IFACE up|down
+  0x0060  svc          W    agent services (planned v0.2)
+                           http|beacon|ether start|stop|status [--port N] [--force]
+  0x0070  logs         R    logs
+                           [--dmesg|--init|--daemon|--http|--audit] [-n LINES] [-f]
+  0x0080  identify     W    blink LEDs, banner on the console
+                           [--seconds N] [--stop]
+  0x0081  msg          W    show a message on the console TUI
+                           TEXT..
+  0x0082  tui          W    switch the console TUI tab
+                           tab NAME | reset
+  0x0083  tui.dump     R    text screenshot of the console TUI frame
+  0x0090  key.set      W    add/replace a role key (key-wrapped; planned) (planned v0.3)
+                           ROLE --wrapped HEX [--persist]
+  0x00a0  jobs         W    detached jobs
+                           [ls | kill ID | out ID]

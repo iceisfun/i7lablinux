@@ -1,0 +1,4 @@
+one-time boot menu keys (to boot the lab linux stick on a machine; the list is a convenience, check the machine)
+  Dell F12 | HP Esc then F9 | Lenovo F12 (ThinkCentre) | Intel NUC F10 | ASUS F8 (desktop) or Esc (laptop)
+  MSI F11 | Gigabyte F12 | ASRock F11 | Supermicro F11 | Acer F12 | Surface: hold Volume-Down while pressing power
+Secure Boot must be off (the image is not signed). Remote boot procedure: docs/REMOTE-BOOT.md.

@@ -1,0 +1,25 @@
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.1… attention: 7
+ Overview   PCIe   Storage   Network  [USB]  Sensors   Log   Actions
+┌─ USB devices ────────────────────────────────────────────────────────────────┐
+│Device               Name                                    ID          Speed│
+│▾ usb1               Linux xHCI Host Controller              1d6b:0002    480M│
+│    1-2              Logitech USB Keyboard                   046d:c31c     12M│
+│    1-3              SanDisk Ultra Fit\u{001b}[2J            0781:5581      5G│
+│  usb2               Linux xHCI Host Controller              1d6b:0003     10G│
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit

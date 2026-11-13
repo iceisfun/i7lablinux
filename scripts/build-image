@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# Build the KEYLESS GPT image (BIOS boot + 64 MiB ESP, placeholder keys.cpio) and the hybrid ISO into out/image/.
+# usage: build-image [--full] [--no-bios] [--no-iso] [--pmbr-active 0|1] [--esp-mib N] [FIRMWARE=..] [WIFI=1]
+#   Inputs: out/kernel (build-kernel), out/initramfs.cpio.zst (build-initramfs). --full builds them first (userland, kernel,
+#   initramfs) and, on a small machine, does all of it on the build host via scripts/remote and fetches out/image back.
+#   Outputs: out/image/i7lablinux-<kver>-<sha7>.{img,iso}, SHA256SUMS, stable symlinks out/image/i7lablinux.{img,iso}.
+#   Tools (build host): sgdisk mkfs.vfat mtools grub-mkimage grub-mkstandalone grub-mkrescue xorriso. No root needed.
+#   The BIOS stage is written WITHOUT root (boot.img + core.img patched by hand, the same bytes grub-bios-setup writes with
+#   --no-rs-codes); fallback if a host proves fussy: docs/BUILD.md "BIOS stage".
+# Owner: P10. Spec: docs/PLAN.md sections 5, 7, 8.
+. "$(dirname "$0")/lib/common.sh"
+
+FULL=0 BIOS=1 ISO=1 PMBR_ACTIVE="${PMBR_ACTIVE:-1}" ESP_MIB="${ESP_MIB:-64}" PASS=() ORIG=("$@")
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --full) FULL=1; shift;;
+    --no-bios) BIOS=0; shift;;
+    --no-iso) ISO=0; shift;;
+    --pmbr-active) PMBR_ACTIVE="${2:?0|1}"; shift 2;;
+    --esp-mib) ESP_MIB="${2:?N}"; shift 2;;
+    FIRMWARE=*|WIFI=*) PASS+=("$1"); shift;;
+    -h|--help) sed -n '2,10p' "$0"; exit 0;;
+    *) die "unknown option $1 (see --help)";;
+  esac
+done
+case "$PMBR_ACTIVE" in 0|1) ;; *) die "--pmbr-active takes 0 or 1";; esac
+
+if [ "$FULL" = 1 ] && ! on_build_host; then
+  need ssh rsync
+  LABEL="${I7_REMOTE_LABEL:-build}"
+  info "full build on $I7_HOST (label $LABEL)"
+  remote_run "$LABEL" scripts/build-image "${ORIG[@]}"
+  remote_fetch "$LABEL" image
+  exit 0
+fi
+if [ "$FULL" = 1 ]; then
+  export I7_ON_BUILD_HOST=1
+  "$I7_ROOT/scripts/build-userland" --no-ctl
+  "$I7_ROOT/scripts/build-kernel" ${WIFI:+WIFI=$WIFI}
+  "$I7_ROOT/scripts/build-initramfs" "${PASS[@]}"
+fi
+
+GRUB_PC="${I7_GRUB_PC:-/usr/lib/grub/i386-pc}" GRUB_EFI="${I7_GRUB_EFI:-/usr/lib/grub/x86_64-efi}"
+need sgdisk mkfs.vfat mcopy mmd grub-mkimage grub-mkstandalone sha256sum dd truncate
+[ "$ISO" = 0 ] || need grub-mkrescue xorriso
+[ -d "$GRUB_EFI" ] || die "$GRUB_EFI missing (apt-get install grub-efi-amd64-bin)"
+[ "$BIOS" = 0 ] || [ -s "$GRUB_PC/boot.img" ] || die "$GRUB_PC/boot.img missing (apt-get install grub-pc-bin)"
+KDIR="$I7_OUT/kernel" INITRD="$I7_OUT/initramfs.cpio.zst"
+[ -s "$KDIR/bzImage" ] || die "$KDIR/bzImage missing: scripts/build-kernel (or --full)"
+[ -s "$INITRD" ] || die "$INITRD missing: scripts/build-initramfs (or --full)"
+
+IMGID="$(i7_image_id)"
+OUTD="$I7_OUT/image"; mkdir -p "$OUTD"
+IMG="$OUTD/i7lablinux-$IMGID.img" ISOF="$OUTD/i7lablinux-$IMGID.iso"
+T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+CMDLINE="console=tty0 console=ttyS0,115200n8 panic=10 loglevel=4"
+
+# ---- helpers ----------------------------------------------------------------------------------------------------------
+le() { local v=$1 n=$2 i; for ((i=0; i<n; i++)); do printf '\\x%02x' $(( (v >> (8*i)) & 255 )); done; }   # LE bytes as \xHH text
+put_at() { printf '%b' "$3" | dd of="$1" bs=1 seek="$2" conv=notrunc status=none; }                      # FILE OFFSET ESCAPES
+uuid_of() { # deterministic GUID from a label (same inputs -> same image)
+  local h; h="$(printf '%s' "$1|$IMGID|$(sha256_file "$KDIR/bzImage")|$(sha256_file "$INITRD")" | sha256sum | cut -c1-32)"
+  echo "${h:0:8}-${h:8:4}-4${h:13:3}-a${h:17:3}-${h:20:12}"
+}
+grub_mods() { # DIR NAME... : NAME and its dependencies from moddep.lst, one per line
+  local dir=$1; shift
+  awk -v want="$*" 'BEGIN{n=split(want,a," "); for(i=1;i<=n;i++) q[a[i]]=1}
+    {split($0,p,":"); name=p[1]; deps[name]=p[2]}
+    END{ changed=1; while(changed){changed=0; for(m in q){ if(!(m in seen)){seen[m]=1; changed=1; k=split(deps[m],d," "); for(j=1;j<=k;j++) q[d[j]]=1}}}
+         for(m in seen) print m }' "$dir/moddep.lst" | sort
+}
+copy_grub_mods() { # SRC_DIR DEST_DIR NAME...
+  local src=$1 dst=$2 m; shift 2
+  mkdir -p "$dst"
+  for m in $(grub_mods "$src" "$@"); do
+    [ -s "$src/$m.mod" ] && cp "$src/$m.mod" "$dst/"
+  done
+  cp "$src"/*.lst "$dst/"
+}
+MODS_COMMON="normal configfile linux echo test search search_fs_file search_fs_uuid part_gpt part_msdos fat iso9660 serial terminal \
+  all_video video video_fb font gzio boot reboot halt sleep ls cat true minicmd loadenv chain"
+MODS_PC="$MODS_COMMON biosdisk vbe vga vga_text video_bochs video_cirrus"
+MODS_EFI="$MODS_COMMON efi_gop efifwsetup"
+
+# ---- ESP tree -----------------------------------------------------------------------------------------------------------
+ESP="$T/esp"; mkdir -p "$ESP/i7lab" "$ESP/boot/grub" "$ESP/EFI/BOOT"
+install -m 0644 "$KDIR/bzImage" "$ESP/i7lab/bzImage"
+install -m 0644 "$INITRD" "$ESP/i7lab/initramfs.cpio.zst"
+cpio_trailer > "$ESP/i7lab/keys.cpio"                      # placeholder: the keyless image boots with "NO KEYS" on the TUI
+echo "$IMGID" > "$ESP/i7lab/IMAGE-ID"
+{
+  echo "$IMGID"; echo "kernel=$(sed -n 's/^release=//p' "$KDIR/BUILD-INFO")"; echo "git=$(i7_sha7)"; echo "epoch=$SOURCE_DATE_EPOCH"
+  echo "pmbr_active=$PMBR_ACTIVE"; echo "bios=$BIOS"
+} > "$ESP/i7lab/BUILD"
+( cd "$ESP" && sha256sum i7lab/bzImage i7lab/initramfs.cpio.zst i7lab/IMAGE-ID i7lab/BUILD > i7lab/SHA256SUMS )
+render_cfg() { sed -e "s|@IMAGE_ID@|$IMGID|g" -e "s|@CMDLINE@|$CMDLINE|g" -e "s|@BOOT@|$1|g" "$I7_ROOT/configs/grub/grub.cfg.in"; }
+ESP_UUID="$(uuid_of esp)"
+render_cfg "PARTUUID=$ESP_UUID" > "$ESP/boot/grub/grub.cfg"
+copy_grub_mods "$GRUB_EFI" "$ESP/boot/grub/x86_64-efi" $MODS_EFI
+[ "$BIOS" = 0 ] || copy_grub_mods "$GRUB_PC" "$ESP/boot/grub/i386-pc" $MODS_PC
+
+# UEFI: standalone GRUB at the removable-media path; its embedded config finds the ESP by marker file and hands over to
+# boot/grub/grub.cfg (so grub.cfg stays editable on the stick and insmod finds modules on the ESP).
+cat > "$T/embed.cfg" <<'EOF'
+search --no-floppy --file --set=root /i7lab/IMAGE-ID
+set prefix=($root)/boot/grub
+configfile $prefix/grub.cfg
+EOF
+# shellcheck disable=SC2086
+grub-mkstandalone -O x86_64-efi -d "$GRUB_EFI" -o "$ESP/EFI/BOOT/BOOTX64.EFI" --compress=xz --modules="$MODS_EFI" \
+  "boot/grub/grub.cfg=$T/embed.cfg" >"$T/gm.log" 2>&1 || { cat "$T/gm.log" >&2; die "grub-mkstandalone failed"; }
+
+# ---- sizes ----------------------------------------------------------------------------------------------------------------
+CONTENT_MIB=$(( $(du -sb "$ESP" | cut -f1) / 1048576 + 1 ))
+[ "$ESP_MIB" -ge $((CONTENT_MIB + 8)) ] || ESP_MIB=$((CONTENT_MIB + 8))
+[ "$ESP_MIB" -ge 36 ] || ESP_MIB=36                                  # FAT32 needs >= 65525 clusters
+TOTAL_MIB=$((2 + ESP_MIB + 1))                                       # 1 MiB gap + 1 MiB BIOS boot + ESP + room for the backup GPT
+[ "$TOTAL_MIB" -le 256 ] || die "image would be $TOTAL_MIB MiB (> 256 MiB budget); trim modules or firmware"
+
+# ---- FAT ESP (mtools, no root) -----------------------------------------------------------------------------------------------
+find "$ESP" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+rm -f "$T/esp.img"; truncate -s "${ESP_MIB}M" "$T/esp.img"
+VOLID="$(sha256sum <<<"$IMGID" | cut -c1-8)"
+mkfs.vfat -F32 -s 1 -n I7LABESP -i "$VOLID" "$T/esp.img" >/dev/null
+export MTOOLS_SKIP_CHECK=1
+for d in EFI boot i7lab; do mcopy -s -p -m -i "$T/esp.img" "$ESP/$d" ::/ || die "mcopy $d failed"; done
+
+# ---- GPT disk image -----------------------------------------------------------------------------------------------------------
+rm -f "$IMG"; truncate -s "${TOTAL_MIB}M" "$IMG"
+sgdisk -o -U "$(uuid_of disk)" \
+  -n 1:2048:4095 -t 1:ef02 -c 1:i7lab-bios -u "1:$(uuid_of bios)" \
+  -n "2:4096:+${ESP_MIB}M" -t 2:ef00 -c 2:i7lab-esp -u "2:$ESP_UUID" "$IMG" >/dev/null
+dd if="$T/esp.img" of="$IMG" bs=512 seek=4096 conv=notrunc status=none
+
+# ---- BIOS stage without root: boot.img in LBA 0, core.img in the EF02 partition (what grub-bios-setup --no-rs-codes writes) ----
+if [ "$BIOS" = 1 ]; then
+  # "(,gpt2)" = partition 2 of the drive GRUB was booted from, whatever the BIOS calls it
+  grub-mkimage -O i386-pc -d "$GRUB_PC" -o "$T/core.img" -p '(,gpt2)/boot/grub' \
+    biosdisk part_gpt fat search search_fs_file normal linux echo serial terminal configfile >"$T/gm.log" 2>&1 || { cat "$T/gm.log" >&2; die "grub-mkimage (i386-pc) failed"; }
+  sz=$(stat -c%s "$T/core.img"); truncate -s $(( (sz + 511) / 512 * 512 )) "$T/core.img"
+  NSEC=$(( $(stat -c%s "$T/core.img") / 512 ))
+  [ "$NSEC" -le 2047 ] || die "core.img is $NSEC sectors, the BIOS boot partition holds 2047"
+  EMBED_LBA=2048
+  # diskboot blocklist (last 12 bytes before the 0x55AA-free tail of sector 0): start LBA of sector 1, count-1, load segment 0x820
+  put_at "$T/core.img" 500 "$(le $((EMBED_LBA + 1)) 8)$(le $((NSEC - 1)) 2)$(le $((0x0820)) 2)"
+  cp "$GRUB_PC/boot.img" "$T/boot.img"; chmod 600 "$T/boot.img"
+  put_at "$T/boot.img" 92 "$(le $EMBED_LBA 8)"          # kernel_sector: where core.img starts
+  put_at "$T/boot.img" 102 '\x90\x90'                   # boot_drive_check: nop out the jmp (hard-disk workaround, as grub-setup does)
+  dd if="$T/boot.img" of="$IMG" bs=440 count=1 conv=notrunc status=none     # code only: GPT's protective entry and signature stay
+  dd if="$T/core.img" of="$IMG" bs=512 seek=$EMBED_LBA conv=notrunc status=none
+fi
+[ "$PMBR_ACTIVE" = 1 ] && put_at "$IMG" 446 '\x80'      # protective entry marked active: some legacy BIOSes refuse a stick otherwise
+
+# ---- verify what we built --------------------------------------------------------------------------------------------------------
+sgdisk -v "$IMG" 2>&1 | grep -q 'No problems found' || die "sgdisk -v found problems in $IMG"
+[ "$(dd if="$IMG" bs=1 skip=510 count=2 status=none | od -An -tx1 | tr -d ' \n')" = 55aa ] || die "no 0x55AA at the end of LBA 0"
+START=$((4096*512))
+for f in i7lab/bzImage i7lab/initramfs.cpio.zst i7lab/keys.cpio i7lab/IMAGE-ID EFI/BOOT/BOOTX64.EFI boot/grub/grub.cfg; do
+  mcopy -n -i "$IMG@@$START" "::$f" "$T/verify" >/dev/null 2>&1 || die "$f is not readable from the ESP inside the image"
+done
+mcopy -n -i "$IMG@@$START" ::i7lab/initramfs.cpio.zst "$T/verify" && [ "$(sha256_file "$T/verify")" = "$(sha256_file "$INITRD")" ] || die "initramfs on the ESP differs from the input"
+
+# ---- ISO (BIOS + UEFI hybrid, for JetKVM CD mode and QEMU) -------------------------------------------------------------------------
+if [ "$ISO" = 1 ]; then
+  ISOD="$T/iso"; mkdir -p "$ISOD/boot/grub"
+  cp -a "$ESP/i7lab" "$ISOD/i7lab"
+  # The ISO is never re-mastered (xorriso cannot rewrite grub-mkrescue's appended EFI partition): bake-keys overwrites the
+  # extent of this file in place. So it is a fixed 8 KiB slot: the empty archive + zero padding (the kernel skips the zeros).
+  truncate -s 8192 "$ISOD/i7lab/keys.cpio"
+  render_cfg iso > "$ISOD/boot/grub/grub.cfg"
+  ( cd "$ISOD" && find . -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} + )
+  grub-mkrescue -o "$ISOF" "$ISOD" -- -volid I7LABISO >"$T/gm.log" 2>&1 || { tail -n 20 "$T/gm.log" >&2; die "grub-mkrescue failed"; }
+fi
+
+"$I7_ROOT/scripts/check-no-busybox" --image "$IMG" >&2 || die "the image contains busybox (operator rule: none, anywhere)"
+( cd "$OUTD" && ln -sfn "$(basename "$IMG")" i7lablinux.img
+  [ "$ISO" = 1 ] && ln -sfn "$(basename "$ISOF")" i7lablinux.iso
+  sha256sum "$(basename "$IMG")" $([ "$ISO" = 1 ] && basename "$ISOF") > SHA256SUMS )
+info "image  $IMG ($(du -h --apparent-size "$IMG" | cut -f1), ESP ${ESP_MIB} MiB, bios=$BIOS pmbr_active=$PMBR_ACTIVE)"
+[ "$ISO" = 0 ] || info "iso    $ISOF ($(du -h "$ISOF" | cut -f1))"
+info "boot partuuid $ESP_UUID; keys: placeholder (scripts/bake-keys or build-usb-drive adds yours)"

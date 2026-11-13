@@ -1,0 +1,43 @@
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.141  mac 3c:ec:ef:12:34:56                             attention: 7
+ Overview   PCIe  [Storage]  Network   USB   Sensors   Log   Actions
+┌─ Disks ─────────────────────────────────────────────────┐┌─ Disk ────────────────────────────────────────────────────────────────┐
+│Dev            Size Model                SMART State     ││Device:        /dev/sdb                                                │
+│nvme0n1    500.1 GB Samsung SSD 980 500… ok    idle      ││Model:         ATA WDC WD10EZEX-00BN5A0                                │
+│sda         31.9 GB SanDisk Ultra Fit    -     boot media││Serial:        WD-WCC3F7ABCDEF  (nvme)                                 │
+│sdb          1.0 TB ATA WDC WD10EZEX-00… WARN  idle      ││WWID:          -                                                       │
+│                                                         ││Firmware:      2B2QEXM7                                                │
+│                                                         ││Size:          1.0 TB (1000204886016 bytes)                            │
+│                                                         ││Sector:        512 logical / 512 physical                              │
+│                                                         ││Type:          sata, solid state                                       │
+│                                                         ││Write gate:    blank: writable with the destructive flag + serial      │
+│                                                         ││                                                                       │
+│                                                         ││Partitions                                                             │
+│                                                         ││no partition table                                                     │
+│                                                         ││                                                                       │
+│                                                         ││Signatures                                                             │
+│                                                         ││none detected                                                          │
+│                                                         ││                                                                       │
+│                                                         ││SMART                                                                  │
+│                                                         ││Verdict:       warn  (ata)                                             │
+│                                                         ││  - reallocated sectors: 12                                            │
+│                                                         ││Temperature:   36 C                                                    │
+│                                                         ││Power on:      40210 h                                                 │
+│                                                         ││  5 Reallocated_Sector_Ct    190/190/140 raw 12                        │
+│                                                         ││197 Current_Pending_Sector   100/100/  0 raw 0                         │
+│                                                         ││                                                                       │
+│                                                         ││Test: read (start)                                                     │
+│                                                         ││[███████░░░░░░░░░░░░░░░░░]  30%                                        │
+│                                                         ││279.4 GiB of 931.5 GiB  142 MiB/s  errors 0                            │
+│                                                         ││    <1ms [████████████████] 8000                                       │
+│                                                         ││   1-4ms [██████████░░░░░░] 5200                                       │
+│                                                         ││  4-16ms [██░░░░░░░░░░░░░░] 900                                        │
+│                                                         ││ 16-64ms [░░░░░░░░░░░░░░░░] 40                                         │
+│                                                         ││   >64ms [░░░░░░░░░░░░░░░░] 2                                          │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+└─────────────────────────────────────────────────────────┘└───────────────────────────────────────────────────────────────────────┘
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit

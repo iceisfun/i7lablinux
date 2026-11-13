@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# Capture a scrubbed, read-only sysfs/procfs fixture tree for labprobe tests.
+# usage: capture-fixture OUTDIR [--name HOST]
+#   Copies the files the probes read from /proc, /sys and /sys/firmware into OUTDIR with the same layout
+#   (canonical /sys/devices tree + relative symlinks for /sys/bus, /sys/class, /sys/block), scrubs serial numbers,
+#   UUIDs, MAC addresses and the hostname, and never writes outside OUTDIR. Needs no root (config space is cut at
+#   the 256 bytes a non-root read returns; the extended capability area with the device serial number is never
+#   copied). Not captured: /dev, the raw DMI table (carries serials), efivars values other than the boot variables.
+# Owner: P3. Spec: docs/PLAN.md section 13 test 3. Self-contained (does not source lib/common.sh).
+set -uo pipefail
+case "${1:-}" in -h|--help|"") sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0;; esac
+OUT="$1"; shift
+NAME="host"
+while [ $# -gt 0 ]; do case "$1" in --name) NAME="$2"; shift 2;; *) echo "capture-fixture: bad argument $1" >&2; exit 2;; esac; done
+[ -e "$OUT" ] && [ -n "$(ls -A "$OUT" 2>/dev/null)" ] && { echo "capture-fixture: $OUT exists and is not empty" >&2; exit 1; }
+mkdir -p "$OUT" || exit 1
+OUT="$(cd "$OUT" && pwd)"
+
+# copy FILE [MAXBYTES]: copy a regular file to the same path below OUT; unreadable files are skipped silently
+copy() {
+  local src="$1" max="${2:-65536}"
+  [ -f "$src" ] || return 0
+  mkdir -p "$OUT$(dirname "$src")"
+  head -c "$max" "$src" > "$OUT$src" 2>/dev/null || rm -f "$OUT$src"
+}
+put() { mkdir -p "$OUT$(dirname "$1")"; printf '%s\n' "$2" > "$OUT$1"; }
+
+# canon PATH: copy the directory entry as a canonical /sys/devices dir and make the original path a relative symlink
+canon_link() {
+  local path="$1" real rel up
+  real="$(readlink -f "$path")" || return 1
+  case "$real" in /sys/devices/*) ;; *) return 1;; esac
+  mkdir -p "$OUT$real" "$OUT$(dirname "$path")"
+  rel="$(realpath -m --relative-to="$(dirname "$path")" "$real")"
+  ln -sfn "$rel" "$OUT$path"
+  printf '%s' "$real"
+}
+
+# ---- /proc
+for f in /proc/cpuinfo /proc/meminfo /proc/uptime /proc/loadavg /proc/swaps /proc/net/vlan/config /proc/sys/kernel/osrelease /proc/sys/kernel/random/boot_id; do copy "$f"; done
+put /proc/sys/kernel/hostname "$NAME"
+sed -E 's/(root=[^ ]*|i7lab\.[a-z_]*=[^ ]*)/\1/; s/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/UUID-SCRUBBED/g' /proc/cmdline > /dev/null 2>&1
+mkdir -p "$OUT/proc"; sed -E 's/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/00000000-0000-0000-0000-000000000000/g' /proc/cmdline > "$OUT/proc/cmdline" 2>/dev/null
+mkdir -p "$OUT/proc/self"; : > "$OUT/proc/self/mountinfo"   # mounts of the capture host are not part of a hardware fixture
+# if_inet6: keep the prefix lengths, scrub the interface identifiers
+mkdir -p "$OUT/proc/net"; [ -r /proc/net/if_inet6 ] && awk '{ $1=substr($1,1,16) "0000000000000001"; print }' /proc/net/if_inet6 > "$OUT/proc/net/if_inet6"
+printf '00000000-0000-0000-0000-000000000000\n' > "$OUT/proc/sys/kernel/random/boot_id"
+
+# ---- DMI (identity strings only; serials and UUID scrubbed)
+for f in /sys/class/dmi/id/*; do
+  [ -f "$f" ] || continue
+  case "$(basename "$f")" in
+    product_serial|board_serial|chassis_serial|product_uuid|chassis_asset_tag|board_asset_tag|product_sku|product_family|uevent|modalias) continue;;
+  esac
+  copy "$f" 256
+done
+for k in product_serial board_serial chassis_serial; do put /sys/class/dmi/id/$k "SERIAL-SCRUBBED"; done
+put /sys/class/dmi/id/product_uuid "00000000-0000-0000-0000-000000000000"
+
+# ---- PCI
+for d in /sys/bus/pci/devices/*; do
+  [ -e "$d" ] || continue
+  bdf="$(basename "$d")"
+  real="$(canon_link "$d")" || continue
+  for f in vendor device subsystem_vendor subsystem_device class revision current_link_speed max_link_speed current_link_width max_link_width numa_node resource boot_vga aer_dev_correctable aer_dev_nonfatal aer_dev_fatal; do
+    [ -f "$real/$f" ] && { mkdir -p "$OUT$real"; head -c 4096 "$real/$f" > "$OUT$real/$f" 2>/dev/null; }
+  done
+  [ -f "$real/config" ] && head -c 256 "$real/config" > "$OUT$real/config" 2>/dev/null
+  drv="$(basename "$(readlink "$real/driver" 2>/dev/null)" 2>/dev/null)"
+  [ -n "$drv" ] && [ "$drv" != "." ] && mkdir -p "$OUT/sys/bus/pci/drivers/$drv" && ln -sfn "../../../bus/pci/drivers/$drv" "$OUT$real/driver"
+  grp="$(basename "$(readlink "$real/iommu_group" 2>/dev/null)" 2>/dev/null)"
+  [ -n "$grp" ] && [ "$grp" != "." ] && mkdir -p "$OUT/sys/kernel/iommu_groups/$grp" && ln -sfn "../../../kernel/iommu_groups/$grp" "$OUT$real/iommu_group"
+done
+[ -d /sys/class/iommu ] && for i in /sys/class/iommu/*; do [ -e "$i" ] && mkdir -p "$OUT/sys/class/iommu/$(basename "$i")"; done
+
+# ---- network (MACs scrubbed to a locally administered pattern keyed by the interface index)
+for n in /sys/class/net/*; do
+  [ -e "$n" ] || continue
+  name="$(basename "$n")"; [ "$name" = lo ] && continue
+  real="$(canon_link "$n")" || continue
+  for f in operstate carrier speed duplex mtu ifindex addr_assign_type carrier_changes statistics/rx_bytes statistics/tx_bytes statistics/rx_errors statistics/tx_errors; do
+    [ -f "$real/$f" ] && { mkdir -p "$OUT$real/$(dirname "$f")"; head -c 64 "$real/$f" > "$OUT$real/$f" 2>/dev/null; }
+  done
+  idx="$(cat "$real/ifindex" 2>/dev/null || echo 0)"
+  [ -f "$real/address" ] && printf '02:00:00:00:00:%02x\n' "$((idx % 256))" > "$OUT$real/address"
+  if [ -e "$real/device" ]; then
+    dev="$(readlink -f "$real/device")"
+    case "$dev" in /sys/devices/*) mkdir -p "$OUT$dev"; ln -sfn "$(realpath -m --relative-to="$real" "$dev")" "$OUT$real/device"
+      drv="$(basename "$(readlink "$dev/driver" 2>/dev/null)" 2>/dev/null)"
+      [ -n "$drv" ] && [ "$drv" != "." ] && mkdir -p "$OUT/sys/bus/pci/drivers/$drv" && ln -sfn "$(realpath -m --relative-to="$OUT$dev" "$OUT/sys/bus/pci/drivers/$drv")" "$OUT$dev/driver";; esac
+  fi
+done
+
+# ---- USB (serial numbers scrubbed)
+for u in /sys/bus/usb/devices/*; do
+  [ -e "$u" ] || continue
+  name="$(basename "$u")"; real="$(canon_link "$u")" || continue
+  case "$name" in *:*) for f in bInterfaceClass; do [ -f "$real/$f" ] && head -c 16 "$real/$f" > "$OUT$real/$f"; done
+        drv="$(basename "$(readlink "$real/driver" 2>/dev/null)" 2>/dev/null)"
+        [ -n "$drv" ] && [ "$drv" != "." ] && mkdir -p "$OUT/sys/bus/usb/drivers/$drv" && ln -sfn "$(realpath -m --relative-to="$OUT$real" "$OUT/sys/bus/usb/drivers/$drv")" "$OUT$real/driver";;
+    *) for f in busnum devnum idVendor idProduct bDeviceClass speed manufacturer product version; do [ -f "$real/$f" ] && head -c 128 "$real/$f" > "$OUT$real/$f"; done
+       [ -f "$real/serial" ] && echo "SERIAL-SCRUBBED" > "$OUT$real/serial";; esac
+done
+
+# ---- block (sysfs only; /dev nodes are not captured)
+for b in /sys/block/*; do
+  [ -e "$b" ] || continue
+  name="$(basename "$b")"; case "$name" in loop*|ram*|zram*|nbd*) continue;; esac
+  real="$(canon_link "$b")" || continue
+  for f in dev size ro removable queue/logical_block_size queue/physical_block_size queue/rotational device/model device/vendor device/rev device/firmware_rev; do
+    [ -f "$real/$f" ] && { mkdir -p "$OUT$real/$(dirname "$f")"; head -c 128 "$real/$f" > "$OUT$real/$f" 2>/dev/null; }
+  done
+  for f in serial device/serial wwid device/wwid; do [ -f "$real/$f" ] && { mkdir -p "$OUT$real/$(dirname "$f")"; echo "SERIAL-SCRUBBED" > "$OUT$real/$f"; }; done
+  for p in "$real/$name"*; do [ -f "$p/partition" ] && { mkdir -p "$OUT$p"; cp "$p/partition" "$p/dev" "$OUT$p/" 2>/dev/null; }; done
+done
+
+# ---- thermal and hwmon
+for z in /sys/class/thermal/thermal_zone*; do
+  [ -e "$z" ] || continue
+  real="$(canon_link "$z")" || continue
+  for f in type temp trip_point_0_temp trip_point_0_type trip_point_1_temp trip_point_1_type trip_point_2_temp trip_point_2_type; do [ -f "$real/$f" ] && head -c 64 "$real/$f" > "$OUT$real/$f" 2>/dev/null; done
+done
+for h in /sys/class/hwmon/hwmon*; do
+  [ -e "$h" ] || continue
+  real="$(canon_link "$h")" || continue
+  for f in "$real"/name "$real"/temp*_input "$real"/temp*_label "$real"/temp*_max "$real"/temp*_crit "$real"/fan*_input "$real"/fan*_label "$real"/fan*_min "$real"/in*_input "$real"/in*_label "$real"/power*_input "$real"/temp*_alarm "$real"/fan*_alarm "$real"/in*_alarm; do
+    [ -f "$f" ] && head -c 64 "$f" > "$OUT$real/$(basename "$f")" 2>/dev/null
+  done
+done
+
+# ---- CPU topology, caches, vulnerabilities
+for c in /sys/devices/system/cpu/cpu[0-9]*; do
+  [ -d "$c" ] || continue
+  for f in topology/physical_package_id topology/core_id; do [ -f "$c/$f" ] && { mkdir -p "$OUT$c/topology"; head -c 16 "$c/$f" > "$OUT$c/$f"; }; done
+done
+for i in /sys/devices/system/cpu/cpu0/cache/index*; do
+  [ -d "$i" ] || continue
+  for f in level type size; do [ -f "$i/$f" ] && { mkdir -p "$OUT$i"; head -c 16 "$i/$f" > "$OUT$i/$f"; }; done
+done
+for v in /sys/devices/system/cpu/vulnerabilities/*; do copy "$v" 256; done
+for f in /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq; do copy "$f" 32; done
+for m in /sys/devices/system/edac/mc/mc[0-9]*; do [ -d "$m" ] && for f in mc_name ce_count ue_count; do copy "$m/$f" 64; done; done
+
+# ---- firmware: EFI marker + boot variables (global GUID only)
+if [ -d /sys/firmware/efi ]; then
+  put /sys/firmware/efi/fw_platform_size "$(cat /sys/firmware/efi/fw_platform_size 2>/dev/null || echo 64)"
+  mkdir -p "$OUT/sys/firmware/efi/efivars"
+  for v in /sys/firmware/efi/efivars/{SecureBoot,SetupMode,BootCurrent,BootNext,BootOrder,Boot[0-9A-F][0-9A-F][0-9A-F][0-9A-F],OsIndicationsSupported}-8be4df61-93ca-11d2-aa0d-00e098032b8c; do
+    [ -f "$v" ] && head -c 4096 "$v" > "$OUT/sys/firmware/efi/efivars/$(basename "$v")" 2>/dev/null
+  done
+fi
+
+# ---- DRM and tty
+for c in /sys/class/drm/card*; do
+  [ -e "$c" ] || continue
+  real="$(canon_link "$c")" || continue
+  case "$(basename "$c")" in card[0-9]*-*) for f in status modes; do [ -f "$real/$f" ] && head -c 256 "$real/$f" > "$OUT$real/$f" 2>/dev/null; done;;
+    *) dev="$(readlink -f "$real/device" 2>/dev/null)"; [ -n "$dev" ] && mkdir -p "$OUT$dev" && ln -sfn "$(realpath -m --relative-to="$real" "$dev")" "$OUT$real/device";; esac
+done
+for t in /sys/class/tty/ttyS[0-9]*; do
+  [ -e "$t" ] || continue
+  real="$(canon_link "$t")" || continue
+  for f in type port io_port irq; do [ -f "$real/$f" ] && head -c 16 "$real/$f" > "$OUT$real/$f" 2>/dev/null; done
+done
+
+echo "capture-fixture: wrote $(find "$OUT" -type f | wc -l) files, $(du -sk "$OUT" | cut -f1) KiB to $OUT" >&2

@@ -1,0 +1,25 @@
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.1… attention: 7
+ Overview   PCIe  [Storage]  Network   USB   Sensors   Log   Actions
+┌─ Disks ──────────────────────────────────────────────────────────────────────┐
+│Dev       Type        Size Model         Serial               SMART State     │
+│nvme0n1   nvme    500.1 GB Samsung SSD … S64DNX0R123456A      ok    idle      │
+│sda       usb      31.9 GB SanDisk Ultr… 4C530001             -     boot media│
+│sdb       sata      1.0 TB ATA WDC WD10… WD-WCC3F7ABCDEF      WARN  idle      │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit

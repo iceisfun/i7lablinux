@@ -1,0 +1,43 @@
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.141  mac 3c:ec:ef:12:34:56                             attention: 7
+ Overview   PCIe   Storage   Network  [USB]  Sensors   Log   Actions
+┌─ USB devices ───────────────────────────────────────────┐┌─ Device ──────────────────────────────────────────────────────────────┐
+│Device               Name               ID          Speed││Path:          usb1                                                    │
+│▾ usb1               Linux xHCI Host C… 1d6b:0002    480M││Name:          Linux xHCI Host Controller                              │
+│    1-2              Logitech USB Keyb… 046d:c31c     12M││ID:            1d6b:0002                                               │
+│    1-3              SanDisk Ultra Fit… 0781:5581      5G││Manufacturer:  Linux                                                   │
+│  usb2               Linux xHCI Host C… 1d6b:0003     10G││Product:       xHCI Host Controller                                    │
+│                                                         ││Serial:        -                                                       │
+│                                                         ││Class:         hub (0x09)                                              │
+│                                                         ││Speed:         480M                                                    │
+│                                                         ││Bus / device:  1 / 1                                                   │
+│                                                         ││Parent:        -                                                       │
+│                                                         ││Drivers:       hub                                                     │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+└─────────────────────────────────────────────────────────┘└───────────────────────────────────────────────────────────────────────┘
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit

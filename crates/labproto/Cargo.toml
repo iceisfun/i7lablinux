@@ -1,0 +1,9 @@
+[package]
+name = "labproto"
+description = "i7lablinux foundation: crypto, JSON, sanitiser, keys, command catalogue, L2 frame codec, sessions, beacon, HTTP auth, libc FFI, AF_PACKET"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]

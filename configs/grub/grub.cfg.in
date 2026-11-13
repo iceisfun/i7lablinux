@@ -1,0 +1,35 @@
+# grub.cfg template (owner: P10). scripts/build-image substitutes @IMAGE_ID@ @BOOT@ @CMDLINE@ and installs it as
+# boot/grub/grub.cfg on the ESP (editable there for debugging) and on the ISO.
+#   @BOOT@ is PARTUUID=<uuid of the ESP partition> on the disk image and "iso" on the ISO.
+# /i7lab/keys.cpio is the key overlay (PLAN.md C19): a placeholder (empty newc archive) in the keyless image,
+# replaced by scripts/bake-keys on the operator machine. The kernel unpacks both archives into one rootfs.
+# Image id: @IMAGE_ID@
+set timeout=2
+set default=0
+serial --unit=0 --speed=115200
+terminal_input console serial
+terminal_output console serial
+search --no-floppy --set=root --file /i7lab/IMAGE-ID
+# GOP/UGA framebuffer handed to the kernel (simpledrm), otherwise the TUI can be blank on UEFI (PLAN.md section 8).
+insmod all_video
+set gfxpayload=keep
+
+menuentry "i7lablinux" {
+  linux /i7lab/bzImage @CMDLINE@ i7lab.boot=@BOOT@
+  initrd /i7lab/initramfs.cpio.zst /i7lab/keys.cpio
+}
+menuentry "i7lablinux (serial TUI, ASCII)" {
+  linux /i7lab/bzImage @CMDLINE@ i7lab.boot=@BOOT@ i7lab.serial=ttyS0 i7lab.ascii=1
+  initrd /i7lab/initramfs.cpio.zst /i7lab/keys.cpio
+}
+menuentry "i7lablinux (locked console)" {
+  linux /i7lab/bzImage @CMDLINE@ i7lab.boot=@BOOT@ i7lab.console=locked
+  initrd /i7lab/initramfs.cpio.zst /i7lab/keys.cpio
+}
+menuentry "i7lablinux (debug: no TUI, verbose)" {
+  linux /i7lab/bzImage @CMDLINE@ i7lab.boot=@BOOT@ i7lab.tui=off i7lab.debug=1 loglevel=7
+  initrd /i7lab/initramfs.cpio.zst /i7lab/keys.cpio
+}
+menuentry "Boot the internal disk" {
+  if [ "$grub_platform" = "efi" ]; then exit; else set root=(hd1); chainloader +1; fi
+}

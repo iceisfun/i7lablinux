@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# End-to-end test of a built image in QEMU: boot, beacon, L2 commands without IP, HTTP, block write gate, exec, TUI.
+# usage: e2e [--fw bios|uefi|both] [--image FILE] [--port N] [--keep] [--no-tui]      (run on the BUILD host)
+#   Needs out/image/i7lablinux.img (scripts/build-image --full), out/bin/i7labctl (cargo build --release -p i7labctl;
+#   scripts/build-userland builds only the image binaries), keys/demo (scripts/gen-keys --demo), qemu-system-x86_64.
+#   TUI capture needs python3 with `pyte` on PYTHONPATH (pip install --target DIR pyte); without it that part is NOT RUN.
+#   One guest at a time, every guest under `timeout`, only the QEMU pid we started is ever killed.
+#   Writes out/e2e/<ts>/transcript.txt (every command and its output) and prints PASS/FAIL per check.
+#   The demo keys are PUBLIC and baked only into a scratch copy of the image; admin works because the guest is a VM.
+# Owner: integrator (task X1). Spec: docs/PLAN.md section 14.
+. "$(dirname "$0")/lib/common.sh"
+need qemu-system-x86_64 timeout curl mcopy sgdisk mkfs.ext4
+
+FW=both IMG="$I7_OUT/image/i7lablinux.img" PORT=$((30000 + RANDOM % 20000)) KEEP=0 TUI=1
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --fw) FW="${2:?}"; shift 2;;
+    --image) IMG="${2:?}"; shift 2;;
+    --port) PORT="${2:?}"; shift 2;;
+    --keep) KEEP=1; shift;;
+    --no-tui) TUI=0; shift;;
+    -h|--help) sed -n '2,10p' "$0"; exit 0;;
+    *) die "unknown option $1";;
+  esac
+done
+[ -f "$IMG" ] || die "$IMG missing: scripts/build-image --full"
+CTL="$I7_OUT/bin/i7labctl"; [ -x "$CTL" ] || die "$CTL missing: cargo build --release -p i7labctl && cp target/release/i7labctl out/bin/"
+[ -s "$I7_ROOT/keys/demo/admin.key" ] || "$I7_ROOT/scripts/gen-keys" --demo --quiet
+export I7LABCTL_KEYDIR="$I7_ROOT/keys/demo"
+OVMF_CODE="${OVMF_CODE:-/usr/share/OVMF/OVMF_CODE_4M.fd}" OVMF_VARS="${OVMF_VARS:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
+TS="$(date -u +%Y%m%dT%H%M%SZ)"; EV="$I7_OUT/e2e/$TS"; mkdir -p "$EV"; T="$EV/transcript.txt"; : >"$T"
+MAC=52:54:00:17:00:01; ESP_OFF=$((4096 * 512))
+PASS=0 FAILN=0 QPID=""
+
+log() { printf '%s\n' "$*" | tee -a "$T" >/dev/null; }
+# chk NAME EXPECT_RC GREP -- CMD... : run, log command+output, pass when rc matches and output matches GREP (egrep, may be empty)
+chk() {
+  local name=$1 want=$2 pat=$3; shift 4
+  local out rc
+  out=$(timeout 120 "$@" 2>&1) && rc=0 || rc=$?
+  { printf '\n$ %s\n' "$*"; { printf '%s\n' "$out" | grep -v 'public DEMO key' | cut -c1-400 | head -40; } || true; printf '[rc=%s]\n' "$rc"; } >>"$T"
+  if { [ "$rc" = "$want" ] || { [ "$want" = nz ] && [ "$rc" != 0 ]; }; } && { [ -z "$pat" ] || grep -Eq -- "$pat" <<<"$out"; }; then
+    PASS=$((PASS + 1)); echo "PASS $FWNOW $name"; log "PASS $FWNOW $name"
+  else
+    FAILN=$((FAILN + 1)); echo "FAIL $FWNOW $name (rc=$rc want $want, pattern '$pat')"; log "FAIL $FWNOW $name (rc=$rc want $want, pattern '$pat')"
+  fi
+}
+
+stop_guest() { [ -n "$QPID" ] && kill "$QPID" 2>/dev/null; QPID=""; sleep 1; }
+trap stop_guest EXIT
+
+# start_guest FW ENTRY : boots a scratch copy of the image (demo keys baked), serial on a unix socket, returns when the beacon is seen
+start_guest() {
+  local fw=$1 entry=$2 D="$EV/$1-$2"; mkdir -p "$D"
+  cp --reflink=auto "$IMG" "$D/disk.img"
+  ALLOW_DEMO_KEYS=1 "$I7_ROOT/scripts/bake-keys" --demo --image "$D/disk.img" >/dev/null 2>&1 || die "bake-keys failed"
+  if [ "$entry" != 0 ]; then   # GRUB entry N (1 = serial TUI, ASCII); edit the scratch copy's grub.cfg on the ESP
+    mcopy -i "$D/disk.img@@$ESP_OFF" ::/boot/grub/grub.cfg "$D/g.cfg"
+    sed -i "s/^set default=0/set default=$entry/" "$D/g.cfg"
+    mcopy -o -i "$D/disk.img@@$ESP_OFF" "$D/g.cfg" ::/boot/grub/grub.cfg
+  fi
+  truncate -s 256M "$D/nvme.img" "$D/virtio.img"
+  # a partitioned disk with an ext4 filesystem: the gate must refuse it without the flags, and when it is mounted
+  truncate -s 128M "$D/parted.img"; sgdisk -n1:0:0 "$D/parted.img" >/dev/null; mkfs.ext4 -q -F -E offset=1048576 "$D/parted.img" 100M >/dev/null 2>&1 || true
+  MP=$((PORT + 2)); HP=$((PORT + 3)); CL=("$CTL" --link "mcast:239.255.71.1:$MP"); SOCK="$D/ser.sock"; MON="$D/mon.sock"; CUR="$D"
+  local kacc=kvm; [ -w /dev/kvm ] || kacc=tcg
+  local q=(qemu-system-x86_64 -name "i7ll-e2e-$fw" -machine "q35,accel=$kacc" -cpu max -smp 4 -m 2048 -display none -no-reboot
+    -serial "unix:$SOCK,server,nowait" -monitor "unix:$MON,server,nowait" -pidfile "$D/pid"
+    -device qemu-xhci,id=xhci -drive "if=none,id=stick,format=raw,file=$D/disk.img,snapshot=on" -device usb-storage,bus=xhci.0,drive=stick,serial=I7STICK0001,bootindex=0
+    -device pcie-root-port,id=rp1,chassis=1,slot=1 -device pcie-root-port,id=rp2,chassis=2,slot=2 -device pcie-root-port,id=rp3,chassis=3,slot=3
+    -drive "if=none,id=nv0,format=raw,file=$D/nvme.img" -device nvme,bus=rp1,drive=nv0,serial=I7NVME0001
+    -drive "if=none,id=vd0,format=raw,file=$D/virtio.img" -device virtio-blk-pci,bus=rp2,drive=vd0,serial=I7VIRT0001
+    -drive "if=none,id=vd1,format=raw,file=$D/parted.img" -device virtio-blk-pci,bus=rp3,drive=vd1,serial=I7PART0001
+    -netdev "dgram,id=l2,remote.type=inet,remote.host=239.255.71.1,remote.port=$MP" -device "virtio-net-pci,netdev=l2,mac=$MAC"
+    -netdev "user,id=ip0,hostfwd=tcp:127.0.0.1:$HP-:8080" -device e1000e,netdev=ip0,mac=52:54:00:17:00:02)
+  if [ "$fw" = uefi ]; then
+    cp "$OVMF_VARS" "$D/vars.fd"
+    q+=(-drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE" -drive "if=pflash,format=raw,file=$D/vars.fd")
+  fi
+  printf '%q ' "${q[@]}" >"$D/qemu.cmd"
+  timeout 900 "${q[@]}" >"$D/qemu.out" 2>&1 &
+  sleep 1; QPID=$(cat "$D/pid" 2>/dev/null || true)
+  [ -n "$QPID" ] || die "QEMU did not start: $(cat "$D/qemu.out")"
+  log ""; log "### guest $fw entry $entry: pid $QPID, L2 segment mcast 239.255.71.1:$MP, HTTP forward 127.0.0.1:$HP"
+  local i; for i in $(seq 1 30); do
+    "${CL[@]}" discover --listen 3 2>/dev/null | grep -qi "$MAC" && return 0
+  done
+  return 1
+}
+
+run_fw() {
+  FWNOW=$1
+  log ""; log "######## $FWNOW ########"
+  if ! start_guest "$FWNOW" 0; then
+    FAILN=$((FAILN + 1)); echo "FAIL $FWNOW beacon never seen (see $CUR/qemu.out)"; log "FAIL $FWNOW beacon never seen"; stop_guest; return
+  fi
+  local t0=$SECONDS
+  chk "beacon received by discover (raw L2, no IP)" 0 "$MAC.*i7lab.*ready" -- "${CL[@]}" discover --listen 5
+  chk "ether ping" 0 '"uptime_ms"' -- "${CL[@]}" --ether $MAC --cmd ping
+  chk "ether id (admin role)" 0 'role +admin' -- "${CL[@]}" id $MAC
+  chk "ether inv" 0 'QEMU' -- "${CL[@]}" --ether $MAC --cmd inv
+  chk "pcie lists the q35 devices" 0 'QEMU PCIe Root port.*QEMU NVM|82G33|Q35|Virtio' -- "${CL[@]}" pcie $MAC
+  chk "usb" 0 'QEMU' -- "${CL[@]}" usb $MAC
+  chk "thermal answers" 0 '' -- "${CL[@]}" thermal $MAC
+  chk "blk ls shows the disks" 0 'nvme0n1.*WRITE-SAFE' -- "${CL[@]}" blk ls $MAC
+  chk "blk ls marks the boot media" 0 'sda.*BOOT.*UNSAFE' -- "${CL[@]}" blk ls $MAC
+  chk "blk read nvme0n1" 0 'RESULT: ok' -- "${CL[@]}" blk read $MAC nvme0n1 --mb 16
+  chk "blk write nvme0n1 (seed 77)" 0 'RESULT: ok' -- "${CL[@]}" blk write $MAC nvme0n1 --destructive --serial I7NVME0001 --mb 16 --seed 77 --yes
+  chk "blk verify nvme0n1 (seed 77)" 0 'RESULT: ok' -- "${CL[@]}" blk verify $MAC nvme0n1 --seed 77 --mb 16
+  chk "gate: no flags -> refused locally (exit 7)" 7 'needs BOTH' -- "${CL[@]}" blk write $MAC vdb --yes
+  chk "gate: wrong serial on a partitioned disk -> refused (exit 7)" 7 'REFUSED' -- "${CL[@]}" blk write $MAC vdb --destructive --serial WRONG --yes
+  chk "gate: boot media with the right serial -> refused (exit 7)" 7 'REFUSED' -- "${CL[@]}" blk write $MAC sda --destructive --serial I7STICK0001 --yes
+  chk "mount the ext4 partition of vdb" 0 '' -- "${CL[@]}" sh $MAC "mount /dev/vdb1 /mnt"
+  chk "gate: mounted disk with the right serial -> refused (exit 7)" 7 'REFUSED' -- "${CL[@]}" blk write $MAC vdb --destructive --serial I7PART0001 --mb 4 --yes
+  chk "umount" 0 '' -- "${CL[@]}" sh $MAC "umount /mnt"
+  chk "gate: partitioned+unmounted with the right serial -> allowed" 0 'RESULT: ok' -- "${CL[@]}" blk write $MAC vdb --destructive --serial I7PART0001 --mb 4 --yes
+  local rokeys="$EV/ro-keys"; mkdir -p "$rokeys"; cp "$I7_ROOT/keys/demo/ro.key" "$rokeys/"; chmod 700 "$rokeys"; chmod 600 "$rokeys/ro.key"
+  chk "read-only key cannot write (EPERM, exit 5)" 5 'EPERM' -- env I7LABCTL_KEYDIR="$rokeys" "$CTL" --link "mcast:239.255.71.1:$MP" blk write $MAC nvme0n1 --destructive --serial I7NVME0001 --mb 4 --yes
+  chk "read-only key can read" 0 'WRITE-SAFE' -- env I7LABCTL_KEYDIR="$rokeys" "$CTL" --link "mcast:239.255.71.1:$MP" blk ls $MAC
+  local badkeys="$EV/bad-keys"; mkdir -p "$badkeys"; chmod 700 "$badkeys"
+  printf 'i7k1:admin:%s\n' "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" >"$badkeys/admin.key"; chmod 600 "$badkeys/admin.key"
+  chk "a key the host does not hold gets no answer (client check bypassed)" nz "" -- env I7LABCTL_KEYDIR="$badkeys" "$CTL" --link "mcast:239.255.71.1:$MP" --no-registry --timeout 6 ping $MAC
+  chk "no key at all -> clear error (exit 5)" 5 'no admin or ro key' -- env I7LABCTL_KEYDIR=/nonexistent "$CTL" --link "mcast:239.255.71.1:$MP" ping $MAC
+  chk "exec over ether (sh)" 0 'hello-ether' -- "${CL[@]}" sh $MAC "echo hello-ether"
+  chk "exec over ether (program)" 0 'exec-ether' -- "${CL[@]}" exec $MAC -- /bin/i7labsh -c "echo exec-ether"
+  chk "net ls over ether" 0 'eth1.*10\.0\.2\.' -- "${CL[@]}" net ls $MAC
+  chk "logs over ether" 0 'Linux|i7lab' -- "${CL[@]}" logs $MAC --dmesg -n 20
+  chk "HTTP hello (open)" 0 '"name":"i7labd"' -- curl -s -m 10 "http://127.0.0.1:$HP/api/v1/hello"
+  chk "HTTP unsigned reboot -> 401" 0 '^401$' -- curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$HP/api/v1/cmd/reboot"
+  chk "HTTP serves the SPA" 0 '<title>i7lablinux' -- curl -s -m 10 "http://127.0.0.1:$HP/"
+  chk "HTTP ping (signed)" 0 'received' -- "$CTL" --http "127.0.0.1:$HP" ping
+  chk "HTTP inv --json" 0 '"ok":true' -- "$CTL" --http "127.0.0.1:$HP" inv --json
+  chk "HTTP sh" 0 'hello-http' -- "$CTL" --http "127.0.0.1:$HP" sh 127.0.0.1 "echo hello-http"
+  chk "HTTP exec" 0 'exec-http' -- "$CTL" --http "127.0.0.1:$HP" exec -- /bin/i7labsh -c "echo exec-http"
+  chk "HTTP blk read" 0 'RESULT: ok' -- "$CTL" --http "127.0.0.1:$HP" blk read nvme0n1 --mb 8
+  chk "HTTP openapi" 0 '"openapi"' -- curl -s -m 10 "http://127.0.0.1:$HP/api/v1/openapi.json"
+  # VGA console (tty1 TUI): a screendump for the transcript
+  printf 'screendump %s\n' "$CUR/vga.ppm" | python3 -c "
+import socket,sys,time
+s=socket.socket(socket.AF_UNIX); s.connect('$MON'); time.sleep(0.4); s.send(sys.stdin.read().encode()); time.sleep(1.5)" 2>/dev/null || true
+  [ -s "$CUR/vga.ppm" ] && { PASS=$((PASS + 1)); echo "PASS $FWNOW VGA screendump saved ($CUR/vga.ppm, view with any PPM viewer)"; log "PASS $FWNOW VGA screendump $CUR/vga.ppm"; } || { FAILN=$((FAILN + 1)); echo "FAIL $FWNOW VGA screendump"; }
+  chk "reboot over ether is answered" 0 'reboot|restart' -- "${CL[@]}" reboot $MAC --delay 30
+  log "# $FWNOW checks took $((SECONDS - t0)) s"
+  stop_guest
+}
+
+run_tui() {
+  FWNOW=bios-serial-tui
+  python3 -c 'import pyte' 2>/dev/null || { echo "NOT RUN TUI capture: python3 pyte missing"; log "NOT RUN TUI capture (pyte missing)"; return; }
+  start_guest bios 1 || { FAILN=$((FAILN + 1)); echo "FAIL TUI guest did not beacon"; stop_guest; return; }
+  sleep 6
+  local out; out=$(python3 "$I7_ROOT/tests/e2e/tuicap.py" "$SOCK" "key:redraw,wait:2,dump:overview,key:right,wait:1,dump:pcie,key:right,wait:1,dump:storage,key:right,wait:1,dump:network,key:tab,key:down,wait:0.5,dump:network-pane2,key:stab,text:5,wait:1,dump:usb,text:6,wait:1,dump:sensors,text:7,wait:1,dump:log,text:8,wait:1,dump:actions,text:1,key:f12,wait:1,dump:about,key:esc,key:f10,wait:2,text:echo shell-on-serial-tty\r,wait:1,dump:shell" 2>&1)
+  printf '\n$ tests/e2e/tuicap.py (serial console, TERM=vt100, Tab/arrow/F-keys)\n%s\n' "$out" >>"$T"
+  local n
+  for n in '=== overview ===' 'Attention' '=== pcie ===' 'PCIe Root' '=== storage ===' 'I7NVME0001' '=== network ===' 'eth1' '=== sensors ===' '=== log ===' '=== actions ===' 'Reboot' 'About' 'shell-on-serial-tty'; do
+    if printf '%s' "$out" | grep -Fq -- "$n"; then PASS=$((PASS + 1)); echo "PASS TUI shows '$n'"; log "PASS TUI shows '$n'"; else FAILN=$((FAILN + 1)); echo "FAIL TUI lacks '$n'"; log "FAIL TUI lacks '$n'"; fi
+  done
+  stop_guest
+}
+
+case "$FW" in
+  bios) run_fw bios;;
+  uefi) run_fw uefi;;
+  both) run_fw bios; run_fw uefi;;
+  *) die "--fw bios|uefi|both";;
+esac
+[ "$TUI" = 0 ] || run_tui
+chk_image_audit() { FWNOW=image; chk "no busybox in the image" 0 'ok' -- "$I7_ROOT/scripts/check-no-busybox" --image "$IMG"; }
+chk_image_audit
+log ""; log "RESULT: $PASS passed, $FAILN failed"
+echo "RESULT: $PASS passed, $FAILN failed; transcript $T"
+[ "$KEEP" = 1 ] || rm -f "$EV"/*/disk.img "$EV"/*/nvme.img "$EV"/*/virtio.img "$EV"/*/parted.img "$EV"/*/vars.fd
+[ "$FAILN" = 0 ]

@@ -1,0 +1,1 @@
+BOOT_IMAGE=/boot/vmlinuz-6.8.0-147-generic root=UUID=00000000-0000-0000-0000-000000000000 ro quiet splash intel_iommu=on mitigations=off nvidia-drm.modeset=1 lockdown=none vt.handoff=7

@@ -1,0 +1,979 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>i7lablinux</title>
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--fg:#14171c;--dim:#5b6472;--line:#d3d8df;--accent:#0b5fd6;--accent-fg:#fff;
+--ok:#0a7a3b;--warn:#a15c00;--bad:#b3261e;--okbg:#e1f5e8;--warnbg:#fff0d6;--badbg:#fde4e1;--code:#eceff3;
+--s0:#0b5fd6;--s1:#c2410c;--s2:#0a7a3b;--s3:#7c3aed;--s4:#b3261e;--s5:#0e7490;--s6:#6b7280;--s7:#a16207}
+:root[data-theme=dark]{--bg:#0f1216;--panel:#171b21;--fg:#e4e7ec;--dim:#98a2b0;--line:#2b323c;--accent:#5aa2ff;--accent-fg:#06131f;
+--ok:#4cd07d;--warn:#f0b04a;--bad:#ff7b72;--okbg:#10301d;--warnbg:#3a2a0c;--badbg:#43171a;--code:#0b0e12;
+--s0:#5aa2ff;--s1:#fb923c;--s2:#4cd07d;--s3:#b69cff;--s4:#ff7b72;--s5:#4fd1e6;--s6:#9ca3af;--s7:#facc15}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1216;--panel:#171b21;--fg:#e4e7ec;--dim:#98a2b0;--line:#2b323c;--accent:#5aa2ff;--accent-fg:#06131f;
+--ok:#4cd07d;--warn:#f0b04a;--bad:#ff7b72;--okbg:#10301d;--warnbg:#3a2a0c;--badbg:#43171a;--code:#0b0e12;
+--s0:#5aa2ff;--s1:#fb923c;--s2:#4cd07d;--s3:#b69cff;--s4:#ff7b72;--s5:#4fd1e6;--s6:#9ca3af;--s7:#facc15}}
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}
+code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin:6px 0;overflow:auto;white-space:pre-wrap;word-break:break-word;max-height:420px}
+.skip{position:absolute;left:-999px;top:0;background:var(--accent);color:var(--accent-fg);padding:8px 12px;z-index:10}
+.skip:focus{left:8px;top:8px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+header#top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.brand{font-weight:700;font-size:16px;letter-spacing:.2px}
+.host{color:var(--dim)}
+.sp{flex:1}
+nav#nav{display:flex;gap:2px;overflow-x:auto;padding:0 12px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:46px;z-index:4;scrollbar-width:thin}
+nav#nav a{padding:9px 12px;text-decoration:none;color:var(--dim);border-bottom:3px solid transparent;white-space:nowrap}
+nav#nav a[aria-current=page]{color:var(--fg);border-bottom-color:var(--accent);font-weight:600}
+nav#nav a:hover{color:var(--fg)}
+main{max-width:1280px;margin:0 auto;padding:16px}
+main:focus{outline:none}
+h1{font-size:20px;margin:0 0 12px}
+h2{font-size:15px;margin:0 0 8px}
+h3{font-size:13px;margin:10px 0 4px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0}
+.card.wide{grid-column:1/-1}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.row.between{justify-content:space-between}
+dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;margin:0}
+dl.kv dt{color:var(--dim)}dl.kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim);font-weight:600;font-size:12px;white-space:nowrap}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+button,select,input,textarea{font:inherit;color:inherit}
+button{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 11px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.pri{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+button.danger{background:var(--bad);color:#fff;border-color:var(--bad)}
+button.link{border:0;background:none;color:var(--accent);padding:0 4px;text-decoration:underline}
+input[type=text],input[type=password],input[type=number],select,textarea{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 8px;max-width:100%}
+textarea{width:100%}
+label{display:inline-flex;gap:6px;align-items:center}
+label.blk{display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+fieldset{border:1px solid var(--line);border-radius:6px;margin:8px 0;padding:8px 12px}
+.badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;border:1px solid var(--line);background:var(--code);white-space:nowrap}
+.badge.ok{color:var(--ok);background:var(--okbg);border-color:var(--ok)}
+.badge.warn{color:var(--warn);background:var(--warnbg);border-color:var(--warn)}
+.badge.bad{color:var(--bad);background:var(--badbg);border-color:var(--bad)}
+.dim{color:var(--dim)}
+.alert{border:1px solid var(--line);border-left-width:5px;border-radius:6px;padding:8px 12px;margin:0 0 8px;background:var(--panel)}
+.alert.bad{border-color:var(--bad);background:var(--badbg)}.alert.warn{border-color:var(--warn);background:var(--warnbg)}.alert.info{border-color:var(--accent)}
+.alert ul{margin:4px 0 0;padding-left:20px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--dim);margin-right:5px;vertical-align:middle}
+.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}
+progress{width:100%;height:10px;accent-color:var(--accent)}
+.bar{position:relative;height:22px;background:var(--code);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.bar i{position:absolute;top:0;bottom:0;background:var(--accent);opacity:.85;border-right:1px solid var(--panel);overflow:hidden;font-style:normal;font-size:11px;color:var(--accent-fg);padding:3px 3px;white-space:nowrap}
+.bar i:nth-child(2n){background:var(--s2)}.bar i:nth-child(3n){background:var(--s3)}.bar i:nth-child(5n){background:var(--s1)}
+ul.tree,ul.tree ul{list-style:none;margin:0;padding-left:18px}
+ul.tree{padding-left:0}
+ul.tree li{margin:1px 0}
+ul.tree summary{cursor:pointer}
+ul.tree .leaf{padding-left:14px}
+.trow{display:inline-flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline}
+.sel{background:var(--code);border-radius:4px}
+svg.chart{width:100%;height:auto;display:block}
+svg.chart .g{stroke:var(--line);stroke-width:1}
+svg.chart text{fill:var(--dim);font-size:10px}
+svg.chart polyline{fill:none;stroke-width:1.8;stroke-linejoin:round}
+svg.chart .crit{stroke:var(--bad);stroke-dasharray:4 3;stroke-width:1}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;margin-top:4px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px}
+.logbox{background:var(--code);border:1px solid var(--line);border-radius:6px;height:60vh;overflow:auto;padding:6px 8px}
+.logbox div{white-space:pre-wrap;word-break:break-word}
+.lv0,.lv1,.lv2,.lv3{color:var(--bad)}.lv4{color:var(--warn)}.lv7{color:var(--dim)}
+.chip{border:1px solid var(--line);border-radius:12px;padding:0 9px;font-size:12px;background:var(--panel);cursor:pointer}
+.chip[aria-pressed=true]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:10px;max-width:min(560px,94vw);padding:16px 18px}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+#toasts{position:fixed;right:12px;bottom:12px;display:flex;flex-direction:column;gap:6px;z-index:20;max-width:min(420px,92vw)}
+.toast{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--accent);border-radius:6px;padding:8px 12px;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+.toast.bad{border-left-color:var(--bad)}.toast.ok{border-left-color:var(--ok)}.toast.warn{border-left-color:var(--warn)}
+.danger-zone{border:1px solid var(--bad);border-radius:8px;padding:8px 12px;background:var(--badbg)}
+.login{max-width:560px;margin:24px auto}
+@media(max-width:700px){main{padding:10px}header#top{padding:6px 10px}nav#nav{top:84px}dl.kv{grid-template-columns:1fr}dl.kv dt{margin-top:4px}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header id="top">
+  <span class="brand">i7lablinux</span><span class="host" id="hostname"></span>
+  <span class="sp"></span>
+  <span id="conn" class="dim" role="status"><span class="dot"></span>connecting</span>
+  <span id="whoami"></span>
+  <button id="themebtn" type="button" aria-label="Switch colour theme">Theme</button>
+  <button id="signout" type="button" hidden>Forget keys</button>
+</header>
+<nav id="nav" aria-label="Pages"></nav>
+<main id="main" tabindex="-1"><p>Loading...</p><noscript><p>JavaScript is off: see <a href="/text/all">/text/all</a> for a plain text report.</p></noscript></main>
+<div id="toasts" role="status" aria-live="polite"></div>
+
+<script id="core" nonce="__I7LAB_NONCE__">
+/* Pure functions: no DOM, no network. Unit-tested under node (web/dev/test-core.js). */
+const I7 = (function () {
+'use strict';
+const enc = new TextEncoder();
+function utf8(s) { return enc.encode(s); }
+function hex(b) { let s = ''; for (let i = 0; i < b.length; i++) s += (b[i] < 16 ? '0' : '') + b[i].toString(16); return s; }
+function unhex(s) {
+  if (typeof s !== 'string' || s.length % 2 || !/^[0-9a-fA-F]*$/.test(s)) return null;
+  const o = new Uint8Array(s.length / 2);
+  for (let i = 0; i < o.length; i++) o[i] = parseInt(s.substr(i * 2, 2), 16);
+  return o;
+}
+function concat(...a) { let n = 0; for (const x of a) n += x.length; const o = new Uint8Array(n); let p = 0; for (const x of a) { o.set(x, p); p += x.length; } return o; }
+function ctEq(a, b) { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; }
+
+/* SHA-256 (FIPS 180-4). Constants derived from primes at load; checked against test vectors. */
+const K = new Uint32Array(64), H0 = new Uint32Array(8);
+(function () {
+  const pr = [];
+  for (let n = 2; pr.length < 64; n++) { let p = true; for (const q of pr) { if (q * q > n) break; if (n % q === 0) { p = false; break; } } if (p) pr.push(n); }
+  for (let i = 0; i < 64; i++) { const c = Math.cbrt(pr[i]); K[i] = Math.floor((c - Math.floor(c)) * 4294967296); }
+  for (let i = 0; i < 8; i++) { const s = Math.sqrt(pr[i]); H0[i] = Math.floor((s - Math.floor(s)) * 4294967296); }
+})();
+function ror(x, n) { return (x >>> n) | (x << (32 - n)); }
+function sha256(data) {
+  const l = data.length, nb = (l + 9 + 63) >> 6, m = new Uint8Array(nb * 64);
+  m.set(data); m[l] = 0x80;
+  const dv = new DataView(m.buffer);
+  dv.setUint32(nb * 64 - 8, Math.floor(l / 0x20000000)); dv.setUint32(nb * 64 - 4, (l << 3) >>> 0);
+  const h = Uint32Array.from(H0), w = new Uint32Array(64);
+  for (let o = 0; o < nb * 64; o += 64) {
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(o + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const a = w[i - 15], b = w[i - 2];
+      w[i] = (w[i - 16] + (ror(a, 7) ^ ror(a, 18) ^ (a >>> 3)) + w[i - 7] + (ror(b, 17) ^ ror(b, 19) ^ (b >>> 10))) | 0;
+    }
+    let a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
+    for (let i = 0; i < 64; i++) {
+      const t1 = (hh + (ror(e, 6) ^ ror(e, 11) ^ ror(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
+      const t2 = ((ror(a, 2) ^ ror(a, 13) ^ ror(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
+  }
+  const out = new Uint8Array(32), od = new DataView(out.buffer);
+  for (let i = 0; i < 8; i++) od.setUint32(i * 4, h[i]);
+  return out;
+}
+function hmac(key, msg) {
+  let k = key.length > 64 ? sha256(key) : key;
+  const ip = new Uint8Array(64), op = new Uint8Array(64);
+  for (let i = 0; i < 64; i++) { const b = i < k.length ? k[i] : 0; ip[i] = b ^ 0x36; op[i] = b ^ 0x5c; }
+  return sha256(concat(op, sha256(concat(ip, msg))));
+}
+
+/* Keys: i7k1:<role>:<64 hex>. key id = first4(SHA256("i7c-keyid" | K)) (labproto::keys). */
+function keyId(bytes) { return hex(sha256(concat(utf8('i7c-keyid'), bytes)).subarray(0, 4)); }
+function parseKey(line) {
+  const m = /^i7k1:(admin|ro):([0-9a-fA-F]{64})$/.exec(String(line).trim());
+  if (!m) return null;
+  const bytes = unhex(m[2].toLowerCase());
+  return { role: m[1], bytes, id: keyId(bytes), line: 'i7k1:' + m[1] + ':' + m[2].toLowerCase() };
+}
+function demoKey(role) {
+  const bytes = sha256(utf8('i7lablinux-demo-' + role));
+  return { role, bytes, id: keyId(bytes), line: 'i7k1:' + role + ':' + hex(bytes), demo: true };
+}
+
+/* labproto::httpauth */
+function requestMac(key, nonce, method, target, body) {
+  return hmac(key, utf8('lp-req\n' + nonce + '\n' + method + '\n' + target + '\n' + hex(sha256(body))));
+}
+function responseMac(key, nonce, status, body) {
+  return hmac(key, utf8('lp-resp\n' + nonce + '\n' + status + '\n' + hex(sha256(body))));
+}
+function eventMac(key, nonce, seq, eventJson) {
+  return hmac(key, utf8('lp-evt\n' + nonce + '\n' + seq + '\n' + eventJson)).subarray(0, 16);
+}
+/* A stream line is `{...,"seq":N,"mac":"<32 hex>"}`; the mac is the LAST member and is MACed over the same line
+   with that member removed. Rejects a bad mac, missing mac, or a sequence gap. */
+function checkEvent(key, nonce, seq, raw) {
+  const m = /,"mac":"([0-9a-f]{32})"\}\s*$/.exec(raw);
+  if (!m) return { ok: false, reason: 'event without mac' };
+  const body = raw.slice(0, m.index) + '}';
+  if (!ctEq(hex(eventMac(key, nonce, seq, body)), m[1])) return { ok: false, reason: 'bad event mac at seq ' + seq };
+  let obj;
+  try { obj = JSON.parse(raw); } catch (e) { return { ok: false, reason: 'event is not JSON' }; }
+  if (obj === null || typeof obj !== 'object' || obj.seq !== seq) return { ok: false, reason: 'sequence gap (wanted ' + seq + ')' };
+  return { ok: true, obj };
+}
+function feedLines(st, chunk) {
+  st.buf = (st.buf || '') + chunk;
+  const parts = st.buf.split('\n'); st.buf = parts.pop();
+  return parts.map(s => s.replace(/\r$/, '')).filter(s => s.length);
+}
+function feedSSE(st, chunk) {
+  st.buf = (st.buf || '') + chunk;
+  const out = []; let i;
+  while ((i = st.buf.search(/\r?\n\r?\n/)) >= 0) {
+    const blk = st.buf.slice(0, i); st.buf = st.buf.slice(i).replace(/^\r?\n\r?\n/, '');
+    const data = [];
+    for (const ln of blk.split(/\r?\n/)) if (ln.startsWith('data:')) data.push(ln.slice(5).replace(/^ /, ''));
+    if (data.length) out.push(data.join('\n'));
+  }
+  return out;
+}
+
+/* Hardware strings: same rule as labproto::text::sanitize (visible \u{XXXX}, backslash doubled). */
+const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ue000-\uf8ff\ufdd0-\ufdef\ufff0-\uffff\ud800-\udfff\u{e0000}-\u{e007f}\u{f0000}-\u{10ffff}]|\\/gu;
+function clean(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(UNSAFE, c => c === '\\' ? '\\\\' : '\\u{' + c.codePointAt(0).toString(16).padStart(4, '0') + '}');
+}
+
+/* Formatting */
+function fmtBytes(n) {
+  if (n === null || n === undefined || isNaN(n)) return '-';
+  const u = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']; let i = 0, v = Number(n);
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? String(v) : v.toFixed(v >= 100 ? 0 : 1)) + ' ' + u[i];
+}
+function fmtKib(k) { return fmtBytes(k * 1024); }
+function fmtRate(bps) { return bps === null || isNaN(bps) ? '-' : fmtBytes(bps) + '/s'; }
+function fmtDur(s) {
+  s = Math.floor(s || 0); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return (d ? d + 'd ' : '') + (d || h ? h + 'h ' : '') + m + 'm ' + (s % 60) + 's';
+}
+function fmtLink(l) {
+  if (!l || (l.cur_gen == null && l.cur_width == null)) return '-';
+  return 'Gen' + (l.cur_gen == null ? '?' : l.cur_gen) + ' x' + (l.cur_width == null ? '?' : l.cur_width);
+}
+
+/* PCIe topology: roots are devices whose parent is null or unknown. */
+function buildTree(devs) {
+  const by = new Map(devs.map(d => [d.bdf, { dev: d, kids: [] }]));
+  const roots = [];
+  for (const n of by.values()) {
+    const p = n.dev.parent && by.get(n.dev.parent);
+    (p && p !== n ? p.kids : roots).push(n);
+  }
+  const cmp = (a, b) => (a.dev.bdf < b.dev.bdf ? -1 : a.dev.bdf > b.dev.bdf ? 1 : 0);
+  (function sort(l) { l.sort(cmp); l.forEach(n => sort(n.kids)); })(roots);
+  return roots;
+}
+/* USB tree by `parent` path. */
+function buildUsbTree(devs) {
+  const by = new Map(devs.map(d => [d.path, { dev: d, kids: [] }]));
+  const roots = [];
+  for (const n of by.values()) { const p = n.dev.parent && by.get(n.dev.parent); (p && p !== n ? p.kids : roots).push(n); }
+  return roots;
+}
+function isNic(d) { return /^02/.test(d.class || ''); }
+function degraded(d) {
+  const l = d.link; if (!l) return false;
+  return !!l.degraded || (l.cur_gen != null && l.max_gen != null && l.cur_gen < l.max_gen) || (l.cur_width != null && l.max_width != null && l.cur_width < l.max_width);
+}
+function aerTotal(d) { const a = d.aer; return a ? (a.correctable || 0) + (a.nonfatal || 0) + (a.fatal || 0) : 0; }
+
+/* Partition bar: segments as percentages of the disk. */
+function partLayout(disk) {
+  const bs = disk.logical_block || 512, size = disk.size_bytes || 0;
+  if (!size) return [];
+  return (disk.partitions || []).map(p => {
+    const off = p.first_lba * bs, len = (p.last_lba - p.first_lba + 1) * bs;
+    return { index: p.index, name: p.name, left: Math.min(100, off / size * 100), width: Math.max(0.6, Math.min(100, len / size * 100)), bytes: len };
+  });
+}
+
+/* Write-test gate, mirrors docs/PLAN.md section 6 for UX only: i7labd decides again. */
+function diskId(d) { return d.serial || d.wwid || null; }
+function writeGate(d, f) {
+  const why = [], ws = d.write_safety || {};
+  if (d.boot_media) why.push('boot media: never writable');
+  if (ws.verdict === 'refused') why.push('refused by host: ' + (ws.absolute || []).map(r => r.code + (r.detail ? ' (' + r.detail + ')' : '')).join(', '));
+  if ((d.mounts || []).length) why.push('mounted: ' + d.mounts.join(', '));
+  if ((d.holders || []).length) why.push('held by ' + d.holders.join(', '));
+  if (d.read_only) why.push('read-only device');
+  const id = diskId(d);
+  if (!id) why.push('no serial or WWID to confirm against');
+  const blocked = why.length > 0;
+  if (!f.admin) why.push('admin key not loaded');
+  if (!blocked && id && f.serial !== id) why.push('type the full serial to continue');
+  if (!blocked && ws.verdict === 'needs_override' && !f.ack) why.push('tick the data-loss box');
+  return { ok: why.length === 0, blocked, why };
+}
+function blkArgs(dev, mode, f) {
+  const a = [dev.name];
+  if (mode === 'write') a.push('--destructive', '--serial', diskId(dev));
+  if (f.mb) a.push('--mb', String(f.mb));
+  if (f.regions && f.regions !== 'default') a.push('--regions', f.regions);
+  if ((mode === 'write' || mode === 'verify') && f.seed !== '' && f.seed != null) a.push('--seed', String(f.seed));
+  if (mode === 'read' && f.bs) a.push('--bs', f.bs);
+  if (mode === 'read' && f.direct) a.push('--direct');
+  return a;
+}
+
+/* Attention list from probe data (the host's own list, when present, is merged by the caller). */
+function attention(d) {
+  const out = [], add = (level, text) => out.push({ level, text });
+  const pci = d.pci && !d.pci.error ? d.pci.devices || [] : [];
+  const nics = d.net && !d.net.error ? (d.net.ifaces || []).filter(i => i.name !== 'lo') : [];
+  const unbound = pci.filter(x => isNic(x) && !x.driver);
+  if (unbound.length) {
+    const nonet = !nics.length;
+    add(nonet ? 'bad' : 'warn', (nonet ? 'NO CONTROL PATH: ' : '') + 'NIC without a driver: ' + unbound.map(x => (x.vendor + ':' + x.device) + ' at ' + x.bdf).join(', '));
+  }
+  if (d.hello && d.hello.demo) add('warn', 'DEMO KEYS are baked into this host (publicly documented keys).');
+  const deg = pci.filter(degraded);
+  if (deg.length) add('warn', 'PCIe link below maximum: ' + deg.map(x => x.bdf + ' ' + fmtLink(x.link)).join(', '));
+  const aer = pci.filter(x => aerTotal(x) > 0);
+  if (aer.length) add('warn', 'PCIe AER errors on ' + aer.map(x => x.bdf).join(', '));
+  if (d.smart && !d.smart.error) for (const s of d.smart.devices || []) {
+    if (s.verdict === 'fail') add('bad', 'SMART FAIL on ' + s.dev + (s.reasons && s.reasons.length ? ': ' + s.reasons.join('; ') : ''));
+    else if (s.verdict === 'warn') add('warn', 'SMART warning on ' + s.dev + (s.reasons && s.reasons.length ? ': ' + s.reasons.join('; ') : ''));
+  }
+  if (d.thermal && !d.thermal.error) {
+    for (const a of d.thermal.alarms || []) add('bad', 'Thermal alarm: ' + a);
+    for (const z of d.thermal.zones || []) if (z.temp_c != null && z.crit_c != null && z.temp_c >= z.crit_c - 5) add('bad', 'Zone ' + z.name + ' at ' + z.temp_c.toFixed(1) + ' C near critical');
+  }
+  if (d.mem && !d.mem.error) for (const e of d.mem.edac || []) if (e.ue_count > 0) add('bad', 'Uncorrectable memory errors on ' + e.name);
+  for (const i of nics) if (i.operstate === 'up' && i.carrier === false) add('info', 'Interface ' + i.name + ' has no carrier');
+  return out;
+}
+
+/* Sensor extraction for the live graphs. */
+function sensorSamples(t) {
+  const out = [];
+  for (const z of t.zones || []) if (z.temp_c != null) out.push({ key: 'zone/' + z.name, group: 'temp', label: z.name + (z.kind ? ' (' + z.kind + ')' : ''), value: z.temp_c, crit: z.crit_c });
+  for (const h of t.hwmon || []) {
+    const add = (arr, group) => (arr || []).forEach(s => out.push({ key: h.name + '/' + group + '/' + s.label, group, label: h.name + ' ' + s.label, value: s.value, crit: s.crit, max: s.max }));
+    add(h.temps_c, 'temp'); add(h.fans_rpm, 'fan'); add(h.volts_mv, 'volt'); add(h.power_mw, 'power');
+  }
+  return out;
+}
+function pushRing(arr, v, n) { arr.push(v); if (arr.length > n) arr.splice(0, arr.length - n); return arr; }
+function rate(prev, cur, dtMs) { return prev == null || dtMs <= 0 || cur < prev ? null : (cur - prev) * 1000 / dtMs; }
+
+/* Log lines */
+function logFilter(lines, f) {
+  const q = (f.q || '').toLowerCase();
+  return lines.filter(l => l.level <= f.level && (!q || l.text.toLowerCase().includes(q)) && (!f.tags || !f.tags.size || (l.tags || []).some(t => f.tags.has(t))));
+}
+function decodeStdout(ev) {
+  if (typeof ev.data === 'string') return ev.data;
+  if (typeof ev.b64 === 'string') { try { return new TextDecoder().decode(Uint8Array.from(atob(ev.b64), c => c.charCodeAt(0))); } catch (e) { return ''; } }
+  return '';
+}
+return { utf8, hex, unhex, ctEq, sha256, hmac, keyId, parseKey, demoKey, requestMac, responseMac, eventMac, checkEvent, feedLines, feedSSE,
+  clean, fmtBytes, fmtKib, fmtRate, fmtDur, fmtLink, buildTree, buildUsbTree, isNic, degraded, aerTotal, partLayout, diskId, writeGate, blkArgs,
+  attention, sensorSamples, pushRing, rate, logFilter, decodeStdout };
+})();
+</script>
+
+<script id="app" nonce="__I7LAB_NONCE__">
+(function () {
+'use strict';
+const $ = s => document.querySelector(s);
+const t = s => I7.clean(s);
+const PAGES = [['overview', 'Overview'], ['pcie', 'PCIe'], ['storage', 'Storage'], ['network', 'Network'], ['usb', 'USB'],
+  ['sensors', 'Sensors'], ['log', 'Log'], ['actions', 'Actions'], ['about', 'About']];
+const S = { ro: null, admin: null, hello: null, ctl: null, cmds: null, stats: { ok: 0, bad: 0 }, cleanup: null, conn: 'connecting' };
+
+/* ---------- storage (per tab; every access guarded) ---------- */
+function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+function ssSet(k, v) { try { if (v === null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } }
+function loadKeys() {
+  const r = ssGet('i7lab.ro'), a = ssGet('i7lab.admin');
+  S.ro = r ? I7.parseKey(r) : null; S.admin = a ? I7.parseKey(a) : null;
+  if (S.ro && S.ro.role !== 'ro') S.ro = null;
+  if (S.admin && S.admin.role !== 'admin') S.admin = null;
+}
+function saveKey(k) { ssSet(k.role === 'admin' ? 'i7lab.admin' : 'i7lab.ro', k.line); if (k.role === 'admin') S.admin = k; else S.ro = k; }
+function forgetKeys() { ssSet('i7lab.ro', null); ssSet('i7lab.admin', null); S.ro = S.admin = null; }
+
+/* ---------- DOM helpers: text only, never innerHTML ---------- */
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  if (attrs) for (const k of Object.keys(attrs)) {
+    const v = attrs[k]; if (v === null || v === undefined || v === false) continue;
+    if (k === 'class') e.className = v; else if (k === 'text') e.textContent = v;
+    else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2), v); else e.setAttribute(k, v === true ? '' : String(v));
+  }
+  for (const c of kids.flat(Infinity)) { if (c === null || c === undefined || c === false) continue; e.append(c.nodeType ? c : document.createTextNode(String(c))); }
+  return e;
+}
+function svg(tag, attrs, ...kids) {
+  const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k of Object.keys(attrs || {})) e.setAttribute(k, attrs[k]);
+  for (const c of kids) if (c) e.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return e;
+}
+const badge = (text, kind) => h('span', { class: 'badge ' + (kind || '') }, t(text));
+const card = (title, ...kids) => h('section', { class: 'card' }, title ? h('h2', null, title) : null, ...kids);
+function kv(pairs) {
+  return h('dl', { class: 'kv' }, pairs.filter(p => p).map(([k, v]) => [h('dt', null, k), h('dd', null, v === null || v === undefined || v === '' ? '-' : (typeof v === 'string' ? t(v) : v))]));
+}
+function table(head, rows, o) {
+  o = o || {};
+  return h('div', { class: 'tw' }, h('table', null, o.caption ? h('caption', { class: 'dim' }, o.caption) : null,
+    h('thead', null, h('tr', null, head.map(x => h('th', { scope: 'col', class: x[1] || '' }, x[0] || x)))),
+    h('tbody', null, rows.map(r => h('tr', null, r.map((c, i) => h('td', { class: (head[i] && head[i][1]) || '' }, c === null || c === undefined || c === '' ? '-' : (typeof c === 'string' ? t(c) : c))))))));
+}
+function toast(msg, kind) {
+  const el = h('div', { class: 'toast ' + (kind || '') }, t(msg));
+  $('#toasts').append(el); setTimeout(() => el.remove(), kind === 'bad' ? 10000 : 5000);
+}
+function setConn(state, text) {
+  S.conn = state; const c = $('#conn'); c.textContent = '';
+  c.append(h('span', { class: 'dot ' + (state === 'ok' ? 'ok' : state === 'bad' ? 'bad' : 'warn') }), text);
+}
+
+/* ---------- API: nonce HMAC, proof + event mac verification ---------- */
+class ApiError extends Error {
+  constructor(kind, status, message, extra) { super(message); this.kind = kind; this.status = status; this.extra = extra || null; }
+}
+function pickKey(needAdmin) {
+  if (needAdmin) { if (!S.admin) throw new ApiError('auth', 0, 'this needs the admin key (Actions page, "Load admin key")'); return S.admin; }
+  const k = S.ro || S.admin; if (!k) throw new ApiError('auth', 0, 'no key loaded'); return k;
+}
+function errFromBody(status, text) {
+  let msg = 'HTTP ' + status, extra = null;
+  try { const j = JSON.parse(text); if (j && j.error) { msg = (j.error.code ? j.error.code + ': ' : '') + (j.error.message || ''); extra = j.error; } } catch (e) { if (text) msg += ' ' + text.slice(0, 120); }
+  return new ApiError(status === 401 ? 'auth' : status === 403 ? 'role' : 'http', status, msg, extra);
+}
+async function getNonce(signal) {
+  let r;
+  try { r = await fetch('/api/v1/nonce', { cache: 'no-store', signal }); } catch (e) { throw netErr(e); }
+  if (!r.ok) throw new ApiError('http', r.status, 'nonce request failed (HTTP ' + r.status + ')');
+  const txt = (await r.text()).trim();
+  let n = txt; try { const j = JSON.parse(txt); if (j && typeof j === 'object') n = j.nonce; else n = String(j); } catch (e) { /* plain text nonce */ }
+  if (typeof n !== 'string' || !/^[0-9A-Za-z._-]{8,128}$/.test(n)) throw new ApiError('proto', 0, 'host sent an unusable nonce');
+  return n;
+}
+function netErr(e) { if (e && e.name === 'AbortError') return e; return new ApiError('net', 0, 'cannot reach host (' + (e && e.message || e) + ')'); }
+async function open(method, path, o) {
+  const key = pickKey(o.admin), body = o.body === undefined ? '' : (typeof o.body === 'string' ? o.body : JSON.stringify(o.body));
+  const nonce = await getNonce(o.signal);
+  const mac = I7.hex(I7.requestMac(key.bytes, nonce, method, path, I7.utf8(body)));
+  const headers = { 'X-Lab-Key': key.id, 'X-Lab-Nonce': nonce, 'X-Lab-Auth': mac };
+  if (body) headers['Content-Type'] = 'application/json';
+  let res;
+  try { res = await fetch(path, { method, headers, body: body || undefined, cache: 'no-store', signal: o.signal }); } catch (e) { throw netErr(e); }
+  return { res, key, nonce };
+}
+function bad(msg) { S.stats.bad++; setConn('bad', 'verification failed'); return new ApiError('proof', 0, msg); }
+async function api(method, path, o) {
+  o = o || {};
+  const { res, key, nonce } = await open(method, path, o);
+  let buf;
+  try { buf = new Uint8Array(await res.arrayBuffer()); } catch (e) { throw netErr(e); }
+  const proof = res.headers.get('X-Lab-Proof');
+  if (proof) {
+    if (!I7.ctEq(I7.hex(I7.responseMac(key.bytes, nonce, res.status, buf)), proof.trim())) throw bad('response proof mismatch: not from a host that holds the key');
+  } else if (res.ok) throw bad('response carries no X-Lab-Proof');
+  const text = new TextDecoder().decode(buf);
+  if (!res.ok) { S.stats.ok += proof ? 1 : 0; setConn('ok', 'connected'); throw errFromBody(res.status, text); }
+  S.stats.ok++; setConn('ok', 'connected');
+  if (o.text) return text;
+  try { return text ? JSON.parse(text) : {}; } catch (e) { throw new ApiError('proto', res.status, 'host sent invalid JSON'); }
+}
+/* Streams: NDJSON (`?stream=1`) and SSE. Every event is mac-checked; onEvent gets each parsed object. */
+async function stream(method, path, o) {
+  const { res, key, nonce } = await open(method, path, o);
+  if (!res.ok) throw errFromBody(res.status, await res.text());
+  const rd = res.body.getReader(), dec = new TextDecoder(), st = {}, sse = !!o.sse;
+  let seq = 0, last = null;
+  try {
+    for (;;) {
+      const { value, done } = await rd.read();
+      const chunk = dec.decode(value || new Uint8Array(), { stream: !done });
+      for (const line of sse ? I7.feedSSE(st, chunk) : I7.feedLines(st, chunk)) {
+        const c = I7.checkEvent(key.bytes, nonce, seq, line);
+        if (!c.ok) { try { rd.cancel(); } catch (e) { /* closed */ } throw bad(c.reason); }
+        seq++; S.stats.ok++; last = c.obj; o.onEvent(c.obj);
+      }
+      if (done) break;
+    }
+  } catch (e) { if (e && e.name === 'AbortError') return last; if (e instanceof ApiError) throw e; throw netErr(e); }
+  return last;
+}
+const probe = (sections, signal) => api('GET', '/api/v1/probe/' + sections.join(','), { signal });
+const cmd = (name, args, o) => api('POST', '/api/v1/cmd/' + name, Object.assign({ body: { args: args || [] } }, o));
+async function runStream(name, args, onEvent, o) {
+  return stream('POST', '/api/v1/cmd/' + name + '?stream=1', Object.assign({ body: { args: args || [] }, onEvent }, o));
+}
+
+/* ---------- page infrastructure ---------- */
+function errBox(e, retry) {
+  const kind = e && e.kind;
+  const msg = e && e.message ? e.message : String(e);
+  return h('div', { class: 'alert bad', role: 'alert' }, h('strong', null, kind === 'proof' ? 'Verification failed: ' : kind === 'auth' ? 'Not authorised: ' : kind === 'role' ? 'Forbidden: ' : 'Error: '), t(msg),
+    ' ', retry ? h('button', { type: 'button', onclick: retry }, 'Retry') : null,
+    kind === 'auth' && e.status === 401 ? h('p', { class: 'dim' }, 'The host rejected the key. Check that it matches the one baked into this host (docs/KEYS.md).') : null);
+}
+function secErr(s, name) { return s && s.error ? h('div', { class: 'alert warn' }, name + ' probe failed: ', t(s.error + (s.message ? ' (' + s.message + ')' : ''))) : null; }
+function poll(fn, ms, signal) {
+  let stop = false, timer = null;
+  const run = async () => {
+    if (stop) return;
+    if (!document.hidden) { try { await fn(); } catch (e) { if (e && e.name === 'AbortError') return; } }
+    if (!stop) timer = setTimeout(run, ms);
+  };
+  run();
+  return () => { stop = true; clearTimeout(timer); };
+}
+function pageShell(title, extra) {
+  return h('div', null, h('div', { class: 'row between' }, h('h1', null, title), h('div', { class: 'row' }, extra || null)));
+}
+function confirmDialog(o) {
+  return new Promise(res => {
+    const input = o.typed ? h('input', { type: 'text', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Type ' + o.typed + ' to confirm' }) : null;
+    const ok = h('button', { type: 'button', class: o.danger ? 'danger' : 'pri', disabled: !!o.typed }, o.confirmText || 'Confirm');
+    const dlg = h('dialog', { 'aria-labelledby': 'dlgt' }, h('h2', { id: 'dlgt' }, t(o.title)), o.body || null,
+      o.typed ? h('p', null, 'Type ', h('code', null, t(o.typed)), ' to confirm:') : null, input,
+      h('div', { class: 'row', style: 'margin-top:12px;justify-content:flex-end' }, h('button', { type: 'button', onclick: () => dlg.close('no') }, 'Cancel'), ok));
+    if (input) input.addEventListener('input', () => { ok.disabled = input.value !== o.typed; });
+    ok.addEventListener('click', () => dlg.close('yes'));
+    dlg.addEventListener('close', () => { const v = dlg.returnValue === 'yes'; dlg.remove(); res(v); });
+    document.body.append(dlg); dlg.showModal(); (input || ok).focus();
+  });
+}
+
+/* ---------- charts ---------- */
+function lineChart(series, o) {
+  o = o || {}; const W = 640, H = o.h || 160, L = 40, R = 8, T = 8, B = 16;
+  const all = series.flatMap(s => s.values).filter(v => v !== null && v !== undefined);
+  let lo = o.min !== undefined ? o.min : Math.min(...all, Infinity), hi = o.max !== undefined ? o.max : Math.max(...all, -Infinity);
+  if (!isFinite(lo)) { lo = 0; hi = 1; }
+  if (o.crit != null) hi = Math.max(hi, o.crit);
+  if (hi - lo < 1e-9) { hi = lo + 1; }
+  const pad = (hi - lo) * 0.08; if (o.min === undefined) lo -= pad; hi += pad;
+  const n = Math.max(2, o.n || 120), x = i => L + (W - L - R) * i / (n - 1), y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  const g = svg('svg', { class: 'chart', viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': t(o.label || 'chart') });
+  g.append(svg('title', {}, t(o.label || 'chart')));
+  for (let i = 0; i <= 3; i++) {
+    const v = lo + (hi - lo) * i / 3;
+    g.append(svg('line', { class: 'g', x1: L, x2: W - R, y1: y(v), y2: y(v) }), svg('text', { x: 2, y: y(v) + 3 }, (Math.abs(hi) >= 1000 ? v.toFixed(0) : v.toFixed(1)) + (o.unit ? '' : '')));
+  }
+  if (o.crit != null) g.append(svg('line', { class: 'crit', x1: L, x2: W - R, y1: y(o.crit), y2: y(o.crit) }));
+  series.forEach((s, k) => {
+    const pts = []; const off = n - s.values.length;
+    s.values.forEach((v, i) => { if (v !== null && v !== undefined) pts.push(x(i + off).toFixed(1) + ',' + y(v).toFixed(1)); });
+    if (pts.length) g.append(svg('polyline', { points: pts.join(' '), style: 'stroke:var(--s' + (k % 8) + ')' }));
+  });
+  g.append(svg('text', { x: L, y: H - 3 }, o.xlabel || ''));
+  return g;
+}
+function legend(series) { return h('div', { class: 'legend' }, series.map((s, k) => h('span', null, h('i', { class: 'sw', style: 'background:var(--s' + (k % 8) + ')' }), t(s.name), s.last != null ? ' ' + s.last : ''))); }
+
+/* ---------- pages ---------- */
+const pages = {};
+
+pages.overview = function (root, sig) {
+  const body = h('div'); const live = h('span', { class: 'dim' }, 'live feed: connecting');
+  root.append(pageShell('Overview', live), body);
+  const temps = []; let lastSnap = null;
+  const draw = d => {
+    const hello = Object.assign({}, S.hello || {}, d.hello || {});
+    d.hello = hello;
+    const att = I7.attention(d);
+    if (lastSnap && Array.isArray(lastSnap.attention)) for (const a of lastSnap.attention) att.push({ level: /NO CONTROL|FAIL/.test(a) ? 'bad' : 'warn', text: String(a) });
+    const seen = new Set(), uniq = att.filter(a => !seen.has(a.text) && seen.add(a.text));
+    const sys = d.system || {}, cpu = d.cpu || {}, mem = d.mem || {}, dmi = d.dmi || {};
+    const memUsed = mem.total_kib ? (mem.total_kib - mem.available_kib) : 0;
+    const maxT = []; for (const s of I7.sensorSamples(d.thermal || {})) if (s.group === 'temp') maxT.push(s.value);
+    if (maxT.length) I7.pushRing(temps, Math.max(...maxT), 90);
+    const nics = (d.net && d.net.ifaces || []).filter(i => i.name !== 'lo');
+    const disks = d.block && d.block.devices || [];
+    const smart = new Map((d.smart && d.smart.devices || []).map(s => [s.dev, s]));
+    body.replaceChildren(
+      uniq.length ? h('div', { role: 'region', 'aria-label': 'Attention' }, uniq.map(a => h('div', { class: 'alert ' + a.level }, h('strong', null, a.level === 'bad' ? 'Problem: ' : a.level === 'warn' ? 'Warning: ' : 'Note: '), t(a.text)))) : h('div', { class: 'alert info' }, 'Nothing needs attention.'),
+      h('div', { class: 'grid' },
+        card('Host', kv([['Hostname', sys.hostname || hello.hostname], ['State', lastSnap && lastSnap.state || hello.state], ['Kernel', sys.kernel], ['Uptime', sys.uptime_s != null ? I7.fmtDur(sys.uptime_s) : null],
+          ['Boot mode', sys.boot_mode], ['Image build', sys.image_build || hello.build], ['Load', sys.load ? sys.load.map(x => x.toFixed(2)).join(' ') : null], ['Agent', hello.version]])),
+        card('Machine', kv([['Vendor', dmi.sys_vendor], ['Product', dmi.product_name], ['Serial', dmi.product_serial], ['Board', [dmi.board_vendor, dmi.board_name].filter(Boolean).join(' ')], ['BIOS', [dmi.bios_vendor, dmi.bios_version, dmi.bios_date].filter(Boolean).join(' ')]])),
+        card('CPU', kv([['Model', cpu.model_name], ['Sockets/cores/threads', cpu.sockets != null ? cpu.sockets + ' / ' + cpu.cores + ' / ' + cpu.threads : null], ['Frequency', cpu.freq_mhz != null ? Math.round(cpu.freq_mhz) + ' MHz' : null], ['Microcode', cpu.microcode]])),
+        card('Memory', mem.total_kib ? [h('progress', { max: mem.total_kib, value: memUsed, 'aria-label': 'Memory used' }), h('div', null, I7.fmtKib(memUsed) + ' used of ' + I7.fmtKib(mem.total_kib), mem.ecc ? ' (ECC ' + t(mem.ecc) + ')' : '')] : h('span', { class: 'dim' }, 'no data')),
+        card('Temperature', temps.length ? [lineChart([{ values: temps }], { label: 'Hottest sensor over time', n: 90, h: 90 }), h('div', null, 'Hottest now: ' + temps[temps.length - 1].toFixed(1) + ' C')] : h('span', { class: 'dim' }, 'no sensors reported')),
+        card('Network interfaces', nics.length ? table(['Name', 'MAC', 'State', 'Speed', 'Addresses'], nics.map(i => [i.name, i.mac, i.operstate + (i.carrier === false ? ' (no carrier)' : ''), i.speed_mbps ? i.speed_mbps + ' Mb/s' : null, (i.ipv4 || []).join(', ')])) : h('span', { class: 'dim' }, 'none')),
+        h('section', { class: 'card wide' }, h('h2', null, 'Disks'), disks.length ? table(['Device', 'Model', 'Size', 'Serial', 'Write gate', 'SMART'],
+          disks.map(x => { const sm = smart.get(x.name), v = x.write_safety && x.write_safety.verdict; return [x.name, [x.vendor, x.model].filter(Boolean).join(' '), I7.fmtBytes(x.size_bytes), x.serial,
+            h('span', null, x.boot_media ? badge('boot media', 'warn') : null, ' ', badge(v || '?', v === 'safe' ? 'ok' : v === 'refused' ? 'bad' : 'warn')), sm ? badge(sm.verdict, sm.verdict === 'pass' ? 'ok' : sm.verdict === 'fail' ? 'bad' : 'warn') : null]; })) : h('span', { class: 'dim' }, 'none'))));
+  };
+  const load = () => probe(['system', 'cpu', 'mem', 'dmi', 'pci', 'net', 'block', 'smart', 'thermal'], sig).then(r => { draw(r); }).catch(e => { if (e.name !== 'AbortError') body.replaceChildren(errBox(e, load)); });
+  const stopPoll = poll(async () => { try { const r = await probe(['system', 'cpu', 'mem', 'dmi', 'pci', 'net', 'block', 'smart', 'thermal'], sig); draw(r); } catch (e) { if (e.name !== 'AbortError') body.replaceChildren(errBox(e, load)); } }, 8000);
+  /* SSE snapshot (attention + state); the page works without it. */
+  (async function feed() {
+    while (!sig.aborted) {
+      try { live.textContent = 'live feed: on'; await stream('GET', '/api/v1/events', { sse: true, signal: sig, onEvent: ev => { if (ev.event === 'snapshot' || ev.attention) lastSnap = ev; } }); }
+      catch (e) { if (e.name === 'AbortError') return; live.textContent = 'live feed: off'; }
+      await new Promise(r => setTimeout(r, 4000));
+    }
+  })();
+  return stopPoll;
+};
+
+function devLabel(d) { return [d.vendor_name || d.vendor, d.device_name || d.device].map(x => t(x)).join(' '); }
+pages.pcie = function (root, sig) {
+  const body = h('div'), state = { flat: false, q: '', sel: null };
+  const flatBtn = h('button', { type: 'button', 'aria-pressed': 'false' }, 'Flat list');
+  const filter = h('input', { type: 'text', placeholder: 'Filter (id, name, driver)', 'aria-label': 'Filter devices' });
+  const refresh = h('button', { type: 'button' }, 'Refresh');
+  root.append(pageShell('PCIe topology', [filter, flatBtn, refresh]), body);
+  let devs = [], drawer = h('div');
+  const match = d => !state.q || [d.bdf, d.vendor, d.device, d.vendor_name, d.device_name, d.driver, d.class_name].join(' ').toLowerCase().includes(state.q);
+  const row = d => {
+    const deg = I7.degraded(d), nic = I7.isNic(d), aer = I7.aerTotal(d);
+    return h('span', { class: 'trow' + (state.sel === d.bdf ? ' sel' : '') }, h('code', null, d.bdf), h('span', null, t(d.class_name)), h('span', null, devLabel(d)),
+      h('span', { class: 'dim' }, d.vendor + ':' + d.device), d.driver ? h('span', { class: 'dim' }, 'driver ' + t(d.driver)) : (nic ? badge('NIC: NO DRIVER', 'bad') : null),
+      d.link && d.link.cur_gen != null ? badge(I7.fmtLink(d.link) + (deg ? ' (max ' + I7.fmtLink({ cur_gen: d.link.max_gen, cur_width: d.link.max_width }) + ') DEGRADED' : ''), deg ? 'warn' : '') : null,
+      aer ? badge('AER ' + aer, 'warn') : null, d.iommu_group != null ? h('span', { class: 'dim' }, 'iommu ' + d.iommu_group) : null,
+      h('button', { type: 'button', class: 'link', 'aria-label': 'Details for ' + d.bdf, onclick: () => { state.sel = d.bdf; draw(); drawer.scrollIntoView({ block: 'nearest' }); } }, 'details'));
+  };
+  const node = n => {
+    const kids = n.kids.filter(function f(k) { return match(k.dev) || k.kids.some(f); });
+    if (!kids.length) return h('li', { role: 'treeitem' }, h('div', { class: 'leaf' }, row(n.dev)));
+    return h('li', { role: 'treeitem' }, h('details', { open: true }, h('summary', null, row(n.dev)), h('ul', { role: 'group' }, kids.map(node))));
+  };
+  const detail = () => {
+    const d = devs.find(x => x.bdf === state.sel); if (!d) return h('div');
+    return h('section', { class: 'card', 'aria-label': 'Device ' + d.bdf }, h('div', { class: 'row between' }, h('h2', null, d.bdf + ' ' + t(devLabel(d))), h('button', { type: 'button', onclick: () => { state.sel = null; draw(); } }, 'Close')),
+      kv([['Class', d.class + ' ' + d.class_name], ['IDs', d.vendor + ':' + d.device + ' subsys ' + d.subsys_vendor + ':' + d.subsys_device + ' rev ' + d.revision], ['Driver', d.driver], ['Parent', d.parent],
+        ['Link', d.link ? I7.fmtLink(d.link) + ' (max ' + I7.fmtLink({ cur_gen: d.link.max_gen, cur_width: d.link.max_width }) + ')' : null], ['IOMMU group', d.iommu_group], ['NUMA node', d.numa_node],
+        ['AER', d.aer ? 'correctable ' + d.aer.correctable + ', non-fatal ' + d.aer.nonfatal + ', fatal ' + d.aer.fatal : null], ['Capabilities', (d.caps || []).join(', ')]]),
+      (d.bars || []).length ? table(['BAR', ['Base', 'num'], ['Size', 'num'], 'Kind'], d.bars.map(b => ['BAR' + b.index, '0x' + b.base.toString(16), I7.fmtBytes(b.size), b.kind + (b.prefetch ? ' prefetch' : '')])) : null,
+      d.config_hex ? h('details', null, h('summary', null, 'Config space'), h('pre', null, t(d.config_hex))) : null);
+  };
+  function draw() {
+    body.replaceChildren();
+    const list = devs.filter(match);
+    const unb = devs.filter(d => I7.isNic(d) && !d.driver);
+    body.append(unb.length ? h('div', { class: 'alert bad' }, 'Network controllers without a driver: ', unb.map(d => d.bdf + ' ' + d.vendor + ':' + d.device).join(', ')) : null);
+    drawer = detail(); body.append(drawer);
+    body.append(h('section', { class: 'card' }, h('div', { class: 'dim' }, devs.length + ' devices; IOMMU ' + (state.iommu ? 'on' : 'off')),
+      state.flat ? table(['BDF', 'Class', 'Device', 'Driver', 'Link', ''], list.map(d => [d.bdf, d.class_name, devLabel(d), d.driver, I7.fmtLink(d.link), h('button', { type: 'button', class: 'link', onclick: () => { state.sel = d.bdf; draw(); } }, 'details')]))
+        : h('ul', { class: 'tree', role: 'tree' }, I7.buildTree(devs).filter(function f(n) { return match(n.dev) || n.kids.some(f); }).map(node))));
+  }
+  const load = () => probe(['pci'], sig).then(r => { if (r.pci.error) { body.replaceChildren(secErr(r.pci, 'pci')); return; } devs = r.pci.devices || []; state.iommu = r.pci.iommu_enabled; draw(); }).catch(e => { if (e.name !== 'AbortError') body.replaceChildren(errBox(e, load)); });
+  filter.addEventListener('input', () => { state.q = filter.value.toLowerCase(); draw(); });
+  flatBtn.addEventListener('click', () => { state.flat = !state.flat; flatBtn.setAttribute('aria-pressed', String(state.flat)); draw(); });
+  refresh.addEventListener('click', load); load();
+};
+
+pages.storage = function (root, sig) {
+  const body = h('div'); const refresh = h('button', { type: 'button' }, 'Refresh');
+  root.append(pageShell('Storage', refresh), body);
+  const busy = new Set();
+  const load = () => probe(['block', 'smart'], sig).then(r => {
+    body.replaceChildren(secErr(r.block, 'block'), secErr(r.smart, 'smart'));
+    const smart = new Map((r.smart && r.smart.devices || []).map(s => [s.dev, s]));
+    const disks = r.block && r.block.devices || [];
+    if (!disks.length && !r.block.error) body.append(h('p', { class: 'dim' }, 'No block devices.'));
+    disks.forEach(d => body.append(diskCard(d, smart.get(d.name), busy)));
+  }).catch(e => { if (e.name !== 'AbortError') body.replaceChildren(errBox(e, load)); });
+  refresh.addEventListener('click', load); load();
+  return () => { /* in-flight tests are aborted through sig */ };
+};
+
+function diskCard(d, sm, busy) {
+  const ws = d.write_safety || {}, v = ws.verdict;
+  const flags = [d.kind, d.rotational ? 'rotational' : 'solid state', d.removable ? 'removable' : null, d.read_only ? 'read-only' : null].filter(Boolean);
+  const reasons = [].concat(ws.absolute || [], ws.overridable || []);
+  const parts = I7.partLayout(d);
+  const bar = h('div', { class: 'bar', role: 'img', 'aria-label': 'Partition layout of ' + d.name }, parts.map(p => { const e = h('i', { title: 'p' + p.index + ' ' + t(p.name || '') + ' ' + I7.fmtBytes(p.bytes) }, 'p' + p.index); e.style.left = p.left + '%'; e.style.width = p.width + '%'; return e; }));
+  const out = h('div'), prog = h('progress', { max: 1, value: 0, hidden: true, 'aria-label': 'Test progress' }), progTxt = h('span', { class: 'dim' });
+  const chartBox = h('div');
+  let ctl = null;
+  const form = { mb: 256, regions: 'default', bs: '1m', direct: true, seed: '', serial: '', ack: false };
+  const mk = (label, name, attrs) => { const i = h('input', Object.assign({ type: 'text', id: 'f-' + d.name + name, value: form[name] }, attrs)); i.addEventListener('input', () => { form[name] = attrs && attrs.type === 'number' ? Number(i.value) : i.value; gate(); }); return h('label', { class: 'blk', for: i.id }, label, i); };
+  const regions = h('select', { id: 'rg-' + d.name }, ['default', 'start,mid,end', 'start', 'mid', 'end'].map(x => h('option', { value: x }, x === 'default' ? 'start / mid / end' : x)));
+  regions.addEventListener('change', () => { form.regions = regions.value; });
+  const run = async (mode) => {
+    if (ctl) return;
+    const args = I7.blkArgs(d, mode, form), name = mode === 'read' ? 'blk.read' : mode === 'verify' ? 'blk.verify' : 'blk.write';
+    if (mode === 'write') {
+      const ok = await confirmDialog({ title: 'Destroy data on ' + d.name + '?', danger: true, confirmText: 'Write and destroy', typed: I7.diskId(d), body: h('div', null,
+        h('p', null, 'This writes a test pattern over ', h('strong', null, t(d.name)), ' (', t([d.vendor, d.model].filter(Boolean).join(' ')), ', ', I7.fmtBytes(d.size_bytes), ', serial ', h('code', null, t(I7.diskId(d))), ').'),
+        h('p', null, 'Any data in the tested regions is lost. The host re-checks every safety rule and refuses if one fails.')) });
+      if (!ok) return;
+    }
+    ctl = new AbortController(); busy.add(d.name); out.replaceChildren(); prog.hidden = false; prog.value = 0; chartBox.replaceChildren();
+    const rates = [], stopBtn = h('button', { type: 'button', onclick: () => ctl && ctl.abort() }, 'Cancel');
+    progTxt.replaceChildren('running ', stopBtn);
+    const sigs = AbortSignal.any ? AbortSignal.any([ctl.signal, curSignal()]) : ctl.signal;
+    try {
+      const last = await runStream(name, args, ev => {
+        if (ev.event === 'progress') {
+          if (ev.total_bytes) prog.value = ev.done_bytes / ev.total_bytes; else if (typeof ev.done === 'number') prog.value = ev.done;
+          if (typeof ev.mib_s === 'number') { rates.push(ev.mib_s); chartBox.replaceChildren(lineChart([{ values: rates }], { label: 'Throughput MiB/s', h: 110, min: 0, n: Math.max(30, rates.length), xlabel: 'MiB/s per progress event' })); }
+          progTxt.replaceChildren((ev.region ? t(ev.region) + ' ' : '') + (typeof ev.mib_s === 'number' ? ev.mib_s.toFixed(1) + ' MiB/s ' : ''), stopBtn);
+        } else if (ev.event === 'stderr' || ev.event === 'stdout') out.append(h('pre', null, t(I7.decodeStdout(ev))));
+      }, { admin: mode === 'write', signal: sigs });
+      showResult(out, last, ctl.signal.aborted);
+    } catch (e) { out.append(errBox(e)); if (e.extra && e.extra.reasons) out.append(h('pre', null, t(JSON.stringify(e.extra.reasons, null, 1)))); }
+    finally { ctl = null; busy.delete(d.name); progTxt.textContent = ''; prog.hidden = true; }
+  };
+  const readBtn = h('button', { type: 'button', class: 'pri', onclick: () => run('read') }, 'Run read test');
+  const verBtn = h('button', { type: 'button', onclick: () => run('verify') }, 'Verify seeded pattern');
+  const wBtn = h('button', { type: 'button', class: 'danger', onclick: () => run('write') }, 'Write test...');
+  const gateBox = h('ul'); const ack = h('input', { type: 'checkbox', id: 'ack-' + d.name });
+  ack.addEventListener('change', () => { form.ack = ack.checked; gate(); });
+  function gate() { const g = I7.writeGate(d, { admin: !!S.admin, serial: form.serial, ack: form.ack }); wBtn.disabled = !g.ok; gateBox.replaceChildren(...g.why.map(w => h('li', null, t(w)))); return g; }
+  const serialIn = h('input', { type: 'text', id: 'ser-' + d.name, autocomplete: 'off', spellcheck: 'false', placeholder: 'full serial' });
+  serialIn.addEventListener('input', () => { form.serial = serialIn.value; gate(); });
+  gate();
+  const smartBlock = sm ? h('div', null, h('h3', null, 'SMART'), h('div', { class: 'row' }, badge(sm.verdict, sm.verdict === 'pass' ? 'ok' : sm.verdict === 'fail' ? 'bad' : 'warn'), sm.temperature_c != null ? sm.temperature_c + ' C' : null,
+    sm.power_on_hours != null ? sm.power_on_hours + ' power-on hours' : null, (sm.reasons || []).map(x => h('span', { class: 'dim' }, t(x)))),
+    sm.nvme ? kv(Object.keys(sm.nvme).map(k => [k.replace(/_/g, ' '), String(sm.nvme[k])])) : null,
+    (sm.attrs || []).length ? h('details', null, h('summary', null, sm.attrs.length + ' attributes'), table(['ID', 'Name', ['Value', 'num'], ['Worst', 'num'], ['Thresh', 'num'], ['Raw', 'num'], ''], sm.attrs.map(a => [String(a.id), a.name, String(a.value), String(a.worst), String(a.thresh), String(a.raw), a.failing_now ? badge('failing', 'bad') : null]))) : null) : null;
+  return h('section', { class: 'card', style: 'margin-bottom:12px', 'aria-label': 'Disk ' + d.name },
+    h('div', { class: 'row between' }, h('h2', null, t(d.name) + '  ' + t([d.vendor, d.model].filter(Boolean).join(' '))), h('span', { class: 'row' }, d.boot_media ? badge('boot media', 'warn') : null, badge('write gate: ' + (v || '?'), v === 'safe' ? 'ok' : v === 'refused' ? 'bad' : 'warn'))),
+    kv([['Size', I7.fmtBytes(d.size_bytes) + ' (' + d.size_bytes + ' B), ' + d.logical_block + '/' + d.physical_block + ' B sectors'], ['Serial', (d.serial || '') + (d.serial_source ? '  [' + d.serial_source + ']' : '')], ['WWID', d.wwid], ['Firmware', d.firmware_rev],
+      ['Flags', flags.join(', ')], ['Partition table', d.partition_table ? d.partition_table.kind + (d.partition_table.header_crc_ok === false ? ' (header CRC bad)' : '') : 'none'], ['Mounted', (d.mounts || []).join(', ')], ['Holders', (d.holders || []).join(', ')]]),
+    parts.length ? bar : null,
+    (d.partitions || []).length ? table(['#', 'Name', ['First LBA', 'num'], ['Last LBA', 'num'], 'UUID'], d.partitions.map(p => [String(p.index), p.name, String(p.first_lba), String(p.last_lba), p.part_uuid])) : null,
+    (d.signatures || []).length ? h('div', null, h('h3', null, 'Signatures'), d.signatures.map(s => badge(s.kind + (s.label ? ' "' + s.label + '"' : '') + ' @' + s.offset, 'warn'))) : null,
+    reasons.length ? h('div', null, h('h3', null, 'Write gate reasons'), reasons.map(r => h('span', null, badge(r.code + (r.detail ? ': ' + r.detail : '') + (r.overridable ? ' (overridable)' : ' (absolute)'), r.overridable ? 'warn' : 'bad'), ' '))) : null,
+    smartBlock,
+    h('details', { style: 'margin-top:10px' }, h('summary', null, 'Block tests'),
+      h('div', { class: 'row' }, mk('MiB per region', 'mb', { type: 'number', min: 1, max: 65536 }), h('label', { class: 'blk', for: regions.id }, 'Regions', regions), mk('Block size', 'bs', {}), h('label', null, h('input', { type: 'checkbox', checked: true, onchange: ev => { form.direct = ev.target.checked; } }), 'O_DIRECT')),
+      h('div', { class: 'row', style: 'margin:8px 0' }, readBtn, mk('Seed (verify/write)', 'seed', { type: 'number' }), verBtn),
+      h('div', { class: 'danger-zone' }, h('h3', null, 'Destructive write test'), h('p', null, 'Read tests never write. A write test overwrites data, needs the admin key, and the host refuses boot media, mounted or held disks regardless of what is typed here.'),
+        h('div', { class: 'row' }, h('label', { class: 'blk', for: serialIn.id }, 'Type the full serial of ' + t(d.name), serialIn), ws.verdict === 'needs_override' ? h('label', null, ack, 'Disk has a partition table or signature: erase it') : null, wBtn),
+        h('div', { class: 'dim', 'aria-live': 'polite' }, gateBox)),
+      prog, progTxt, chartBox, out));
+}
+function showResult(out, last, cancelled) {
+  if (cancelled) { out.append(h('div', { class: 'alert warn' }, 'Cancelled.')); return; }
+  if (!last) { out.append(h('div', { class: 'alert warn' }, 'The stream ended without a result.')); return; }
+  const rep = last.report || (last.regions ? last : null);
+  out.append(h('div', { class: 'alert ' + (last.ok ? 'info' : 'bad') }, h('strong', null, last.ok ? 'Test passed.' : 'Test failed.'), last.exit != null ? ' exit ' + last.exit : ''));
+  if (rep && Array.isArray(rep.regions)) out.append(table(['Region', ['Offset', 'num'], ['Length', 'num'], ['MiB/s', 'num'], ['Max latency us', 'num'], ['IO errors', 'num'], ['Mismatches', 'num']],
+    rep.regions.map(r => [r.name, String(r.offset), I7.fmtBytes(r.len), Number(r.mib_s).toFixed(1), String(r.lat_max_us), String(r.io_errors), String(r.mismatches)])));
+  else out.append(h('pre', null, t(JSON.stringify(last, null, 1))));
+}
+function curSignal() { return S.ctl ? S.ctl.signal : new AbortController().signal; }
+
+pages.network = function (root, sig) {
+  const body = h('div'); root.append(pageShell('Network'), body);
+  const hist = new Map(); let prev = new Map(), prevAt = 0;
+  const stop = poll(async () => {
+    let r; try { r = await probe(['net', 'pci'], sig); } catch (e) { if (e.name !== 'AbortError') body.replaceChildren(errBox(e)); return; }
+    const now = Date.now(), dt = now - prevAt; const ifs = r.net && r.net.ifaces || [];
+    for (const i of ifs) {
+      const p = prev.get(i.name), hs = hist.get(i.name) || { rx: [], tx: [] };
+      if (p) { I7.pushRing(hs.rx, I7.rate(p.rx_bytes, i.rx_bytes, dt), 60); I7.pushRing(hs.tx, I7.rate(p.tx_bytes, i.tx_bytes, dt), 60); }
+      hist.set(i.name, hs);
+    }
+    prev = new Map(ifs.map(i => [i.name, i])); prevAt = now;
+    const unb = (r.pci && r.pci.devices || []).filter(d => I7.isNic(d) && !d.driver);
+    body.replaceChildren(secErr(r.net, 'net'), unb.length ? h('div', { class: 'alert bad' }, h('strong', null, 'No driver for: '), unb.map(d => d.bdf + ' ' + d.vendor + ':' + d.device + ' ' + t(I7.clean(d.device_name || ''))).join('; '), '. This NIC cannot carry control traffic.') : null,
+      h('div', { class: 'grid' }, ifs.map(i => { const hs = hist.get(i.name), lr = hs.rx.filter(x => x !== null).pop(), lt = hs.tx.filter(x => x !== null).pop();
+        return card(t(i.name) + (i.vlan_of ? '  (VLAN ' + i.vlan_id + ' on ' + t(i.vlan_of) + ')' : ''), h('div', { class: 'row' }, badge(i.operstate, i.operstate === 'up' ? 'ok' : ''), i.carrier === false ? badge('no carrier', 'warn') : null, i.speed_mbps ? badge(i.speed_mbps + ' Mb/s ' + (i.duplex || ''), '') : null),
+          kv([['MAC', i.mac], ['Permanent MAC', i.perm_mac && i.perm_mac !== i.mac ? i.perm_mac : null], ['Driver', i.driver], ['Bus', i.bus_info], ['MTU', String(i.mtu)], ['IPv4', (i.ipv4 || []).join(', ')], ['IPv6', (i.ipv6 || []).join(', ')],
+            ['Totals', 'rx ' + I7.fmtBytes(i.rx_bytes) + ' / tx ' + I7.fmtBytes(i.tx_bytes)], ['Errors', 'rx ' + i.rx_errors + ' / tx ' + i.tx_errors], ['Carrier changes', String(i.carrier_changes)]]),
+          lineChart([{ name: 'rx', values: hs.rx }, { name: 'tx', values: hs.tx }], { label: 'Throughput of ' + i.name, h: 100, min: 0, n: 60, xlabel: 'bytes/s, last 60 samples' }), legend([{ name: 'rx', last: lr != null ? I7.fmtRate(lr) : null }, { name: 'tx', last: lt != null ? I7.fmtRate(lt) : null }])); })));
+  }, 2000);
+  return stop;
+};
+
+pages.usb = function (root, sig) {
+  const body = h('div'), refresh = h('button', { type: 'button' }, 'Refresh'); root.append(pageShell('USB', refresh), body);
+  const node = n => { const d = n.dev, lab = h('span', { class: 'trow' }, h('code', null, d.vid + ':' + d.pid), h('strong', null, t([d.manufacturer, d.product].filter(Boolean).join(' ') || '(unnamed)')), h('span', { class: 'dim' }, d.path + (d.speed_mbps ? ', ' + d.speed_mbps + ' Mb/s' : '') + (d.serial ? ', serial ' + t(d.serial) : '') + ((d.drivers || []).length ? ', ' + t(d.drivers.join(' ')) : '')));
+    return n.kids.length ? h('li', { role: 'treeitem' }, h('details', { open: true }, h('summary', null, lab), h('ul', { role: 'group' }, n.kids.map(node)))) : h('li', { role: 'treeitem' }, h('div', { class: 'leaf' }, lab)); };
+  const load = () => probe(['usb'], sig).then(r => { const devs = r.usb.devices || []; body.replaceChildren(secErr(r.usb, 'usb'), card(devs.length + ' devices', devs.length ? h('ul', { class: 'tree', role: 'tree' }, I7.buildUsbTree(devs).map(node)) : h('span', { class: 'dim' }, 'none'))); })
+    .catch(e => { if (e.name !== 'AbortError') body.replaceChildren(errBox(e, load)); });
+  refresh.addEventListener('click', load); load();
+};
+
+pages.sensors = function (root, sig) {
+  const body = h('div'), rings = new Map(), meta = new Map(); let paused = false;
+  const pauseBtn = h('button', { type: 'button', 'aria-pressed': 'false' }, 'Pause');
+  pauseBtn.addEventListener('click', () => { paused = !paused; pauseBtn.setAttribute('aria-pressed', String(paused)); pauseBtn.textContent = paused ? 'Resume' : 'Pause'; });
+  root.append(pageShell('Sensors', pauseBtn), body);
+  const groups = [['temp', 'Temperatures', 'C'], ['fan', 'Fans', 'rpm'], ['volt', 'Voltages', 'mV'], ['power', 'Power', 'mW']];
+  const stop = poll(async () => {
+    if (paused) return;
+    let r; try { r = await probe(['thermal'], sig); } catch (e) { if (e.name !== 'AbortError') body.replaceChildren(errBox(e)); return; }
+    if (r.thermal.error) { body.replaceChildren(secErr(r.thermal, 'thermal')); return; }
+    for (const s of I7.sensorSamples(r.thermal)) { meta.set(s.key, s); I7.pushRing(rings.get(s.key) || rings.set(s.key, []).get(s.key), s.value, 120); }
+    const alarms = r.thermal.alarms || [];
+    body.replaceChildren(alarms.length ? h('div', { class: 'alert bad', role: 'alert' }, alarms.map(a => h('div', null, 'Alarm: ', t(a)))) : null,
+      !meta.size ? h('div', { class: 'alert info' }, 'This host reports no sensors.') : null,
+      h('div', { class: 'grid' }, groups.map(([g, title, unit]) => {
+        const items = [...meta.values()].filter(m => m.group === g); if (!items.length) return null;
+        const top = items.sort((a, b) => b.value - a.value).slice(0, 8), series = top.map(m => ({ name: m.label, values: rings.get(m.key), last: m.value.toFixed(g === 'temp' ? 1 : 0) + ' ' + unit }));
+        const crit = g === 'temp' ? Math.min(...items.map(m => m.crit).filter(c => c != null), Infinity) : null;
+        return h('section', { class: 'card wide' }, h('h2', null, title + ' (' + unit + ')'), lineChart(series, { label: title, n: 120, crit: isFinite(crit) ? crit : null, min: g === 'temp' ? undefined : 0, xlabel: 'last 120 samples, 2 s apart' }), legend(series),
+          table(['Sensor', ['Now', 'num'], ['Min', 'num'], ['Max', 'num'], 'Limit'], items.map(m => { const rg = rings.get(m.key); return [m.label, m.value.toFixed(1), Math.min(...rg).toFixed(1), Math.max(...rg).toFixed(1), m.crit != null ? (m.value >= m.crit ? badge('over ' + m.crit, 'bad') : 'crit ' + m.crit) : null]; })));
+      })));
+  }, 2000);
+  return stop;
+};
+
+pages.log = function (root, sig) {
+  const f = { level: 7, q: '', tags: new Set() }; let lines = [], follow = true, paused = false, src = 'kernel';
+  const box = h('div', { class: 'logbox mono', role: 'log', tabindex: '0', 'aria-label': 'Log output' }), chips = h('div', { class: 'row' }), status = h('span', { class: 'dim' });
+  const srcSel = h('select', { 'aria-label': 'Log source' }, [['kernel', 'Kernel (kmsg)'], ['audit', 'Audit'], ['daemon', 'Daemon'], ['init', 'Init']].map(([v, l]) => h('option', { value: v }, l)));
+  const lvl = h('select', { 'aria-label': 'Minimum severity' }, [[7, 'debug+'], [6, 'info+'], [5, 'notice+'], [4, 'warning+'], [3, 'error+']].map(([v, l]) => h('option', { value: v }, l)));
+  const q = h('input', { type: 'text', placeholder: 'Search', 'aria-label': 'Search log' });
+  const fol = h('input', { type: 'checkbox', checked: true, id: 'fol' }), pau = h('button', { type: 'button', 'aria-pressed': 'false' }, 'Pause');
+  const dl = h('button', { type: 'button' }, 'Download');
+  root.append(pageShell('Log'), h('div', { class: 'row', style: 'margin-bottom:8px' }, srcSel, lvl, q, h('label', null, fol, 'Follow'), pau, dl, status), chips, box);
+  const draw = () => {
+    const shown = I7.logFilter(lines, f).slice(-1500);
+    box.replaceChildren(...shown.map(l => h('div', { class: 'lv' + l.level }, (l.ts_us != null ? '[' + (l.ts_us / 1e6).toFixed(3).padStart(10) + '] ' : '') + t(l.text))));
+    if (follow) box.scrollTop = box.scrollHeight;
+    const tags = new Set(); lines.forEach(l => (l.tags || []).forEach(x => tags.add(x)));
+    chips.replaceChildren(...[...tags].sort().map(tag => { const b = h('button', { type: 'button', class: 'chip', 'aria-pressed': String(f.tags.has(tag)) }, t(tag)); b.addEventListener('click', () => { f.tags.has(tag) ? f.tags.delete(tag) : f.tags.add(tag); draw(); }); return b; }));
+    status.textContent = shown.length + ' of ' + lines.length + ' lines';
+  };
+  const textToLines = txt => txt.split('\n').filter(x => x.length).map((x, i) => ({ seq: i, level: 6, text: x, tags: [] }));
+  const fetchLog = async () => {
+    if (paused) return;
+    const mine = src;
+    try {
+      if (src === 'kernel') { const r = await probe(['kmsg'], sig); if (r.kmsg.error) { status.textContent = 'kmsg: ' + r.kmsg.error; return; } if (mine !== src) return; lines = r.kmsg.lines || []; }
+      else { let txt = ''; await runStream('logs', ['--' + src, '-n', '400'], ev => { if (ev.event === 'stdout') txt += I7.decodeStdout(ev); }, { signal: sig }); lines = textToLines(txt); }
+      if (mine !== src) return;
+      draw();
+    } catch (e) { if (e.name !== 'AbortError') status.textContent = 'error: ' + e.message; }
+  };
+  srcSel.addEventListener('change', () => { src = srcSel.value; lines = []; draw(); fetchLog(); });
+  lvl.addEventListener('change', () => { f.level = Number(lvl.value); draw(); });
+  q.addEventListener('input', () => { f.q = q.value; draw(); });
+  fol.addEventListener('change', () => { follow = fol.checked; draw(); });
+  pau.addEventListener('click', () => { paused = !paused; pau.setAttribute('aria-pressed', String(paused)); pau.textContent = paused ? 'Resume' : 'Pause'; });
+  dl.addEventListener('click', () => { const u = URL.createObjectURL(new Blob([I7.logFilter(lines, f).map(l => I7.clean(l.text)).join('\n') + '\n'], { type: 'text/plain' })); const a = h('a', { href: u, download: 'i7lab-' + src + '.log' }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 1000); });
+  return poll(fetchLog, 3000);
+};
+
+const ACTIONS = [
+  { cmd: 'ping', title: 'Ping', desc: 'Round trip, uptime and boot id.', admin: false, fields: [] },
+  { cmd: 'identify', title: 'Identify host', desc: 'Blink LEDs and show a banner on the console.', admin: true, fields: [{ n: 'seconds', label: 'Seconds', def: '30', flag: '--seconds' }], extra: [{ label: 'Stop', args: ['--stop'] }] },
+  { cmd: 'msg', title: 'Message on console', desc: 'Show text on the console TUI.', admin: true, fields: [{ n: 'text', label: 'Text', def: '', pos: true }] },
+  { cmd: 'time.set', title: 'Set host clock', desc: 'Sets the host time from this browser clock.', admin: true, fields: [], dyn: () => [String(Math.floor(Date.now() / 1000))] },
+  { cmd: 'tui', title: 'Console tab', desc: 'Switch the console TUI tab.', admin: true, fields: [{ n: 'name', label: 'Tab', def: 'overview', pos: true, pre: ['tab'] }], extra: [{ label: 'Reset', args: ['reset'] }] },
+  { cmd: 'reboot', title: 'Reboot', desc: 'Reboot the host (the stick boots again unless the drive is removed).', admin: true, danger: true, fields: [{ n: 'delay', label: 'Delay (s)', def: '', flag: '--delay' }],
+    checks: [['--force', 'Force'], ['--uefi', 'Into firmware setup'], ['--to-os', 'Boot the installed OS once']] },
+  { cmd: 'poweroff', title: 'Power off', desc: 'Power the host off. Needs a person or a PDU to bring it back.', admin: true, danger: true, fields: [{ n: 'delay', label: 'Delay (s)', def: '', flag: '--delay' }] },
+];
+pages.actions = function (root, sig) {
+  const adminIn = h('input', { type: 'password', id: 'adm', autocomplete: 'off', spellcheck: 'false', placeholder: 'i7k1:admin:...', style: 'width:min(100%,520px)' });
+  const adminMsg = h('div', { 'aria-live': 'polite' });
+  const grid = h('div', { class: 'grid' });
+  const loadAdmin = async () => {
+    const k = I7.parseKey(adminIn.value);
+    if (!k || k.role !== 'admin') { adminMsg.replaceChildren(h('div', { class: 'alert bad' }, 'That is not an admin key line (i7k1:admin:<64 hex>).')); return; }
+    const prev = S.admin; S.admin = k;
+    try { const r = await cmd('id', [], { admin: true, signal: sig }); saveKey(k); adminIn.value = '';
+      adminMsg.replaceChildren(r.role === 'admin' ? h('div', { class: 'alert info' }, 'Admin key accepted (' + k.id + ').') : h('div', { class: 'alert warn' }, 'The host accepted the key but treats it as "' + t(r.role) + '" (demo keys act as admin only inside a VM).'));
+      whoami(); renderActions(); }
+    catch (e) { S.admin = prev; adminMsg.replaceChildren(errBox(e)); }
+  };
+  const forget = () => { ssSet('i7lab.admin', null); S.admin = null; whoami(); renderActions(); adminMsg.replaceChildren(h('div', { class: 'alert info' }, 'Admin key forgotten.')); };
+  const adminCard = h('section', { class: 'card wide' }, h('h2', null, 'Admin key'), h('p', { class: 'dim' }, 'The SPA signs reads with the read-only key. Load the admin key only when you need to change something; it stays in this tab (sessionStorage) and is never sent to the host, only HMACs are.'),
+    h('div', { class: 'row' }, h('label', { for: 'adm' }, 'Admin key line'), adminIn, h('button', { type: 'button', class: 'pri', onclick: loadAdmin }, 'Load admin key'), h('button', { type: 'button', onclick: forget }, 'Forget admin key')), adminMsg);
+  root.append(pageShell('Actions'), adminCard, grid);
+  const renderActions = () => {
+    grid.replaceChildren(...ACTIONS.map(a => {
+      const avail = !S.cmds || S.cmds.has(a.cmd), vals = {}, res = h('div', { 'aria-live': 'polite' });
+      const inputs = a.fields.map(fl => { const i = h('input', { type: 'text', id: 'a-' + a.cmd + fl.n, value: fl.def }); vals[fl.n] = fl.def; i.addEventListener('input', () => { vals[fl.n] = i.value; }); return h('label', { class: 'blk', for: i.id }, fl.label, i); });
+      const chk = (a.checks || []).map(([fl, lab]) => { const c = h('input', { type: 'checkbox' }); c.addEventListener('change', () => { vals[fl] = c.checked; }); return h('label', null, c, lab); });
+      const go = async (extra) => {
+        let args = extra ? extra.slice() : (a.dyn ? a.dyn() : []);
+        if (!extra) { for (const fl of a.fields) { const v = vals[fl.n]; if (v === '' || v === undefined) continue; if (fl.pos) args = args.concat(fl.pre || [], v.split(/\s+/)); else args.push(fl.flag, v); }
+          for (const [fl] of (a.checks || [])) if (vals[fl]) args.push(fl); }
+        if (a.danger) { const host = (S.hello && S.hello.hostname) || 'host'; if (!await confirmDialog({ title: a.title + ' ' + host + '?', danger: true, confirmText: a.title, typed: host, body: h('p', null, t(a.desc), ' Args: ', h('code', null, t(args.join(' ') || '(none)'))) })) return; }
+        res.replaceChildren(h('span', { class: 'dim' }, 'running...'));
+        try { const r = await cmd(a.cmd, args, { admin: a.admin, signal: sig }); res.replaceChildren(h('pre', null, t(JSON.stringify(r, null, 1)))); toast(a.title + ' ok', 'ok'); }
+        catch (e) { if (e.name !== 'AbortError') res.replaceChildren(errBox(e)); }
+      };
+      const dis = !avail || (a.admin && !S.admin);
+      return h('section', { class: 'card' + (a.danger ? ' danger-zone' : '') }, h('h2', null, a.title, ' ', a.admin ? badge('admin', '') : badge('read-only', 'ok')), h('p', { class: 'dim' }, a.desc),
+        !avail ? h('p', null, badge('not available on this host', 'warn')) : (a.admin && !S.admin ? h('p', { class: 'dim' }, 'Load the admin key above to enable.') : null),
+        h('div', { class: 'row' }, inputs, chk), h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { type: 'button', class: a.danger ? 'danger' : 'pri', disabled: dis, onclick: () => go() }, a.title),
+          (a.extra || []).map(x => h('button', { type: 'button', disabled: dis, onclick: () => go(x.args) }, x.label))), res);
+    }));
+  };
+  renderActions();
+  cmd('cmds', [], { signal: sig }).then(r => { S.cmds = new Set((r.commands || []).filter(c => !c.planned).map(c => c.name)); renderActions(); }).catch(() => { /* leave all enabled */ });
+};
+
+pages.about = function (root, sig) {
+  const body = h('div'); root.append(pageShell('About'), body);
+  Promise.all([cmd('id', [], { signal: sig }), cmd('cmds', [], { signal: sig })]).then(([id, cm]) => {
+    const keys = [['Read-only key', S.ro], ['Admin key', S.admin]].map(([n, k]) => [n, k ? k.role + ' ' + k.id : 'not loaded']);
+    body.replaceChildren(h('div', { class: 'grid' },
+      card('Agent', kv([['Version', id.version], ['Build', id.build], ['Hostname', id.hostname], ['Boot id', id.boot_id], ['State', id.state], ['Your role', id.role], ['Host keys', id.kid], ['Protocol', String(id.proto)]])),
+      card('This session', kv(keys.concat([['Verified responses/events', String(S.stats.ok)], ['Failed verification', String(S.stats.bad)], ['Page', 'single file, no external requests']]))),
+      card('API', h('p', null, 'Everything here uses the signed JSON API; see ', h('a', { href: '/api/v1/openapi.json' }, 'openapi.json'), ' (open). Requests are authenticated and the host proves itself, but nothing is encrypted (no TLS in v0.x).'),
+        h('p', { class: 'dim' }, 'Command line: i7labctl --http HOST:8080 CMD ... or i7labctl --ether MAC --cmd CMD (no IP needed).')),
+      h('section', { class: 'card wide' }, h('h2', null, 'Commands'), table(['Name', 'Access', 'Streams', 'Usage', 'Summary'], (cm.commands || []).map(c => [c.name + (c.planned ? ' (planned' + (c.since ? ' ' + c.since : '') + ')' : ''), c.access, c.streams ? 'yes' : '', c.usage, c.summary])))));
+  }).catch(e => { if (e.name !== 'AbortError') body.replaceChildren(errBox(e)); });
+};
+
+/* ---------- login, header, router ---------- */
+function whoami() {
+  const w = $('#whoami'); w.textContent = '';
+  const k = S.admin || S.ro;
+  if (k) w.append(badge((S.admin ? 'admin' : 'read-only') + ' ' + k.id, S.admin ? 'warn' : 'ok'));
+  if (S.hello && S.hello.demo) w.append(' ', badge('DEMO KEYS', 'warn'));
+  $('#signout').hidden = !k;
+  $('#hostname').textContent = S.hello && S.hello.hostname ? t(S.hello.hostname) : '';
+  document.title = 'i7lablinux' + (S.hello && S.hello.hostname ? ' ' + t(S.hello.hostname) : '');
+}
+function loginPage(root) {
+  const ta = h('input', { type: 'password', id: 'keyline', autocomplete: 'off', spellcheck: 'false', placeholder: 'i7k1:ro:...', style: 'width:100%' }), msg = h('div', { 'aria-live': 'polite' });
+  const enter = async (k) => {
+    S.ro = k.role === 'ro' ? k : S.ro; if (k.role === 'admin') S.admin = k;
+    try { const r = await cmd('id', []); saveKey(k); S.hello = Object.assign({}, S.hello, { hostname: r.hostname }); whoami(); location.hash = '#/overview'; route(); }
+    catch (e) { if (k.role === 'ro') S.ro = null; else S.admin = null; msg.replaceChildren(errBox(e)); }
+  };
+  const go = () => { const k = I7.parseKey(ta.value); if (!k) { msg.replaceChildren(h('div', { class: 'alert bad' }, 'A key line looks like i7k1:ro:<64 hex characters>.')); return; } enter(k); };
+  ta.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+  root.append(h('div', { class: 'login' }, h('h1', null, 'Connect to ' + t(S.hello && S.hello.hostname || 'this host')),
+    S.hello && S.hello.error ? h('div', { class: 'alert bad' }, 'Cannot reach the agent: ' + t(S.hello.error)) : null,
+    h('p', null, 'Paste a key line. Use the read-only key (', h('code', null, 'i7k1:ro:...'), ') for looking around; the admin key is loaded later, on the Actions page. Keys live only in this tab and are never sent over the network.'),
+    h('label', { for: 'keyline' }, 'Key line'), ta, h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { type: 'button', class: 'pri', onclick: go }, 'Connect'),
+      h('button', { type: 'button', onclick: () => enter(I7.demoKey('ro')) }, 'Use the documented demo read-only key')),
+    msg, h('p', { class: 'dim' }, 'Keys are in ~/.config/i7labctl/keys/ on the machine that built the stick (docs/KEYS.md). A host that still has the demo keys accepts the demo key.')));
+  ta.focus();
+}
+let routeSeq = 0;
+function route() {
+  if (S.cleanup) { try { S.cleanup(); } catch (e) { /* ignore */ } S.cleanup = null; }
+  if (S.ctl) S.ctl.abort();
+  S.ctl = new AbortController(); const sig = S.ctl.signal, seq = ++routeSeq;
+  const name = (location.hash.replace(/^#\/?/, '') || 'overview').split('?')[0];
+  const root = $('#main'); root.replaceChildren();
+  const nav = $('#nav'); nav.replaceChildren(...PAGES.map(([id, label]) => h('a', { href: '#/' + id, 'aria-current': id === name ? 'page' : null }, label)));
+  if (!S.ro && !S.admin) { nav.hidden = true; loginPage(root); return; }
+  nav.hidden = false;
+  const fn = pages[name] || pages.overview;
+  const r = fn(root, sig); if (seq === routeSeq) S.cleanup = typeof r === 'function' ? r : null;
+  root.focus({ preventScroll: true }); window.scrollTo(0, 0);
+}
+function applyTheme(m) { if (m === 'light' || m === 'dark') document.documentElement.setAttribute('data-theme', m); else document.documentElement.removeAttribute('data-theme'); }
+async function start() {
+  applyTheme(lsGet('i7lab.theme'));
+  $('#themebtn').addEventListener('click', () => { const cur = document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); const nx = cur === 'dark' ? 'light' : 'dark'; applyTheme(nx); lsSet('i7lab.theme', nx); });
+  $('#signout').addEventListener('click', () => { forgetKeys(); whoami(); route(); });
+  loadKeys();
+  try { const r = await fetch('/api/v1/hello', { cache: 'no-store' }); S.hello = r.ok ? await r.json() : { error: 'HTTP ' + r.status }; setConn(r.ok ? 'ok' : 'bad', r.ok ? 'host reachable' : 'host error'); }
+  catch (e) { S.hello = { error: String(e.message || e) }; setConn('bad', 'unreachable'); }
+  whoami(); window.addEventListener('hashchange', route); route();
+  window.addEventListener('online', () => setConn('warn', 'back online'));
+}
+window.addEventListener('unhandledrejection', ev => { const e = ev.reason; if (e && e.name !== 'AbortError') toast('Unexpected error: ' + (e.message || e), 'bad'); });
+start();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.1… attention: 7
+ Overview   PCIe   Storage   Network   USB  [Sensors]  Log   Actions
+┌─ Sensors ────────────────────────────────────────────────────────────────────┐
+│Sensor                                             Kind       Value      Limit│
+│zone thermal_zone0 (x86_pkg_temp)                  temp      48.0 C   crit 100│
+│coretemp/Package id 0                              temp      52.0 C    100/100│
+│coretemp/Core 0                                    temp      49.0 C    100/100│
+│coretemp/Core 1                                    temp      88.0 C     85/100│
+│nvme/Composite                                     temp      41.0 C      84/95│
+│it8665/fan1                                        fan     1780 rpm          -│
+│it8665/in0                                         volt     1.008 V          -│
+│it8665/pkg                                         power     14.2 W          -│
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit

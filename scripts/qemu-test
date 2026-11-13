@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# Boot the image (or kernel+initramfs) in QEMU on the build host with a q35 PCIe topology, NVMe + virtio disks and an L2 NIC
+# on a multicast socket netdev, then check the boot. Smoke level: GRUB/kernel/PID 1 markers, optional beacon + ping.
+# usage: qemu-test [--bios|--uefi|--both] [--image FILE | --iso FILE | --direct] [--no-bake] [--ctl PATH]
+#                  [--timeout S] [--keep] [--label L]
+#   default: --both on out/image/i7lablinux.img, baked with the public demo keys into a scratch copy (QEMU only).
+#   --iso boots the ISO as a USB CD-ROM; --direct boots out/kernel/bzImage + initramfs + keys.cpio with -kernel (no GRUB).
+#   With out/bin/i7labctl (or --ctl) it also runs `discover` and `--ether MAC --cmd ping` over the multicast L2 link.
+#   Runs on the build host (re-runs itself there through scripts/remote on a small machine; fetches out/e2e/<ts>). At most 2 guests
+#   from this script at once, every guest under `timeout`, only its own QEMU pid is ever killed.
+#   P11 owns the full section 14 plan (tests/e2e); this is the boot-level building block it extends.
+# Owner: P10 (task I8) / P11. Spec: docs/PLAN.md section 14.
+. "$(dirname "$0")/lib/common.sh"
+
+FIRM=both SRC=image FILE="" BAKE=1 CTL="" TMO=120 KEEP=0 LABEL="${I7_QEMU_LABEL:-p10}" ORIG=("$@")
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --bios) FIRM=bios; shift;;
+    --uefi) FIRM=uefi; shift;;
+    --both) FIRM=both; shift;;
+    --image) SRC=image; FILE="${2:?}"; shift 2;;
+    --iso) SRC=iso; shift; if [ $# -gt 0 ] && [[ "$1" != -* ]]; then FILE="$1"; shift; fi;;
+    --direct) SRC=direct; shift;;
+    --no-bake) BAKE=0; shift;;
+    --ctl) CTL="${2:?}"; shift 2;;
+    --timeout) TMO="${2:?}"; shift 2;;
+    --keep) KEEP=1; shift;;
+    --label) LABEL="${2:?}"; shift 2;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0;;
+    *) die "unknown option $1 (see --help)";;
+  esac
+done
+
+if ! on_build_host; then
+  need ssh rsync
+  info "guests run on the build host ($I7_HOST), not on this machine"
+  remote_run build scripts/qemu-test "${ORIG[@]}" || RC=$?
+  mkdir -p "$I7_OUT"; rsync -a "$I7_HOST:/tmp/i7ll-build/out/e2e/" "$I7_OUT/e2e/" 2>/dev/null || true
+  exit "${RC:-0}"
+fi
+need qemu-system-x86_64 timeout
+[ "$(pgrep -fc '^qemu-system-x86_64 .* -name i7ll-' || true)" -lt 2 ] || die "2 i7ll QEMU guests already running on this host: wait (no queueing)"
+OVMF_CODE="${OVMF_CODE:-/usr/share/OVMF/OVMF_CODE_4M.fd}" OVMF_VARS="${OVMF_VARS:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
+
+EV="$I7_OUT/e2e/$(date -u +%Y%m%dT%H%M%SZ)"; mkdir -p "$EV"
+MP=$((20000 + $(printf '%s' "$LABEL$EV" | cksum | cut -d' ' -f1) % 20000))     # multicast port, per run
+KACC=kvm:tcg; [ -w /dev/kvm ] || KACC=tcg
+[ "$KACC" = tcg ] && TMO=$((TMO * 3))
+MAC1=52:54:00:17:00:01
+[ "$BAKE" = 0 ] || export I7LABCTL_KEYDIR="$I7_ROOT/keys/demo"   # the key set baked into the scratch image below
+
+# ---- inputs -----------------------------------------------------------------------------------------------------------------
+case "$SRC" in
+  image)
+    [ -n "$FILE" ] || FILE="$I7_OUT/image/i7lablinux.img"
+    [ -f "$FILE" ] || die "$FILE missing: scripts/build-image --full"
+    cp --reflink=auto "$FILE" "$EV/disk.img"
+    [ "$BAKE" = 0 ] || ALLOW_DEMO_KEYS=1 "$I7_ROOT/scripts/bake-keys" --demo --image "$EV/disk.img" >/dev/null || die "bake-keys failed";;
+  iso)
+    [ -n "$FILE" ] || FILE="$I7_OUT/image/i7lablinux.iso"
+    [ -f "$FILE" ] || die "$FILE missing: scripts/build-image --full"
+    cp --reflink=auto "$FILE" "$EV/disk.iso"
+    [ "$BAKE" = 0 ] || ALLOW_DEMO_KEYS=1 "$I7_ROOT/scripts/bake-keys" --demo --iso "$EV/disk.iso" >/dev/null || die "bake-keys failed";;
+  direct)
+    [ -s "$I7_OUT/kernel/bzImage" ] && [ -s "$I7_OUT/initramfs.cpio.zst" ] || die "out/kernel and out/initramfs.cpio.zst needed"
+    KD=""
+    if [ "$BAKE" = 1 ]; then [ -s "$I7_ROOT/keys/demo/admin.key" ] || "$I7_ROOT/scripts/gen-keys" --demo --quiet; KD="$I7_ROOT/keys/demo"; fi
+    make_keys_cpio "$KD" "$EV/keys.cpio"
+    # GRUB aligns every initrd to 4 bytes; -initrd gets one file, so do the same (the kernel skips zero padding)
+    cp "$I7_OUT/initramfs.cpio.zst" "$EV/initrd.bin"
+    truncate -s "$(( ($(stat -c%s "$EV/initrd.bin") + 3) / 4 * 4 ))" "$EV/initrd.bin"
+    cat "$EV/keys.cpio" >> "$EV/initrd.bin";;
+esac
+# blank disks: serial numbers as in PLAN section 14 so tests select disks by serial
+truncate -s 256M "$EV/nvme.img" "$EV/virtio.img"
+
+run_guest() { # FIRMWARE(bios|uefi) -> sets RESULT_*, writes $EV/<fw>-*.log
+  local fw=$1 serial="$EV/$1-serial.log" q=() qpid
+  : > "$serial"
+  q=(qemu-system-x86_64 -name "i7ll-$LABEL-$fw" -machine q35,accel=$KACC -cpu max -smp 4 -m 2048 -display none -no-reboot
+     -serial "file:$serial" -monitor "unix:$EV/$fw-mon.sock,server,nowait")
+  if [ "$fw" = uefi ]; then
+    [ -r "$OVMF_CODE" ] && [ -r "$OVMF_VARS" ] || die "OVMF files missing ($OVMF_CODE): apt-get install ovmf"
+    cp "$OVMF_VARS" "$EV/$fw-vars.fd"
+    q+=(-drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE" -drive "if=pflash,format=raw,file=$EV/$fw-vars.fd")
+  fi
+  case "$SRC" in
+    image) q+=(-device qemu-xhci,id=xhci -drive "if=none,id=stick,format=raw,file=$EV/disk.img,snapshot=on"
+               -device usb-storage,bus=xhci.0,drive=stick,serial=I7STICK0001,bootindex=0);;
+    iso)   q+=(-device qemu-xhci,id=xhci -drive "if=none,id=iso,format=raw,file=$EV/disk.iso,readonly=on"
+               -device usb-storage,bus=xhci.0,drive=iso,serial=I7CD0001,bootindex=0);;
+    direct) [ "$fw" = bios ] || { info "--direct boots once (BIOS run only)"; return 0; }
+            q+=(-kernel "$I7_OUT/kernel/bzImage" -initrd "$EV/initrd.bin" -append "console=ttyS0,115200n8 panic=10 loglevel=4 i7lab.boot=none");;
+  esac
+  q+=(-device pcie-root-port,id=rp1,chassis=1,slot=1 -device pcie-root-port,id=rp2,chassis=2,slot=2
+      -drive "if=none,id=nv0,format=raw,file=$EV/nvme.img" -device nvme,bus=rp1,drive=nv0,serial=I7NVME0001
+      -drive "if=none,id=vd0,format=raw,file=$EV/virtio.img" -device virtio-blk-pci,bus=rp2,drive=vd0,serial=I7VIRT0001
+      -netdev "dgram,id=l2,remote.type=inet,remote.host=239.255.71.1,remote.port=$MP" -device "virtio-net-pci,netdev=l2,mac=$MAC1"
+      -netdev "user,id=ip0,hostfwd=tcp:127.0.0.1:$((MP+1))-:8080" -device e1000e,netdev=ip0,mac=52:54:00:17:00:02)
+  printf '%q ' "${q[@]}" > "$EV/$fw-qemu.cmd"
+  timeout "$TMO" "${q[@]}" >"$EV/$fw-qemu.out" 2>&1 &
+  qpid=$!
+  local waited=0 got_grub=0 got_init=0
+  while kill -0 "$qpid" 2>/dev/null && [ "$waited" -lt "$TMO" ]; do
+    grep -aq 'GNU GRUB' "$serial" && got_grub=1
+    if grep -aq 'i7lab-init' "$serial"; then got_init=1; break; fi
+    sleep 2; waited=$((waited + 2))
+  done
+  # PID 1 is up: give i7labd a moment to beacon, then talk to it if we have a client
+  local beacon="skip (no i7labctl)" ping="skip (no i7labctl)"
+  if [ "$got_init" = 1 ] && [ -n "$CTL" ] && [ -x "$CTL" ]; then
+    sleep 8
+    if "$CTL" --link "mcast:239.255.71.1:$MP" discover --listen 20 2>/dev/null | grep -qi "$MAC1"; then beacon=ok; else beacon=FAIL; fi
+    if timeout 30 "$CTL" --link "mcast:239.255.71.1:$MP" --ether "$MAC1" --cmd ping >/dev/null 2>&1; then ping=ok; else ping=FAIL; fi
+  fi
+  kill "$qpid" 2>/dev/null || true; wait "$qpid" 2>/dev/null || true       # our own pid only
+  local nobb=ok; grep -aqi busybox "$serial" && nobb=FAIL
+  local keys=none; grep -aq 'NO KEYS' "$serial" && keys=placeholder; grep -aq 'KEYSET-ID' "$serial" && keys=baked
+  local verdict=PASS; { [ "$got_grub" = 1 ] || [ "$SRC" = direct ]; } && [ "$got_init" = 1 ] && [ "$nobb" = ok ] && [ "$beacon" != FAIL ] && [ "$ping" != FAIL ] || verdict=FAIL
+  printf '{"firmware":"%s","source":"%s","grub":%s,"pid1":%s,"keys":"%s","no_busybox":"%s","beacon":"%s","ping":"%s","seconds":%s,"verdict":"%s"}\n' \
+    "$fw" "$SRC" "$([ $got_grub = 1 ] && echo true || echo false)" "$([ $got_init = 1 ] && echo true || echo false)" "$keys" "$nobb" "$beacon" "$ping" "$waited" "$verdict" | tee "$EV/$fw-result.json"
+  [ "$verdict" = PASS ]
+}
+
+RC=0
+case "$FIRM" in
+  bios) run_guest bios || RC=1;;
+  uefi) run_guest uefi || RC=1;;
+  both) run_guest bios || RC=1; run_guest uefi || RC=1;;
+esac
+[ "$KEEP" = 1 ] || rm -f "$EV"/*.img "$EV"/*.iso "$EV"/initrd.bin "$EV"/*-mon.sock "$EV"/*-vars.fd
+info "evidence: $EV ($([ $RC = 0 ] && echo PASS || echo FAIL))"
+exit "$RC"

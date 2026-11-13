@@ -1,0 +1,95 @@
+# CI for i7lablinux.
+#  - every push and pull request: fmt, clippy, tests, musl cross build, shellcheck, no-busybox guard, doc links
+#  - manual dispatch, and weekly: also builds the KEYLESS image and ISO and uploads them as artefacts
+# Hosted runners have no KVM, so there is no QEMU end-to-end job here: `make e2e` runs on the build host (docs/BUILD.md).
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Also build the keyless image and ISO"
+        type: boolean
+        default: true
+  schedule:
+    - cron: "17 3 * * 1"   # Mondays 03:17 UTC: image build
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain (pinned in rust-toolchain.toml)
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup component add rustfmt clippy
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - name: musl release build of the image binaries
+        run: cargo build --release --locked --target x86_64-unknown-linux-musl -p i7lab-init -p i7labd -p i7labsh
+
+  scripts-docs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+          find scripts -type f -exec grep -lE '^#!.*(bash|sh)' {} + | xargs shellcheck -x
+      - name: no busybox anywhere in the tree
+        run: scripts/check-no-busybox --repo
+      - name: relative doc links resolve
+        run: scripts/check-doc-links
+
+  image:
+    # keyless image and ISO: manual dispatch (image = true) or the weekly schedule
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.image)
+    needs: [rust, scripts-docs]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      I7_ON_BUILD_HOST: "1"           # build here instead of ssh-ing to the build host
+      I7_CACHE: ${{ github.workspace }}/.cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: i7lab-kernel-${{ hashFiles('configs/kernel/**') }}
+          restore-keys: i7lab-kernel-
+      - name: Build prerequisites (docs/BUILD.md)
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential flex bison bc cpio xz-utils zstd libelf-dev \
+            libssl-dev kmod curl xorriso dosfstools mtools gdisk parted rsync grub-pc-bin grub-efi-amd64-bin \
+            grub-common musl-tools linux-firmware
+      - name: Build kernel, userland, initramfs, image and ISO (keyless)
+        run: scripts/build-image --full
+      - name: Image must not contain busybox or keys
+        run: |
+          for f in out/image/*.img; do scripts/check-no-busybox --image "$f"; done
+          ! find out -name 'admin.key' -o -name 'ro.key' | grep .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: i7lablinux-keyless-image
+          path: |
+            out/image/*.img
+            out/image/*.iso
+            out/image/SHA256SUMS
+            out/kernel/BUILD-INFO
+          retention-days: 30

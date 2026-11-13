@@ -1,0 +1,25 @@
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.1… attention: 7
+ Overview  [PCIe]  Storage   Network   USB   Sensors   Log   Actions
+┌─ PCIe devices ───────────────────────────────────────────────────────────────┐
+│Device               Name                            Driver         Link      │
+│▾ 00:00.0            Intel 8th Gen Core Host Bridge  -              -         │
+│  ▾ 00:01.0          Intel 6th-10th Gen Core PCIe x… pcieport       x4 Gen3   │
+│      03:00.0        Realtek RTL8126 5GbE            -              x1 Gen1   │
+│    00:02.0          Intel UHD Graphics 630          i915           -         │
+│    00:14.0          Intel Cannon Lake PCH USB 3.1 … xhci_hcd       x4 Gen3   │
+│    00:17.0          Intel Cannon Lake PCH SATA AHCI ahci           x4 Gen3   │
+│  ▾ 00:1c.0          Intel Cannon Lake PCH PCIe Roo… pcieport       x4 Gen3   │
+│      01:00.0        Samsung NVMe SSD Controller 980 nvme           x4 Gen3   │
+│  ▾ 00:1d.0          Intel Cannon Lake PCH PCIe Roo… pcieport       x4 Gen3   │
+│      02:00.0        Intel Ethernet Connection (7) … e1000e         x4 Gen3   │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit

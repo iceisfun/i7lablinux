@@ -1,0 +1,43 @@
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.141  mac 3c:ec:ef:12:34:56                             attention: 7
+ Overview   PCIe  [Storage]  Network   USB   Sensors   Log   Actions
+┌─ Disks ─────────────────────────────────────────────────┐┌─ Disk ────────────────────────────────────────────────────────────────┐
+│Dev            Size Model                SMART State     ││Device:        /dev/nvme0n1                                            │
+│nvme0n1    500.1 GB Samsung SSD 980 500… ok    idle      ││Model:         Samsung SSD 980 500GB                                   │
+│sda         31.9 GB SanDisk Ultra Fit    -     boot media││Serial:        S64DNX0R123456A  (nvme)                                 │
+│sdb          1.0 TB ATA WDC WD10EZEX-00… WARN  idle      ││WWID:          -                                                       │
+│                                                         ││Firmware:      2B2QEXM7                                                │
+│                                                         ││Size:          500.1 GB (500107862016 bytes)                           │
+│                                                         ││Sector:        512 logical / 512 physical                              │
+│                                                         ││Type:          nvme, solid state                                       │
+│                                                         ││Write gate:    has data structures: writable only with the destructive…│
+│                                                         ││  - has a gpt partition table                                          │
+│                                                         ││  - carries a ext4 signature                                           │
+│                                                         ││                                                                       │
+│                                                         ││Partitions                                                             │
+│                                                         ││gpt  6c1d0fa2-0b6e-4f3a-9a1d-b6f1c4c8a001  crc ok                      │
+│                                                         ││p1        2048   536.9 MB  EFI EFI System                              │
+│                                                         ││p2     1050624   499.6 GB  root Linux filesystem                       │
+│                                                         ││                                                                       │
+│                                                         ││Signatures                                                             │
+│                                                         ││ext4 @1080  root                                                       │
+│                                                         ││                                                                       │
+│                                                         ││SMART                                                                  │
+│                                                         ││Verdict:       pass  (nvme)                                            │
+│                                                         ││Temperature:   41 C                                                    │
+│                                                         ││Power on:      1234 h                                                  │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+│                                                         ││                                                                       │
+└─────────────────────────────────────────────────────────┘└───────────────────────────────────────────────────────────────────────┘
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit

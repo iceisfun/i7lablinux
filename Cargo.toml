@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/labproto",
+    "crates/labprobe",
+    "crates/labtui",
+    "crates/i7labd",
+    "crates/i7lab-init",
+    "crates/i7labsh",
+    "crates/i7labctl",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+# No license field on purpose: the operator has not chosen a licence yet (docs/PLAN.md section 11).
+
+# No external dependencies anywhere in this workspace (std + hand-written libc FFI only).
+[workspace.dependencies]
+labproto = { path = "crates/labproto" }
+labprobe = { path = "crates/labprobe" }
+labtui = { path = "crates/labtui" }
+i7labsh = { path = "crates/i7labsh" }
+
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "unwind"      # PID 1 and i7labd catch panics per duty
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

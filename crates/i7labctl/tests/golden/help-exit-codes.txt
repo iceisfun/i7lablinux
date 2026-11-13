@@ -1,0 +1,14 @@
+exit codes
+  0    success
+  1    generic failure (the command ran but reported failure)
+  2    usage error (bad option or arguments), nothing was sent
+  3    a test or probe found a problem: blk read/write/verify errors or mismatches, SMART verdict FAILED
+  4    no response or timeout (transport, handshake without CHALLENGE, wait timeout, ping without reply)
+  5    authentication failure (server proof invalid, key unknown to the host, no key file, role too low)
+  6    host not found in the registry / not reachable at L2
+  7    refused by a safety rule (REFUSED from the host, or a local refusal in blk write / image write)
+  8    ambiguous host selector (candidates are listed)
+  9    host busy (BUSY, NOT_READY)
+  10   unsupported command or version mismatch (UNSUPPORTED, planned commands)
+  130  interrupted (Ctrl-C)
+  255  exec, sh, shell, ssh only: i7labctl's own error (1..254 are then the remote command's exit status)

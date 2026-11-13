@@ -1,0 +1,916 @@
+i7labctl: drive i7lablinux hosts over Ethernet frames (no IP needed) or HTTP
+
+usage: i7labctl [global options] <command> [args]
+       i7labctl --ether <mac> --cmd <wire-command> [params..]
+       i7labctl help <command>
+
+quick start
+  i7labctl key init                      create your keys (found automatically from then on)
+  scripts/build-usb-drive /dev/sdX       build, write and key a stick (see docs/BUILD.md); boot a host from it
+  sudo setcap cap_net_raw+ep $(command -v i7labctl)    once, so raw Ethernet works without root
+  i7labctl discover                      hosts booted from the stick appear within seconds
+  i7labctl inv <mac>                     hardware inventory;  i7labctl shell <mac>  for a shell
+
+commands   (transports: E ether, H http, S ssh, L local; role: R read-only key, W admin key)
+  discover     E... -   listen for L2 beacons, fill the registry
+               usage: i7labctl discover [--listen S] [--active] [--watch] [--all] [--assign MAC=IP/PFX[/GW]].. [-i IF].. [--vlan IDS]
+  ls           ...L -   list known hosts
+               usage: i7labctl ls [--all] [--sort mac|ip|age|board] [--state live|stale|any]
+  ping         EH.. R   round trip, uptime, boot id
+               usage: i7labctl ping <host> [-c N] [-W S] [ECHO]
+  id           EH.. R   identity, versions, key fingerprints
+               usage: i7labctl id <host>
+  inv          EH.. R   system inventory
+               usage: i7labctl inv <host> [--section S,..] [--raw]
+  pcie         EH.. R   PCIe devices
+               usage: i7labctl pcie <host> [--tree] [--id VVVV:DDDD] [--class CC] [--verbose]
+  usb          EH.. R   USB devices
+               usage: i7labctl usb <host> [--tree] [--id VVVV:PPPP]
+  thermal      EH.. R   temperatures, fans
+               usage: i7labctl thermal <host> [--follow] [--interval S]
+  logs         EH.. R   logs
+               usage: i7labctl logs <host> [--dmesg|--init|--daemon|--http|--audit] [-n N] [-f]
+  net          EH.. R/W NICs and configuration
+               usage: i7labctl net ls|set|vlan|link|confirm <host> ...
+  blk          EH.. R/W block devices and tests (write: --destructive --serial S)
+               usage: i7labctl blk ls|smart|read|write|verify <host> ...
+  exec         EHS. W   run a program (no shell)
+               usage: i7labctl exec <host> [--timeout S] [--env K=V].. [--cwd D] [--stdin F|-] [--tty] [--detach] -- CMD..
+  sh           EHS. W   run a command line through i7labsh (alias of exec -- i7labsh -c)
+               usage: i7labctl sh <host> '<command line>'
+  shell        E.S. W   interactive i7labsh on a pty
+               usage: i7labctl shell <host> [--term T] [--escape C] [--via ether|ssh]
+  put          EH.. W   upload a file
+               usage: i7labctl put <host> <local> <remote> [--mode 0644] [--resume] [--mkdirs]
+  get          EH.. R/W download a file
+               usage: i7labctl get <host> <remote> <local> [--resume]
+  fs           EH.. R/W remote files
+               usage: i7labctl fs ls|stat|rm <host> <path> ...
+  jobs         EH.. W   detached jobs
+               usage: i7labctl jobs <host> [ls] | kill ID | out ID [-f]
+  reboot       EH.. W   reboot
+               usage: i7labctl reboot <host> [--force] [--delay S] [--uefi] [--to-os] [--wait [S]]
+  poweroff     EH.. W   power off
+               usage: i7labctl poweroff <host> [--delay S]
+  kexec        EH.. W   boot another kernel (planned v0.4)
+               usage: i7labctl kexec <host> --kernel P [--initrd P] [--cmdline S] [--wait [S]]
+  wait         E... -   wait for a host state (beacons)
+               usage: i7labctl wait <host> [--timeout S] [--state up|down|ready|reboot] [--boot-id ID]
+  identify     EH.. W   blink LEDs, banner on the console
+               usage: i7labctl identify <host> [--seconds N] [--stop]
+  msg          EH.. W   message on the host console
+               usage: i7labctl msg <host> <text..>
+  time-set     EH.. W   set the host clock
+               usage: i7labctl time-set <host> [UNIX_SECONDS|now]
+  svc          EH.. W   agent services (planned v0.2)
+               usage: i7labctl svc <host> http|beacon|ether start|stop|status [--port N] [--force]
+  tui          EH.. R/W console TUI of the host: switch tab, text screenshot
+               usage: i7labctl tui tab NAME|reset|dump <host>
+  key          ...L -   key management
+               usage: i7labctl key init|show|verify|import|export ...
+  ether        E... -   raw protocol tools
+               usage: i7labctl ether cmds|probe|hello|sniff|frame|replay ...
+  api          .H.. -   raw authenticated HTTP request
+               usage: i7labctl api <host> METHOD PATH [--data JSON|@file]
+  ssh          ..S. W   ssh to a host that runs sshd (system ssh, pinned host keys)
+               usage: i7labctl ssh <host> [--user U] [--no-start] [-- ssh-args..]
+  lab-boot     ...L -   boot a host from lab linux via JetKVM virtual media (through hwlabd)
+               usage: i7labctl lab-boot --jetkvm HOST --image PATH [--mode cdrom|disk] [--wait S]
+  image        ...L -   wrappers around scripts/ (build, write a stick, bake keys)
+               usage: i7labctl image build|write|bake|keys|test|info|verify ...
+  web          ...L R/W local web UI gateway (planned v0.5)
+               usage: i7labctl web [--listen 127.0.0.1:8081]
+  completions  ...L -   shell completion script
+               usage: i7labctl completions bash|zsh|fish
+  help         ...L -   help
+               usage: i7labctl help [CMD|--all|ether|exit-codes|boot-keys|json]
+  version      ...L -   versions
+               usage: i7labctl version
+
+global options (accepted before or after the command; after `--` nothing is parsed)
+  -H, --host SEL          host selector: MAC (any NIC), IPv4, board serial, board name, hostname, alias, or a
+                          unique MAC prefix of 4+ characters
+  --ether MAC             use the ether transport to that NIC MAC (also the host selector)
+  --cmd NAME              raw form: send wire command NAME with the remaining words as its argv (no checks);
+                          NAME is a catalogue name (help ether) or a numeric id such as 0x0001
+  --http IP[:PORT]        use the http transport (port 8080)
+  --ssh [USER@]IP         ssh transport (exec, sh, shell only)
+  --transport auto|ether|http|ssh
+  -i, --iface IF          lab-side interface (repeatable, or comma separated); default: every Ethernet NIC
+  --vlan ID[,ID|A-B]      802.1Q tag to send with / listen on (repeatable)
+  --role admin|ro         key role (default: admin if its key file exists, else ro)
+  --key FILE              explicit key file (wins over --role)
+  --timeout SEC           whole-command timeout (default 30; streaming commands: none; 0 = none)
+  --retries N             extra full handshake attempts after the session engine's own retries (default 0)
+  --json                  machine output (envelope / NDJSON), see: i7labctl help json
+  -q, --quiet   -v (trace)   -vv (frame trace)   --no-color (also NO_COLOR)   (pcie has its own --verbose)
+  --registry FILE         registry file (default ~/.cache/i7labctl/hosts.json)
+  --no-registry           ignore the registry (and its key-set check)
+  -y, --yes               do not ask before destructive actions (never skips the serial of blk write)
+  --link udp:LOCAL:REMOTE | mcast:GROUP:PORT
+                          test transport: Ethernet frames over UDP (QEMU -netdev dgram), no CAP_NET_RAW needed
+  -h, --help   -V, --version
+
+exit codes
+  0    success
+  1    generic failure (the command ran but reported failure)
+  2    usage error (bad option or arguments), nothing was sent
+  3    a test or probe found a problem: blk read/write/verify errors or mismatches, SMART verdict FAILED
+  4    no response or timeout (transport, handshake without CHALLENGE, wait timeout, ping without reply)
+  5    authentication failure (server proof invalid, key unknown to the host, no key file, role too low)
+  6    host not found in the registry / not reachable at L2
+  7    refused by a safety rule (REFUSED from the host, or a local refusal in blk write / image write)
+  8    ambiguous host selector (candidates are listed)
+  9    host busy (BUSY, NOT_READY)
+  10   unsupported command or version mismatch (UNSUPPORTED, planned commands)
+  130  interrupted (Ctrl-C)
+  255  exec, sh, shell, ssh only: i7labctl's own error (1..254 are then the remote command's exit status)
+
+more: i7labctl help <command> | help --all | help ether | help exit-codes | help boot-keys | help json
+
+----------------------------------------------------------------------
+i7labctl discover
+  listen for L2 beacons, fill the registry
+
+usage: i7labctl discover [--listen S] [--active] [--watch] [--all] [--assign MAC=IP/PFX[/GW]].. [-i IF].. [--vlan IDS]
+transports: ether   role: none
+
+Listen for L2 beacons (ethertype 0x88B5) and probe replies on every Ethernet NIC with carrier, print what was seen, and record it in the registry. Works with no IP at all and on VLANs (802.1Q tags are decoded; --vlan restricts the listen set and tags probes).
+  --listen S    listen window in seconds (default 4)
+  --active      also broadcast PROBE frames (at most 1 per second per NIC, 5 per run) so hosts answer within half a second; with --vlan 1-200 every id is probed on a tagged trunk
+  --watch       run until Ctrl-C and print events: new, lost (silent 15 s), reboot (boot id changed), ip, state
+  --all         include registry entries not seen in this run
+  --assign MAC=IP/PFX[/GW]
+                answer that MAC's address-less beacon with an address hint (I7LR2 signed with the admin key; I7LR1 to old sticks); at most one hint per MAC per 10 s
+  --daemon      keep running and rewrite the registry every second (like --watch without output)
+Beacons whose mac= differs from the Ethernet source are flagged src-mac-mismatch. A beacon tag that fails verification is shown as unverified, never trusted.
+
+examples
+  i7labctl discover
+  i7labctl discover --active --listen 3
+  i7labctl discover --watch -i eth1 --vlan 13
+  i7labctl discover --assign 02:00:00:9d:01:57=192.0.2.195/24/192.0.2.1
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl ls
+  list known hosts
+
+usage: i7labctl ls [--all] [--sort mac|ip|age|board] [--state live|stale|any]
+transports: local   role: none
+
+List the hosts in the registry (no network). live = beacon within 15 s; entries older than 10 minutes are hidden unless --all. The NOTE column flags: src-mac-mismatch, v1, unverified-tag, other-keyset (the host's key set matches none of your keys: commands to it exit 5 without sending), demo.
+  --sort mac|ip|age|board   (default age)
+  --state live|stale|any    (default live and stale)
+
+examples
+  i7labctl ls
+  i7labctl ls --state live --json
+  i7labctl ls --all --sort board
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl ping
+  round trip, uptime, boot id
+
+usage: i7labctl ping <host> [-c N] [-W S] [ECHO]
+transports: ether, http   role: read-only key is enough
+
+Round trip to the host over the chosen transport; prints RTT min/avg/max and the host's boot id and uptime. Exits 4 if no reply. With the ether transport the first call includes the handshake (one CHALLENGE round trip).
+  -c N     number of pings (default 4)
+  -W S     per-ping timeout (default 3)
+  ECHO     optional text (up to 1024 bytes) the host echoes back
+
+examples
+  i7labctl ping 02:00:00:9d:01:57
+  i7labctl ping m900 -c 10
+  i7labctl --ether 02:00:00:9d:01:57 --cmd ping
+
+wire command: ping (0x0001) [ECHO]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl id
+  identity, versions, key fingerprints
+
+usage: i7labctl id <host>
+transports: ether, http   role: read-only key is enough
+
+Identity of the host: beacon fields, protocol and image build id, command groups, key fingerprints (kid), and the role the host granted to your key.
+
+examples
+  i7labctl id 02:00:00:9d:01:57
+  i7labctl id m900 --json
+
+wire command: id (0x0002) 
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl inv
+  system inventory
+
+usage: i7labctl inv <host> [--section S,..] [--raw]
+transports: ether, http   role: read-only key is enough
+
+System inventory (CPU, memory, DMI, PCI, USB, disks with write-safety, NICs, thermal, firmware, SMART). All sections by default; --section takes the probe names: system cpu mem dmi pci usb block net thermal firmware smart kmsg. A section that failed on the host says unavailable and does not hide the others.
+  --section S,S   only these sections
+  --raw           print the server JSON as received (like --json without the envelope)
+
+examples
+  i7labctl inv 02:00:00:9d:01:57
+  i7labctl inv m900 --section dmi,cpu
+  i7labctl inv --ether 02:00:00:9d:01:57 --json | jq '.data.block.devices[] | {name,model,serial}'
+
+wire command: inv (0x0010) [--section S,S..]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl pcie
+  PCIe devices
+
+usage: i7labctl pcie <host> [--tree] [--id VVVV:DDDD] [--class CC] [--verbose]
+transports: ether, http   role: read-only key is enough
+
+PCIe devices with bus address, ids, class, driver, current/max link speed and width (DEGRADED when below max), IOMMU group. Read-only, local config space only.
+  --tree         indent by bridge topology
+  --id VVVV:DDDD / --class CC   filter
+  --verbose      add BARs and a config-space hex dump
+
+examples
+  i7labctl pcie 02:00:00:9d:01:57
+  i7labctl pcie m900 --tree
+  i7labctl pcie m900 --class 02 --verbose
+
+wire command: pcie (0x0011) [--tree] [--id VVVV:DDDD] [--class CC] [--verbose]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl usb
+  USB devices
+
+usage: i7labctl usb <host> [--tree] [--id VVVV:PPPP]
+transports: ether, http   role: read-only key is enough
+
+USB devices: port path, vid:pid, class, speed, manufacturer, product, serial, bound drivers.
+  --tree         topology
+  --id VVVV:PPPP filter
+
+examples
+  i7labctl usb 02:00:00:9d:01:57
+  i7labctl usb m900 --id 0781:5581
+
+wire command: usb (0x0012) [--tree]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl thermal
+  temperatures, fans
+
+usage: i7labctl thermal <host> [--follow] [--interval S]
+transports: ether, http   role: read-only key is enough
+
+Temperatures, fans and alarms. --follow keeps streaming until Ctrl-C; --interval S polls every S seconds from the client instead.
+
+examples
+  i7labctl thermal m900
+  i7labctl thermal m900 --follow
+  i7labctl thermal m900 --interval 5
+
+wire command: thermal (0x0019) [--follow]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl logs
+  logs
+
+usage: i7labctl logs <host> [--dmesg|--init|--daemon|--http|--audit] [-n N] [-f]
+transports: ether, http   role: read-only key is enough
+
+Host logs. Default is the kernel ring buffer (--dmesg, last 200 lines).
+  --dmesg | --init | --daemon | --http | --audit   which log
+  -n N   number of lines
+  -f     follow until Ctrl-C
+The ro key can read all of them; the audit log is the place to see who wrote to which disk.
+
+examples
+  i7labctl logs m900
+  i7labctl logs m900 --audit -n 50
+  i7labctl logs m900 --daemon -f
+
+wire command: logs (0x0070) [--dmesg|--init|--daemon|--http|--audit] [-n LINES] [-f]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl net
+  NICs and configuration
+
+usage: i7labctl net ls|set|vlan|link|confirm <host> ...
+transports: ether, http   role: read-only key for reads, admin key for changes
+
+Network interfaces and configuration.
+  net ls <host> [IFACE]                       R: NICs, addresses, VLANs, counters
+  net set <host> IFACE (--dhcp | --ip A.B.C.D/N [--gw A.B.C.D] [--dns A,B]) [--mtu N] [--confirm SEC]   W
+  net vlan add <host> IFACE VID [--ip A.B.C.D/N]   |   net vlan del <host> IFACE VID    W
+  net link <host> IFACE up|down               W
+  net confirm <host>                          W: keep a change made with --confirm
+--confirm SEC reverts the change unless confirmed: use it over http so a wrong address does not cut you off. Over ether it is not needed (ether works with any IP state).
+
+examples
+  i7labctl net ls 02:00:00:9d:01:57
+  i7labctl net set 02:00:00:9d:01:57 eth0 --ip 192.0.2.195/24 --gw 192.0.2.1
+  i7labctl net vlan add m900 eth0 13 --ip 10.13.0.5/24
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl blk
+  block devices and tests (write: --destructive --serial S)
+
+usage: i7labctl blk ls|smart|read|write|verify <host> ...
+transports: ether, http   role: read-only key for reads, admin key for changes
+
+Block devices: enumeration, SMART, read test, write test.
+  blk ls <host> [--all]       name, size, model, SERIAL, table, filesystems, mounted, boot media, and the write-safety verdict (WRITE-SAFE or UNSAFE: reasons)
+  blk smart <host> DEV [--attrs] [--selftest short|long]
+  blk read <host> DEV [--mb N] [--regions start,mid,end | --offset B --len B] [--bs 1m] [--direct]   READ-ONLY (default 256 MiB in three regions)
+  blk write <host> DEV --destructive --serial SERIAL [--mb N] [--regions ..] [--offset B --len B] [--seed N]
+  blk verify <host> DEV --seed N [--mb N] [--regions ..]   read-only compare against a seeded pattern
+SAFETY: blk write is the only command that writes to a disk. It refuses locally without --destructive and --serial (exit 7) and asks for confirmation unless --yes. The host then refuses (exit 7) a disk that is mounted, held, swap, read-only, backing the running system, under test, or the boot media (no override exists for those); a disk with a partition table or filesystem signature needs the same two flags and the real serial (see blk ls). Default is always read-only. The seed is printed (and chosen here when omitted) so blk verify can re-check after a reboot.
+Exit 3 when a test finds I/O errors or mismatches or SMART says FAILED.
+
+examples
+  i7labctl blk ls 02:00:00:9d:01:57
+  i7labctl blk smart m900 nvme0n1 --attrs
+  i7labctl blk read m900 nvme0n1 --mb 1024
+  i7labctl blk write m900 sdb --destructive --serial S3Z9NB0K123456 --mb 512
+  i7labctl blk verify m900 sdb --seed 8812
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl exec
+  run a program (no shell)
+
+usage: i7labctl exec <host> [--timeout S] [--env K=V].. [--cwd D] [--stdin F|-] [--tty] [--detach] -- CMD..
+transports: ether, http, ssh   role: admin key
+
+Run a program on the host (no shell) and stream its output. The exit status of i7labctl is the remote command's (0-254); errors of i7labctl itself (transport, auth, refused) exit 255 here. The command words must come after `--`.
+  --timeout S   remote timeout (default 300, 0 = none)    --env K=V (repeatable)    --cwd DIR
+  --stdin FILE|-   send a file or this terminal's stdin to the program
+  --tty         run on a pty with this terminal's size
+  --detach      start as a job and print the job id (see: jobs)
+Shell builtins of i7labsh (ls, cat, mount, ...) are not programs: use `sh` or `exec -- i7labsh -c '...'`.
+
+examples
+  i7labctl exec 02:00:00:9d:01:57 -- dmesg
+  i7labctl exec m900 --timeout 60 -- /run/test.elf --self-check
+  i7labctl exec m900 --stdin script.sh -- /bin/i7labsh
+
+wire command: exec (0x0020) [--timeout S] [--env K=V].. [--cwd D] [--tty CxR] [--detach] [--stdin] -- ARGV..
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl sh
+  run a command line through i7labsh (alias of exec -- i7labsh -c)
+
+usage: i7labctl sh <host> '<command line>'
+transports: ether, http, ssh   role: admin key
+
+Run a command line through the in-image shell (i7labsh): pipes, redirections, ; && ||, and its builtins (ls cat cp mv rm mkdir mount umount ip dmesg ps kill ...). Same as `exec -- i7labsh -c 'LINE'`. Exit status is the remote status.
+
+examples
+  i7labctl sh m900 'dmesg | tail -20'
+  i7labctl sh m900 'mkdir -p /mnt && mount /dev/vdc1 /mnt && ls /mnt'
+
+wire command: exec (0x0020) [--timeout S] [--env K=V].. [--cwd D] [--tty CxR] [--detach] [--stdin] -- ARGV..
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl shell
+  interactive i7labsh on a pty
+
+usage: i7labctl shell <host> [--term T] [--escape C] [--via ether|ssh]
+transports: ether, ssh   role: admin key
+
+Interactive i7labsh on a pty, over ether (no IP needed). The terminal goes raw; window size changes are forwarded. Local escapes after a newline: `~.` leave, `~r` reboot the host after you typed it again, `~?` list, `~~` a literal tilde (--escape CHAR changes the character, --escape '' disables).
+  --term T   TERM for the remote shell (default: yours)
+  --via ether|ssh   ssh needs a host that runs sshd
+
+examples
+  i7labctl shell 02:00:00:9d:01:57
+  i7labctl shell m900 --escape '^'
+
+wire command: shell (0x0021) [--cols N --rows N] [--term T]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl put
+  upload a file
+
+usage: i7labctl put <host> <local> <remote> [--mode 0644] [--resume] [--mkdirs]
+transports: ether, http   role: admin key
+
+Upload a file. Chunked, SHA-256 checked on both ends, written to <remote>.part and renamed at the end. --resume asks the host how much of the .part exists and continues there. The host's path policy applies (no writes under /etc/i7lab or /run/i7lab).
+  --mode 0644   --mkdirs   --resume
+
+examples
+  i7labctl put m900 ./test.elf /run/test.elf --mode 0755
+  i7labctl put m900 big.img /run/big.img --resume
+
+wire command: put (0x0030) PATH --size N --sha256 HEX [--mode 0644] [--offset N] [--mkdirs]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl get
+  download a file
+
+usage: i7labctl get <host> <remote> <local> [--resume]
+transports: ether, http   role: read-only key for reads, admin key for changes
+
+Download a file to <local>.part, verify the SHA-256, rename. --resume continues a partial download. With the ro key only /var/log, /run/i7lab, /proc, /sys and /etc/os-release are readable.
+  --resume
+
+examples
+  i7labctl get m900 /var/log/messages ./messages
+  i7labctl get m900 /proc/cpuinfo ./cpuinfo
+
+wire command: get (0x0031) PATH [--offset N] [--len N]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl fs
+  remote files
+
+usage: i7labctl fs ls|stat|rm <host> <path> ...
+transports: ether, http   role: read-only key for reads, admin key for changes
+
+Remote files.
+  fs ls <host> PATH [-l]       fs stat <host> PATH       fs rm <host> PATH [-r]
+The same path limits as get apply to the ro key.
+
+examples
+  i7labctl fs ls m900 /var/log -l
+  i7labctl fs stat m900 /etc/os-release
+  i7labctl fs rm m900 /run/test.elf
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl jobs
+  detached jobs
+
+usage: i7labctl jobs <host> [ls] | kill ID | out ID [-f]
+transports: ether, http   role: admin key
+
+Detached jobs started with `exec --detach` (output in /run/i7lab/jobs/<id>).
+  jobs <host> [ls]     jobs <host> kill ID     jobs <host> out ID [-f]
+
+examples
+  i7labctl jobs m900
+  i7labctl jobs m900 out 3 -f
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl reboot
+  reboot
+
+usage: i7labctl reboot <host> [--force] [--delay S] [--uefi] [--to-os] [--wait [S]]
+transports: ether, http   role: admin key
+
+Reboot the host. Asks for confirmation on a terminal unless --yes.
+  --uefi    reboot into firmware setup
+  --to-os   boot the installed OS once (UEFI BootNext)
+  --force   skip the host's orderly shutdown
+  --delay S wait S seconds first
+  --wait [S] afterwards wait (default 300 s) until the boot id in the host's beacon changes
+
+examples
+  i7labctl reboot 02:00:00:9d:01:57 --wait 120
+  i7labctl reboot m900 --to-os -y
+
+wire command: reboot (0x0040) [--force] [--delay S] [--uefi] [--to-os]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl poweroff
+  power off
+
+usage: i7labctl poweroff <host> [--delay S]
+transports: ether, http   role: admin key
+
+Power the host off (confirmation on a terminal unless --yes). --delay S waits first.
+
+examples
+  i7labctl poweroff m900 -y
+
+wire command: poweroff (0x0041) [--delay S]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl kexec  (planned v0.4: answers UNSUPPORTED, exit 10)
+  boot another kernel
+
+usage: i7labctl kexec <host> --kernel P [--initrd P] [--cmdline S] [--wait [S]]
+transports: ether, http   role: admin key
+
+Load and exec another kernel from uploaded files. Planned for v0.4: answers UNSUPPORTED.
+
+examples
+  i7labctl kexec m900 --kernel /run/k --initrd /run/i
+
+wire command: kexec (0x0042) --kernel PATH [--initrd PATH] [--cmdline STR]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl wait
+  wait for a host state (beacons)
+
+usage: i7labctl wait <host> [--timeout S] [--state up|down|ready|reboot] [--boot-id ID]
+transports: ether   role: none
+
+Wait for a host to appear, disappear, become ready or reboot, by listening for its beacons (no session needed). Exit 4 on timeout (default 300 s).
+  --state up|down|ready|reboot   (default up; down = silent for 15 s or state=shutdown; reboot = the boot id changed)
+  --boot-id ID   baseline for reboot (default: the one seen first)
+
+examples
+  i7labctl wait 02:00:00:9d:01:57 --state ready --timeout 120
+  i7labctl wait m900 --state reboot
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl identify
+  blink LEDs, banner on the console
+
+usage: i7labctl identify <host> [--seconds N] [--stop]
+transports: ether, http   role: admin key
+
+Find a machine in a rack: blink the keyboard LEDs and the NIC LED and fill the console with the host name for N seconds (default 30). --stop ends it.
+
+examples
+  i7labctl identify 02:00:00:9d:01:57 --seconds 60
+
+wire command: identify (0x0080) [--seconds N] [--stop]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl msg
+  message on the host console
+
+usage: i7labctl msg <host> <text..>
+transports: ether, http   role: admin key
+
+Show a message on the host's console TUI for the person standing there (for example during a remote boot).
+
+examples
+  i7labctl msg m900 "Remove the USB stick now, then press the power button"
+
+wire command: msg (0x0081) TEXT..
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl time-set
+  set the host clock
+
+usage: i7labctl time-set <host> [UNIX_SECONDS|now]
+transports: ether, http   role: admin key
+
+Set the host clock (audit log timestamps are wrong before time is set). `now` uses this machine's clock.
+
+examples
+  i7labctl time-set m900 now
+  i7labctl time-set m900 1794000000
+
+wire command: time.set (0x0005) UNIX_SECONDS
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl svc  (planned v0.2: answers UNSUPPORTED, exit 10)
+  agent services
+
+usage: i7labctl svc <host> http|beacon|ether start|stop|status [--port N] [--force]
+transports: ether, http   role: admin key
+
+Start/stop agent services (http, beacon, ether). Planned for v0.2: answers UNSUPPORTED.
+
+examples
+  i7labctl svc m900 http status
+
+wire command: svc (0x0060) http|beacon|ether start|stop|status [--port N] [--force]
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl tui
+  console TUI of the host: switch tab, text screenshot
+
+usage: i7labctl tui tab NAME|reset|dump <host>
+transports: ether, http   role: read-only key for reads, admin key for changes
+
+Control the TUI on the host's console.
+  tui tab <host> NAME     switch the tab (Overview, Storage, ..)
+  tui reset <host>        back to the default tab
+  tui dump <host>         text screenshot of the console frame
+
+examples
+  i7labctl tui tab m900 Storage
+  i7labctl tui dump m900
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl key
+  key management
+
+usage: i7labctl key init|show|verify|import|export ...
+transports: local   role: none
+
+Key management. Keys are `i7k1:<role>:<64 hex>` files, mode 0600. They are found without flags in this order: --key, $I7LABCTL_KEY, $I7LABCTL_KEYDIR/<role>.key, ~/.config/i7labctl/keys/<role>.key, ./keys/<role>.key.
+  key init [--dir DIR] [--force] [--demo]   create admin.key, ro.key, KEYSET-ID in ~/.config/i7labctl/keys and ./keys (or DIR only); refuses to overwrite without --force, then keeps the old set in old/<date>-<ts>/
+  key show [--role R] [--secret]            fingerprints and paths; --secret prints the key line after asking
+  key verify <host>                         authenticate to the host and print the granted role
+  key export [--role ro] [--file F] [-y]    print/copy a key line; the admin key needs --yes (it is root on every host of the set)
+  key import <file> [--force]               install a key line
+  key rotate                                not in v1: scripts/gen-keys --force, then scripts/bake-keys per stick
+--demo creates the PUBLIC demo keys: never use them on real hardware.
+
+examples
+  i7labctl key init
+  i7labctl key show
+  i7labctl key verify m900
+  i7labctl key export --role ro --file ro.key
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl ether
+  raw protocol tools
+
+usage: i7labctl ether cmds|probe|hello|sniff|frame|replay ...
+transports: ether   role: none
+
+Raw protocol tools.
+  ether cmds <mac>        the host's supported commands (the cmds wire command)
+  ether probe             broadcast PROBE and print replies (like discover --active, registry untouched)
+  ether hello <mac>       handshake only: session parameters, role and RTT
+  ether sniff [--decode] [--count N]   print lab frames (headers only; bodies are never shown)
+  ether frame <hex>       decode a captured frame offline
+  ether replay <mac> NAME [args..]   send a request and resend its captured REQ frames verbatim (test hook: the host must not run it twice)
+The raw form `i7labctl --ether MAC --cmd NAME [params..]` sends any wire command without checks so the server's gate can be exercised.
+
+examples
+  i7labctl ether cmds 02:00:00:9d:01:57
+  i7labctl ether sniff -i eth0 --decode
+  i7labctl --ether 02:00:00:9d:01:57 --cmd blk.ls --all
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl api
+  raw authenticated HTTP request
+
+usage: i7labctl api <host> METHOD PATH [--data JSON|@file]
+transports: http   role: none
+
+Authenticated raw HTTP request to the host's API (nonce HMAC, reply proof checked). PATH is relative to the host, e.g. /api/v1/cmd/ping. --data takes JSON or @file.
+
+examples
+  i7labctl api 192.0.2.195 GET /api/v1/hello
+  i7labctl api m900 POST /api/v1/cmd/ping --data '{"args":[]}'
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl ssh
+  ssh to a host that runs sshd (system ssh, pinned host keys)
+
+usage: i7labctl ssh <host> [--user U] [--no-start] [-- ssh-args..]
+transports: ssh   role: admin key
+
+Run the system ssh to a host that runs sshd (the v0.1 image does not; this is for a later sshd add-on or other machines). Host keys are pinned in ~/.cache/i7labctl/known_hosts, agent and port forwarding are off, BatchMode is on, the identity is ~/.config/i7labctl/ssh/operator_ed25519 if present. Needs an address in the registry. The exit status is ssh's.
+  --user U (default root)   --no-start (accepted; svc sshd is planned)
+
+examples
+  i7labctl ssh m900 uname -a
+  i7labctl ssh 192.0.2.195 --user root -- -p 2222 id
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl lab-boot
+  boot a host from lab linux via JetKVM virtual media (through hwlabd)
+
+usage: i7labctl lab-boot --jetkvm HOST --image PATH [--mode cdrom|disk] [--wait S]
+transports: local   role: none
+
+Boot a host from lab linux with no stick: upload the image to the host's JetKVM, mount it as virtual media, power cycle, and wait for the host's beacon. Everything goes through hwlabd (which owns the PDU and JetKVM): set HWLAB to the hwlab CLI command (default hwlabctl) and HWLAB_TOKEN_FILE for its token. This never talks JetKVM JSON-RPC itself.
+  --jetkvm HOST   hwlab host name
+  --image PATH    .iso (CD-ROM mode) or .img (disk mode)
+  --mode cdrom|disk   (default by extension)
+  --wait S        beacon wait (default 300)
+  --dry-run       print the hwlab commands and stop
+The virtual-media subcommand of hwlabctl has not been exercised on a real device yet: the first real run is part of the acceptance.
+
+examples
+  i7labctl lab-boot --jetkvm nova --image out/i7lablinux.iso --dry-run
+  HWLAB=hwlabctl i7labctl lab-boot --jetkvm nova --image out/i7lablinux.iso
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl image
+  wrappers around scripts/ (build, write a stick, bake keys)
+
+usage: i7labctl image build|write|bake|keys|test|info|verify ...
+transports: local   role: none
+
+Thin wrappers around the build scripts (run from the source tree, or set I7LABCTL_SCRIPTS):
+  image build [args]         scripts/build-image (keyless image + ISO into out/, on the build host)
+  image write DEV [args]     scripts/build-usb-drive DEV ... (compile, write, bake keys; asks first)
+  image bake [args]          scripts/bake-keys ... (put your keys into an image, ISO or written stick)
+  image keys [args]          scripts/gen-keys ...
+  image test [args]          scripts/qemu-test ...
+  image info|verify          planned
+Arguments after the verb go to the script unchanged. image write never skips the script's own safety checks.
+
+examples
+  i7labctl image build
+  i7labctl image write /dev/sdX --serial 4C530001230507123214
+  i7labctl image bake --iso out/i7lablinux.iso -o out/with-keys.iso
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl web  (planned v0.5: answers UNSUPPORTED, exit 10)
+  local web UI gateway
+
+usage: i7labctl web [--listen 127.0.0.1:8081]
+transports: local   role: read-only key for reads, admin key for changes
+
+Local web UI gateway. Planned for v0.5: answers UNSUPPORTED (the host serves its own SPA on its HTTP port today).
+
+examples
+  i7labctl web --listen 127.0.0.1:8081
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl completions
+  shell completion script
+
+usage: i7labctl completions bash|zsh|fish
+transports: local   role: none
+
+Print a completion script generated from the same command table that drives help: subcommands, options, verbs, and host selectors from the registry (MACs, hostnames, aliases).
+
+examples
+  eval "$(i7labctl completions bash)"
+  i7labctl completions zsh > ~/.zfunc/_i7labctl
+  i7labctl completions fish > ~/.config/fish/completions/i7labctl.fish
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl help
+  help
+
+usage: i7labctl help [CMD|--all|ether|exit-codes|boot-keys|json]
+transports: local   role: none
+
+help               command list
+  help <command>   synopsis, options, examples of one command
+  help --all       the whole manual
+  help ether       the wire commands (offline copy; live list: ether cmds)
+  help exit-codes | boot-keys | json
+
+examples
+  i7labctl help blk
+  i7labctl help --all | less
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+i7labctl version
+  versions
+
+usage: i7labctl version
+transports: local   role: none
+
+Print the version, the command protocol version and the catalogue release.
+
+examples
+  i7labctl version
+
+global options and exit codes: i7labctl help
+
+----------------------------------------------------------------------
+wire commands: i7labctl --ether <mac> --cmd NAME [params..]   (offline copy; live list: i7labctl ether cmds <mac>)
+  id      name         role arguments / summary
+  0x0001  ping         R    round trip, uptime, boot id
+                           [ECHO]
+  0x0002  id           R    identity, versions, key fingerprints, build id
+  0x0003  cmds         R    list supported commands
+  0x0004  stats        R    protocol counters
+  0x0005  time.set     W    set the host clock (audit timestamps before SNTP)
+                           UNIX_SECONDS
+  0x0010  inv          R    system inventory (sections = probe names)
+                           [--section S,S..]
+  0x0011  pcie         R    PCIe devices
+                           [--tree] [--id VVVV:DDDD] [--class CC] [--verbose]
+  0x0012  usb          R    USB devices
+                           [--tree]
+  0x0013  blk.ls       R    block devices with write-safety verdict
+                           [--all]
+  0x0014  blk.smart    R    SMART / NVMe health
+                           DEV [--attrs]
+  0x0015  blk.read     R    read test (never writes)
+                           DEV [--mb N] [--regions start,mid,end | --offset B --len B] [--bs 1m] [--direct]
+  0x0016  blk.write    W    destructive write+verify test behind the safety gate
+                           DEV --destructive --serial S [--mb N] [--regions ..] [--offset B --len B] [--seed N]
+  0x0017  blk.verify   R    re-read and compare a seeded pattern
+                           DEV --seed N [--mb N] [--regions ..]
+  0x0018  net.ls       R    network interfaces
+                           [IFACE]
+  0x0019  thermal      R    temperatures, fans
+                           [--follow]
+  0x0020  exec         W    run a program (no shell)
+                           [--timeout S] [--env K=V].. [--cwd D] [--tty CxR] [--detach] [--stdin] -- ARGV..
+  0x0021  shell        W    i7labsh on a pty
+                           [--cols N --rows N] [--term T]
+  0x0030  put          W    upload a file (PATH must be the first word)
+                           PATH --size N --sha256 HEX [--mode 0644] [--offset N] [--mkdirs]
+  0x0031  get          R/W  download a file (PATH must be the first word)
+                           PATH [--offset N] [--len N]
+  0x0032  fs.ls        R/W  list a directory
+                           PATH [--long]
+  0x0033  fs.stat      R/W  stat a path
+                           PATH
+  0x0034  fs.rm        W    remove a path
+                           PATH [--recursive]
+  0x0040  reboot       W    reboot (firmware setup, or installed OS once; --to-os UEFI only in v0.1)
+                           [--force] [--delay S] [--uefi] [--to-os]
+  0x0041  poweroff     W    power off
+                           [--delay S]
+  0x0042  kexec        W    load and exec another kernel (planned v0.4)
+                           --kernel PATH [--initrd PATH] [--cmdline STR]
+  0x0050  net.set      W    configure an interface
+                           IFACE (--dhcp | --ip A.B.C.D/N [--gw A.B.C.D] [--dns A,..]) [--mtu N] [--confirm S]
+  0x0051  net.vlan     W    802.1Q sub-interfaces
+                           add IFACE VID [--ip ..] | del IFACE VID
+  0x0052  net.confirm  W    keep a net.set made with --confirm
+  0x0053  net.link     W    link up/down
+                           IFACE up|down
+  0x0060  svc          W    agent services (planned v0.2)
+                           http|beacon|ether start|stop|status [--port N] [--force]
+  0x0070  logs         R    logs
+                           [--dmesg|--init|--daemon|--http|--audit] [-n LINES] [-f]
+  0x0080  identify     W    blink LEDs, banner on the console
+                           [--seconds N] [--stop]
+  0x0081  msg          W    show a message on the console TUI
+                           TEXT..
+  0x0082  tui          W    switch the console TUI tab
+                           tab NAME | reset
+  0x0083  tui.dump     R    text screenshot of the console TUI frame
+  0x0090  key.set      W    add/replace a role key (key-wrapped; planned) (planned v0.3)
+                           ROLE --wrapped HEX [--persist]
+  0x00a0  jobs         W    detached jobs
+                           [ls | kill ID | out ID]
+
+--json output
+  One JSON document on stdout (NDJSON for streams), nothing else on stdout; diagnostics go to stderr.
+  success   {"ok":true,"transport":"ether","host":{"mac":..,"ip":..,"vlan":..,"serial":..,"boot":..},
+             "cmd":"inv","rtt_ms":0.8,"data":<the server's JSON exactly>}
+  failure   {"ok":false,"cmd":"blk.write","error":{"code":"REFUSED","status":5,"exit":7,
+             "message":"..","reasons":["mounted",..]}}
+  codes     the server status names (EPERM, BAD_ARGS, UNSUPPORTED, BUSY, REFUSED, NOT_FOUND, IO, TIMEOUT, ..)
+            plus E_USAGE E_TRANSPORT E_TIMEOUT E_AUTH E_NOHOST E_AMBIGUOUS E_SAFETY E_FAILED
+  streams   exec, logs -f, blk read/write/verify, discover --watch print one event per line:
+            {"event":"stdout","data":".."}  ({"b64":..} for non-UTF-8)  {"event":"progress",..}
+            and end with {"event":"result","ok":true,"exit":0}
+  ls and discover print {"ok":true,"data":{"hosts":[..]}}. MACs are lower case with colons, times unix seconds.
+
+one-time boot menu keys (to boot the lab linux stick on a machine; the list is a convenience, check the machine)
+  Dell F12 | HP Esc then F9 | Lenovo F12 (ThinkCentre) | Intel NUC F10 | ASUS F8 (desktop) or Esc (laptop)
+  MSI F11 | Gigabyte F12 | ASRock F11 | Supermicro F11 | Acer F12 | Surface: hold Volume-Down while pressing power
+Secure Boot must be off (the image is not signed). Remote boot procedure: docs/REMOTE-BOOT.md.

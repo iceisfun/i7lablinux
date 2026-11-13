@@ -1,0 +1,20 @@
+i7labctl reboot
+  reboot
+
+usage: i7labctl reboot <host> [--force] [--delay S] [--uefi] [--to-os] [--wait [S]]
+transports: ether, http   role: admin key
+
+Reboot the host. Asks for confirmation on a terminal unless --yes.
+  --uefi    reboot into firmware setup
+  --to-os   boot the installed OS once (UEFI BootNext)
+  --force   skip the host's orderly shutdown
+  --delay S wait S seconds first
+  --wait [S] afterwards wait (default 300 s) until the boot id in the host's beacon changes
+
+examples
+  i7labctl reboot 02:00:00:9d:01:57 --wait 120
+  i7labctl reboot m900 --to-os -y
+
+wire command: reboot (0x0040) [--force] [--delay S] [--uefi] [--to-os]
+
+global options and exit codes: i7labctl help

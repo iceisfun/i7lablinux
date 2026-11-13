@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# Assemble out/initramfs.cpio.zst from the musl binaries, configs, modules and firmware. KEYLESS (keys come from keys.cpio).
+# usage: build-initramfs [FIRMWARE=auto|none|wifi] [WIFI=1] [--bin DIR] [--kernel DIR] [-o FILE]
+#   needs out/bin (scripts/build-userland) and out/kernel (scripts/build-kernel). Own Rust binaries only, no applet
+#   farm and no POSIX /bin/sh: the only shell is /bin/i7labsh.
+#   Layout and reasons: docs/PLAN.md section 7, docs/BUILD.md. Reproducible: sorted, root:root, mtime = SOURCE_DATE_EPOCH.
+# Owner: P10. Spec: docs/PLAN.md sections 5, 7, 8.
+. "$(dirname "$0")/lib/common.sh"
+
+FIRMWARE="${FIRMWARE:-auto}" WIFI="${WIFI:-0}" BIN="$I7_OUT/bin" KDIR="$I7_OUT/kernel" OUT="$I7_OUT/initramfs.cpio.zst"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    FIRMWARE=*) FIRMWARE="${1#FIRMWARE=}"; shift;;
+    WIFI=*) WIFI="${1#WIFI=}"; shift;;
+    --bin) BIN="${2:?}"; shift 2;;
+    --kernel) KDIR="${2:?}"; shift 2;;
+    -o) OUT="${2:?}"; shift 2;;
+    -h|--help) sed -n '2,7p' "$0"; exit 0;;
+    *) die "unknown option $1 (see --help)";;
+  esac
+done
+case "$FIRMWARE" in auto|none|wifi) ;; *) die "FIRMWARE must be auto, none or wifi";; esac
+[ "$FIRMWARE" = wifi ] && WIFI=1
+need cpio zstd sha256sum find sort modprobe depmod
+for b in i7lab-init i7labd i7labsh; do [ -x "$BIN/$b" ] || die "$BIN/$b missing: run scripts/build-userland"; done
+[ -s "$KDIR/bzImage" ] || die "$KDIR/bzImage missing: run scripts/build-kernel"
+REL="$(sed -n 's/^release=//p' "$KDIR/BUILD-INFO")"
+[ -d "$KDIR/modules/lib/modules/$REL" ] || die "no modules for $REL under $KDIR/modules"
+if [ "$WIFI" = 1 ] && [ "$(sed -n 's/^wifi=//p' "$KDIR/BUILD-INFO")" != 1 ]; then
+  die "WIFI=1 needs a kernel built with WIFI=1 (scripts/build-kernel WIFI=1)"
+fi
+
+S="$(mktemp -d)"; trap 'rm -rf "$S"' EXIT
+mkdir -p "$S"/{bin,sbin,dev,proc,sys,run,root,var,etc/i7lab,lib/modules,lib/firmware,usr/share/i7lab/LICENSES}
+mkdir -m 1777 "$S/tmp"
+chmod 755 "$S" "$S"/{bin,sbin,dev,proc,sys,run,var,etc,etc/i7lab,lib,lib/modules,lib/firmware,usr,usr/share,usr/share/i7lab,usr/share/i7lab/LICENSES}
+chmod 700 "$S/root"
+
+# ---- our own binaries ---------------------------------------------------------------------------------------------------
+install -m 0755 "$BIN/i7lab-init" "$S/init"
+install -m 0755 "$BIN/i7labd" "$S/sbin/i7labd"
+install -m 0755 "$BIN/i7labsh" "$S/bin/i7labsh"
+
+# ---- /etc ---------------------------------------------------------------------------------------------------------------
+install -m 0644 "$I7_ROOT/configs/image/i7lab.conf" "$S/etc/i7lab/i7lab.conf"
+printf 'root:x:0:0:root:/root:/bin/i7labsh\n' > "$S/etc/passwd"
+printf 'root:x:0:\n' > "$S/etc/group"
+printf 'i7lab\n' > "$S/etc/hostname"
+printf 'NAME="i7lablinux"\nID=i7lablinux\nVERSION_ID=0.1\nPRETTY_NAME="i7lablinux 0.1"\n' > "$S/etc/os-release"
+chmod 644 "$S"/etc/{passwd,group,hostname,os-release}
+{
+  echo "$(i7_image_id)"                       # line 1 is the build id (i7labd Config::image_build)
+  echo "kernel=$REL"; echo "git=$(i7_sha7)"; echo "epoch=$SOURCE_DATE_EPOCH"
+  echo "firmware=$FIRMWARE"; echo "wifi=$WIFI"
+} > "$S/etc/i7lab/BUILD"
+chmod 644 "$S/etc/i7lab/BUILD"
+
+# ---- kernel modules: only those in modules.list (+ dependencies), with their own depmod data and modules.order ----------
+KMODROOT="$KDIR/modules"
+[ -s "$KMODROOT/lib/modules/$REL/modules.dep" ] || depmod -b "$KMODROOT" "$REL"
+LISTS=("$I7_ROOT/configs/image/modules.list"); [ "$WIFI" = 1 ] && LISTS+=("$I7_ROOT/configs/image/modules.wifi.list")
+MD="$S/lib/modules/$REL"; mkdir -p "$MD"
+: > "$S/lib/modules/modules.order"
+declare -A SEEN=()
+for name in $(grep -hvE '^[[:space:]]*(#|$)' "${LISTS[@]}"); do
+  deps="$(modprobe -d "$KMODROOT" -S "$REL" --show-depends "$name" 2>/dev/null | sed -n 's/^insmod //p')" \
+    || die "module $name is unknown to kernel $REL (configs/image/modules.list)"
+  [ -n "$deps" ] || die "module $name is unknown to kernel $REL (configs/image/modules.list)"
+  while IFS= read -r ko; do
+    ko="${ko%% *}"                              # strip insmod parameters
+    rel="${ko#"$KMODROOT/lib/modules/$REL/"}"
+    [ -n "${SEEN[$rel]:-}" ] && continue
+    SEEN[$rel]=1
+    install -D -m 0644 "$ko" "$MD/$rel"
+    echo "$REL/$rel" >> "$S/lib/modules/modules.order"      # relative to /lib/modules, dependencies first
+  done <<<"$deps"
+done
+cp "$KMODROOT/lib/modules/$REL/modules.builtin" "$KMODROOT/lib/modules/$REL/modules.builtin.modinfo" "$MD/" 2>/dev/null || true
+sed "s|^$REL/||" "$S/lib/modules/modules.order" > "$MD/modules.order"
+depmod -b "$S" "$REL"
+info "modules: ${#SEEN[@]} files ($(du -sh "$MD" | cut -f1))"
+
+# ---- firmware (+ licence texts) -------------------------------------------------------------------------------------------
+FWDIR="${I7_FIRMWARE_DIR:-/lib/firmware}"
+if [ "$FIRMWARE" != none ]; then
+  if [ ! -d "$FWDIR" ]; then
+    warn "no $FWDIR on this host: the image has no NIC firmware (r8169/tg3/bnx2 variants need it). Set I7_FIRMWARE_DIR or FIRMWARE=none."
+  else
+    sets=(auto); [ "$FIRMWARE" = wifi ] && sets+=(wifi)
+    n=0
+    for set in "${sets[@]}"; do
+      globs="$(sed -n "s/^$set:[[:space:]]*//p" "$I7_ROOT/configs/image/firmware.list")"
+      for g in $globs; do
+        while IFS= read -r f; do
+          [ -e "$f" ] || continue
+          rel="${f#"$FWDIR/"}"
+          if [ -d "$f" ]; then continue; fi
+          install -D -m 0644 "$(readlink -f "$f")" "$S/lib/firmware/$rel"; n=$((n+1))
+        done < <(cd "$FWDIR" && find $g \( -type f -o -type l \) -printf "$FWDIR/%p\n" 2>/dev/null)
+      done
+    done
+    for lic in "$FWDIR"/WHENCE* "$FWDIR"/LICEN[CS]E.* /usr/share/doc/linux-firmware/copyright; do
+      [ -f "$lic" ] && install -m 0644 "$lic" "$S/usr/share/i7lab/LICENSES/firmware-$(basename "$lic")" || true
+    done
+    info "firmware: $n files ($(du -sh "$S/lib/firmware" | cut -f1))"
+  fi
+fi
+cat > "$S/usr/share/i7lab/LICENSES/README" <<'EOF'
+i7lablinux images carry third-party code under their own licences:
+  Linux kernel      GPL-2.0-only   https://www.kernel.org  (source: the pinned tarball named in /etc/i7lab/BUILD)
+  GRUB (on the boot partition, not in this archive)   GPL-3.0-or-later
+  firmware blobs    per WHENCE / linux-firmware licences, copies in this directory when firmware is included
+The i7lablinux userland (i7lab-init, i7labd, i7labsh, i7labctl) has no licence chosen yet (docs/PLAN.md section 11).
+EOF
+
+# directories: 0755 everywhere except /root (0700) and /tmp (1777); install -D and the umask would otherwise leave 0700
+find "$S" -mindepth 1 -type d ! -path "$S/root" ! -path "$S/tmp" -exec chmod 755 {} +
+# files: 0644, or 0755 when executable (depmod and cp under umask 077 leave 0600)
+find "$S" -type f -perm /111 -exec chmod 755 {} + ; find "$S" -type f ! -perm /111 -exec chmod 644 {} +
+
+# ---- manifest (selftest: i7labd --check compares it) -----------------------------------------------------------------------
+( cd "$S" && find . -type f ! -path ./etc/i7lab/MANIFEST | LC_ALL=C sort | xargs -d '\n' sha256sum | sed 's|  \./|  |' > "$S/etc/i7lab/MANIFEST" )
+chmod 644 "$S/etc/i7lab/MANIFEST"
+
+# ---- archive: newc, sorted, then the two device nodes (root-less), zstd -------------------------------------------------------
+mkdir -p "$(dirname "$OUT")"
+{
+  newc_dir "$S"
+  cpio_node dev/console 0020600 5 1 900001
+  cpio_node dev/null    0020666 1 3 900002
+  cpio_trailer
+} | zstd -19 -T1 -q -f -o "$OUT"
+chmod 644 "$OUT"
+info "wrote $OUT ($(du -h "$OUT" | cut -f1), $(find "$S" -type f | wc -l) files, firmware=$FIRMWARE wifi=$WIFI)"

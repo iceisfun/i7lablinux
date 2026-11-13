@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# Put the operator keys (admin.key, ro.key, KEYSET-ID) into an image, ISO or written stick as /i7lab/keys.cpio.
+# usage: bake-keys --image FILE.img [-o OUT.img]
+#        bake-keys --iso FILE.iso [-o OUT.iso]
+#        bake-keys --device /dev/sdX --serial SERIAL      (--serial NONE for a drive that reports none)
+#        common: [--keys DIR] [--demo]      (default key dir: ./keys, then ~/.config/i7labctl/keys; --demo: ./keys/demo)
+#   The image from the build host is keyless (placeholder keys.cpio, TUI says NO KEYS); this adds your keys, one small file
+#   rewrite, no rebuild. Runs on the OPERATOR machine only: refuses on build/shared hosts. Demo keys are public and need
+#   ALLOW_DEMO_KEYS=1. A device must carry the I7LABESP partition and its serial must match --serial.
+# Owner: P10. Spec: docs/PLAN.md C19 and section 5, docs/KEYS.md.
+. "$(dirname "$0")/lib/common.sh"
+
+MODE="" TARGET="" OUTFILE="" KEYDIR="" DEMO=0 SERIAL=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --image) MODE=image; TARGET="${2:?--image FILE}"; shift 2;;
+    --iso) MODE=iso; TARGET="${2:?--iso FILE}"; shift 2;;
+    --device) MODE=device; TARGET="${2:?--device /dev/sdX}"; shift 2;;
+    --serial) SERIAL="${2:?--serial S}"; shift 2;;
+    -o) OUTFILE="${2:?-o FILE}"; shift 2;;
+    --keys) KEYDIR="${2:?--keys DIR}"; shift 2;;
+    --demo) DEMO=1; shift;;
+    -h|--help) sed -n '2,9p' "$0"; exit 0;;
+    *) die "unknown option $1 (see --help)";;
+  esac
+done
+[ -n "$MODE" ] || die "say what to bake into: --image, --iso or --device (see --help)"
+
+# ---- keys: pick the directory, validate, refuse demo keys unless allowed ----------------------------------------------------
+if [ -z "$KEYDIR" ]; then
+  if [ "$DEMO" = 1 ]; then
+    KEYDIR="$I7_ROOT/keys/demo"
+    [ -s "$KEYDIR/admin.key" ] || "$I7_ROOT/scripts/gen-keys" --demo --quiet
+  elif [ -s "$I7_ROOT/keys/admin.key" ]; then KEYDIR="$I7_ROOT/keys"
+  else
+    HOME_FOR="$HOME"; [ -z "${SUDO_USER:-}" ] || HOME_FOR="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+    KEYDIR="$HOME_FOR/.config/i7labctl/keys"
+  fi
+fi
+[ -s "$KEYDIR/admin.key" ] && [ -s "$KEYDIR/ro.key" ] || die "no keys in $KEYDIR: run scripts/gen-keys first"
+AH="$(key_line_hex "$KEYDIR/admin.key" admin)" || die "$KEYDIR/admin.key is not an i7k1:admin:<64 hex> key"
+RH="$(key_line_hex "$KEYDIR/ro.key" ro)" || die "$KEYDIR/ro.key is not an i7k1:ro:<64 hex> key"
+IS_DEMO=0
+{ [ "$AH" = "$(demo_hex admin)" ] || [ "$RH" = "$(demo_hex ro)" ]; } && IS_DEMO=1
+if [ "$IS_DEMO" = 1 ]; then
+  [ "${ALLOW_DEMO_KEYS:-0}" = 1 ] || die "these are the public DEMO keys; set ALLOW_DEMO_KEYS=1 if you really mean it (QEMU tests only)"
+  warn "baking PUBLIC demo keys: the image gives full admin only inside a VM, read-only on real hardware"
+else
+  # real keys never go to a shared or build host (PLAN C19)
+  if [ "${I7_ON_BUILD_HOST:-0}" = 1 ] || [ "${I7_SHARED_HOST:-0}" = 1 ] || [ -e /etc/i7lab-shared-host ] \
+     || [[ "$(hostname)" == docker* ]] || [[ "$I7_ROOT" == /tmp/i7ll-* ]]; then
+    die "refusing to bake REAL keys on a shared/build host ($(hostname)); run this on your own machine (demo keys: --demo)"
+  fi
+fi
+T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+make_keys_cpio "$KEYDIR" "$T/keys.cpio"
+SETID="$(cat "$KEYDIR/KEYSET-ID" 2>/dev/null || echo "admin=$(key_fp "$AH") ro=$(key_fp "$RH")")"
+printf '%s\n' "$SETID" > "$T/KEYSET-ID"
+CPIO_SHA="$(sha256_file "$T/keys.cpio")"
+
+esp_offset() { # IMG : byte offset of partition 2 (the ESP)
+  local s; s="$(sgdisk -i 2 "$1" 2>/dev/null | awk '/First sector/{print $3}')"
+  [ -n "$s" ] || die "$1 has no partition 2 (is it an i7lablinux image?)"
+  echo $((s * 512))
+}
+export MTOOLS_SKIP_CHECK=1
+
+case "$MODE" in
+  image)
+    need sgdisk
+    [ -f "$TARGET" ] || die "$TARGET is not a file"
+    if [ -n "$OUTFILE" ]; then cp --reflink=auto "$TARGET" "$OUTFILE"; TARGET="$OUTFILE"; fi
+    OFF="$(esp_offset "$TARGET")"
+    if command -v mcopy >/dev/null 2>&1; then
+      mcopy -n -i "$TARGET@@$OFF" ::i7lab/IMAGE-ID "$T/imgid" >/dev/null 2>&1 || die "$TARGET: no i7lab/IMAGE-ID on the ESP, not an i7lablinux image"
+      mcopy -o -i "$TARGET@@$OFF" "$T/keys.cpio" ::i7lab/keys.cpio
+      mcopy -o -i "$TARGET@@$OFF" "$T/KEYSET-ID" ::i7lab/KEYSET-ID
+      mcopy -n -i "$TARGET@@$OFF" ::i7lab/keys.cpio "$T/back" >/dev/null
+    else
+      # no mtools here: loop-mount the ESP with sudo instead
+      need sudo mount
+      M="$(mktemp -d)"
+      sudo mount -t vfat -o loop,offset="$OFF",rw,uid="$(id -u)",umask=077 "$TARGET" "$M"
+      [ -f "$M/i7lab/IMAGE-ID" ] || { sudo umount "$M"; rmdir "$M"; die "$TARGET: no i7lab/IMAGE-ID on the ESP, not an i7lablinux image"; }
+      cp "$T/keys.cpio" "$M/i7lab/keys.cpio"; cp "$T/KEYSET-ID" "$M/i7lab/KEYSET-ID"; sync
+      cp "$M/i7lab/keys.cpio" "$T/back"
+      sudo umount "$M"; rmdir "$M"
+    fi
+    [ "$(sha256_file "$T/back")" = "$CPIO_SHA" ] || die "read-back of keys.cpio differs: image is not usable, rebuild it"
+    ;;
+  iso)
+    need xorriso
+    [ -f "$TARGET" ] || die "$TARGET is not a file"
+    if [ -n "$OUTFILE" ]; then cp --reflink=auto "$TARGET" "$OUTFILE"; TARGET="$OUTFILE"; fi
+    # The ISO is patched in place, not re-mastered: keys.cpio is a fixed-size slot (build-image makes it 8 KiB of padding
+    # after the empty archive). Find the file's extent and overwrite it, same size, so the hybrid boot structures stay intact.
+    EXT="$(xorriso -indev "$TARGET" -find /i7lab/keys.cpio -exec report_lba 2>/dev/null | sed -n 's/^File data lba: *[0-9]* , *\([0-9]*\) , *[0-9]* , *\([0-9]*\) ,.*/\1 \2/p' | head -n1)"
+    [ -n "$EXT" ] || die "$TARGET has no /i7lab/keys.cpio: not an i7lablinux ISO"
+    LBA="${EXT% *}"; SLOT="${EXT#* }"
+    CSZ="$(stat -c%s "$T/keys.cpio")"
+    [ "$CSZ" -le "$SLOT" ] || die "keys.cpio ($CSZ bytes) does not fit the ${SLOT}-byte slot in the ISO"
+    head -c "$SLOT" /dev/zero > "$T/slot"
+    dd if="$T/keys.cpio" of="$T/slot" conv=notrunc status=none
+    dd if="$T/slot" of="$TARGET" bs=2048 seek="$LBA" conv=notrunc status=none
+    dd if="$TARGET" of="$T/back" bs=2048 skip="$LBA" count=$(( (SLOT + 2047) / 2048 )) status=none
+    head -c "$SLOT" "$T/back" | cmp -s - "$T/slot" || die "read-back of the keys.cpio slot differs from what was baked"
+    ;;
+  device)
+    need lsblk blkid
+    [ -b "$TARGET" ] || die "$TARGET is not a block device"
+    [ -n "$SERIAL" ] || die "--serial is required for a device (lsblk -dno SERIAL $TARGET)"
+    SUDO=""; [ "$(id -u)" = 0 ] || SUDO="sudo"
+    DEV="$(readlink -f "$TARGET")"
+    { [ "${I7_TEST_LOOP:-0}" = 1 ] && [[ "${DEV##*/}" == loop* ]]; } || [ "$(lsblk -dno TYPE "$DEV")" = disk ] || die "$DEV is not a whole disk"
+    HAVE="$(lsblk -dno SERIAL "$DEV" | tr -d ' ')"
+    if [ "$SERIAL" = NONE ]; then [ -z "$HAVE" ] || die "--serial NONE but $DEV reports serial '$HAVE'"
+    else [ -n "$HAVE" ] && [ "$HAVE" = "$SERIAL" ] || die "serial of $DEV is '${HAVE:-<none>}', --serial said '$SERIAL'"; fi
+    case "$DEV" in *[0-9]) P="${DEV}p2";; *) P="${DEV}2";; esac
+    [ -b "$P" ] || die "$P not found (re-read the partition table: sudo partprobe $DEV)"
+    [ "$($SUDO blkid -o value -s LABEL "$P" 2>/dev/null)" = I7LABESP ] || die "$P is not an I7LABESP partition: refusing to touch it"
+    MNT="$(findmnt -no TARGET "$P" 2>/dev/null | head -n1 || true)"
+    if [ -n "$MNT" ]; then
+      info "ESP is mounted at $MNT: copying there"
+      $SUDO install -m 0644 "$T/keys.cpio" "$MNT/i7lab/keys.cpio"; $SUDO install -m 0644 "$T/KEYSET-ID" "$MNT/i7lab/KEYSET-ID"
+      $SUDO cat "$MNT/i7lab/keys.cpio" > "$T/back"
+    elif command -v mcopy >/dev/null 2>&1; then
+      $SUDO env MTOOLS_SKIP_CHECK=1 mcopy -o -i "$P" "$T/keys.cpio" ::i7lab/keys.cpio
+      $SUDO env MTOOLS_SKIP_CHECK=1 mcopy -o -i "$P" "$T/KEYSET-ID" ::i7lab/KEYSET-ID
+      $SUDO env MTOOLS_SKIP_CHECK=1 mcopy -n -i "$P" ::i7lab/keys.cpio - > "$T/back"
+    else
+      M="$(mktemp -d)"
+      $SUDO mount -t vfat -o rw,uid="$(id -u)",umask=077 "$P" "$M"
+      cp "$T/keys.cpio" "$M/i7lab/keys.cpio"; cp "$T/KEYSET-ID" "$M/i7lab/KEYSET-ID"; sync
+      cp "$M/i7lab/keys.cpio" "$T/back"
+      $SUDO umount "$M"; rmdir "$M"
+    fi
+    sync
+    [ "$(sha256_file "$T/back")" = "$CPIO_SHA" ] || die "read-back of keys.cpio from $P differs: do not use this stick"
+    ;;
+esac
+info "baked key set [$SETID] into $TARGET (keys.cpio sha256 ${CPIO_SHA:0:12}..., verified by read-back)"
+[ "$IS_DEMO" = 0 ] || info "DEMO keys: i7labd shows a red DEMO banner and downgrades them to read-only on real hardware"

@@ -1,0 +1,21 @@
+i7labctl exec
+  run a program (no shell)
+
+usage: i7labctl exec <host> [--timeout S] [--env K=V].. [--cwd D] [--stdin F|-] [--tty] [--detach] -- CMD..
+transports: ether, http, ssh   role: admin key
+
+Run a program on the host (no shell) and stream its output. The exit status of i7labctl is the remote command's (0-254); errors of i7labctl itself (transport, auth, refused) exit 255 here. The command words must come after `--`.
+  --timeout S   remote timeout (default 300, 0 = none)    --env K=V (repeatable)    --cwd DIR
+  --stdin FILE|-   send a file or this terminal's stdin to the program
+  --tty         run on a pty with this terminal's size
+  --detach      start as a job and print the job id (see: jobs)
+Shell builtins of i7labsh (ls, cat, mount, ...) are not programs: use `sh` or `exec -- i7labsh -c '...'`.
+
+examples
+  i7labctl exec 02:00:00:9d:01:57 -- dmesg
+  i7labctl exec m900 --timeout 60 -- /run/test.elf --self-check
+  i7labctl exec m900 --stdin script.sh -- /bin/i7labsh
+
+wire command: exec (0x0020) [--timeout S] [--env K=V].. [--cwd D] [--tty CxR] [--detach] [--stdin] -- ARGV..
+
+global options and exit codes: i7labctl help

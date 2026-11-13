@@ -1,0 +1,18 @@
+# Extra kernel modules loaded by i7lab-init at boot, in this order (one name per line, dependencies are pulled in
+# automatically by scripts/build-initramfs). Core drivers (the common NICs, NVMe, AHCI, USB, virtio) are built in.
+# NICs not built in (server and 10/25/40/100G gear)
+i40e
+ice
+bnx2x
+mlx4_en
+mlx5_core
+# server HBAs
+megaraid_sas
+mpt3sas
+hpsa
+# filesystems for inspecting what is on a host's disks (mounted read-only by default)
+ntfs3
+xfs
+btrfs
+exfat
+udf

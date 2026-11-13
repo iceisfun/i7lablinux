@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Build i7labctl (static musl) on the build host, install it to ~/bin, setcap cap_net_raw, check the key dir.
+# usage: install-ctl [--build-host local|HOST] [--prefix DIR] [--no-setcap] [--no-build]
+#   --no-build installs the existing out/bin/i7labctl. cap_net_raw lets i7labctl send raw Ethernet frames as a normal user
+#   (--ether, discover on a real NIC); without it use sudo or the UDP/multicast links (--link udp:/mcast:).
+# Owner: P10. Spec: docs/PLAN.md section 5 (review feasibility F33).
+. "$(dirname "$0")/lib/common.sh"
+
+PREFIX="$HOME/bin" SETCAP=1 BUILD=1 BH=auto
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --build-host) BH="${2:?}"; shift 2;;
+    --prefix) PREFIX="${2:?}"; shift 2;;
+    --no-setcap) SETCAP=0; shift;;
+    --no-build) BUILD=0; shift;;
+    -h|--help) sed -n '2,6p' "$0"; exit 0;;
+    *) die "unknown option $1 (see --help)";;
+  esac
+done
+if [ "$BUILD" = 1 ]; then "$I7_ROOT/scripts/build-userland" --ctl-only --build-host "$BH"; fi
+SRC="$I7_OUT/bin/i7labctl"
+[ -x "$SRC" ] || die "$SRC missing: build failed or --no-build without a previous build"
+mkdir -p "$PREFIX"
+install -m 0755 "$SRC" "$PREFIX/i7labctl"
+info "installed $PREFIX/i7labctl ($(du -h "$PREFIX/i7labctl" | cut -f1))"
+if [ "$SETCAP" = 1 ]; then
+  if command -v setcap >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo setcap cap_net_raw=ep "$PREFIX/i7labctl" && info "cap_net_raw set: raw L2 works without sudo" \
+      || warn "setcap failed: use 'sudo i7labctl ...' for --ether, or --link udp:/mcast:"
+  else warn "setcap or sudo missing: use 'sudo i7labctl ...' for raw Ethernet"; fi
+fi
+case ":$PATH:" in *":$PREFIX:"*) ;; *) warn "$PREFIX is not in PATH: add  export PATH=\"$PREFIX:\$PATH\"  to your shell profile";; esac
+if [ -s "$HOME/.config/i7labctl/keys/admin.key" ] || [ -s "$I7_ROOT/keys/admin.key" ]; then info "keys found: i7labctl will use them without flags"
+else warn "no keys yet: run scripts/gen-keys"; fi
+"$PREFIX/i7labctl" --version 2>/dev/null || true

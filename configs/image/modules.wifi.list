@@ -1,0 +1,16 @@
+# Added to modules.list when the image is built with WIFI=1 and FIRMWARE=wifi (needs the 60-wifi.config kernel fragment).
+cfg80211
+mac80211
+iwlwifi
+iwldvm
+iwlmvm
+rtw88_core
+rtw88_pci
+rtw89_core
+rtw89_pci
+ath10k_core
+ath10k_pci
+ath11k
+ath11k_pci
+mt76
+mt7921e

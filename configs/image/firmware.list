@@ -1,0 +1,5 @@
+# Firmware globs per FIRMWARE= set, relative to the firmware directory of the BUILD host (/lib/firmware, override with
+# I7_FIRMWARE_DIR). FIRMWARE=auto (default) = the "auto" set; FIRMWARE=wifi = auto + wifi; FIRMWARE=none = nothing.
+# Files stay zstd-compressed: the kernel has FW_LOADER_COMPRESS_ZSTD. WHENCE/copyright and licence files are always copied.
+auto: rtl_nic/* tigon/* bnx2/* bnx2x/*
+wifi: iwlwifi-* rtw88/* rtw89/* rtlwifi/* ath10k/QCA6174/* ath11k/* mediatek/mt76*

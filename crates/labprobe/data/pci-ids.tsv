@@ -1,0 +1,210 @@
+# PCI vendor / device names for the ids that matter in the lab (curated subset in the format of pci.ids,
+# written by hand from memory, not verified against a current pci.ids; NOT a full copy and not generated). Unknown ids simply show no name. Add lines freely:
+# the loader sorts at first use. Format: "[vendors]" then "vvvv<TAB>name"; "[devices]" then "vvvv:dddd<TAB>name".
+# Names follow pci.ids wording where known. Keep names ASCII.
+[vendors]
+1002	Advanced Micro Devices, Inc. [AMD/ATI]
+1022	Advanced Micro Devices, Inc. [AMD]
+1033	NEC Corporation
+1043	ASUSTeK Computer Inc.
+1055	Microchip / SMSC
+1077	QLogic Corp.
+1095	Silicon Image, Inc.
+10b5	PLX Technology, Inc.
+10ec	Realtek Semiconductor Co., Ltd.
+10de	NVIDIA Corporation
+1106	VIA Technologies, Inc.
+1137	Cisco Systems Inc
+1166	Broadcom / ServerWorks
+1234	Technical Corp.
+124b	Pericom Semiconductor
+126f	Silicon Motion, Inc.
+1274	Ensoniq
+12d8	Pericom Semiconductor
+1344	Micron Technology Inc
+144d	Samsung Electronics Co Ltd
+14c3	MEDIATEK Corp.
+14e4	Broadcom Inc. and subsidiaries
+15ad	VMware
+15b3	Mellanox Technologies
+15b7	Sandisk Corp
+168c	Qualcomm Atheros
+1912	Renesas Technology Corp.
+1987	Phison Electronics Corporation
+197b	JMicron Technology Corp.
+1a03	ASPEED Technology, Inc.
+1af4	Red Hat, Inc.
+1b21	ASMedia Technology Inc.
+1b36	Red Hat, Inc.
+1b4b	Marvell Technology Group Ltd.
+1c5c	SK hynix
+1cc1	ADATA Technology Co., Ltd.
+1d6a	Aquantia Corp.
+1e0f	KIOXIA Corporation
+1e49	Yangtze Memory Technologies Co.,Ltd
+1e95	Solid State Storage Technology Corporation
+17cb	Qualcomm
+8086	Intel Corporation
+102b	Matrox Electronics Systems Ltd.
+1000	Broadcom / LSI
+c0a9	Micron/Crucial Technology
+1028	Dell
+103c	Hewlett-Packard Company
+1414	Microsoft Corporation
+1d0f	Amazon.com, Inc.
+1ae0	Google, Inc.
+1bd4	Inspur
+19e5	Huawei Technologies Co., Ltd.
+[devices]
+1002:164e	Raphael
+1002:15e7	Barcelo
+1002:1638	Cezanne [Radeon Vega Series / Radeon Vega Mobile Series]
+1002:15d8	Picasso/Raven 2 [Radeon Vega Series / Radeon Vega Mobile Series]
+1002:15dd	Raven Ridge [Radeon Vega Series / Radeon Vega Mobile Series]
+1002:1636	Renoir/Cezanne
+1002:1640	Renoir Radeon High Definition Audio Controller
+1002:98e4	Stoney [Radeon R2/R3/R4/R5 Graphics]
+1002:67df	Ellesmere [Radeon RX 470/480/570/570X/580/580X/590]
+1002:731f	Navi 10 [Radeon RX 5600 OEM/5600 XT / 5700/5700 XT]
+1002:73bf	Navi 21 [Radeon RX 6800/6800 XT / 6900 XT]
+1002:744c	Navi 31 [Radeon RX 7900 XT/7900 XTX/7900M]
+1002:ab28	Navi 21/23 HDMI/DP Audio Controller
+1022:1450	Family 17h (Models 00h-0fh) Root Complex
+1022:1481	Starship/Matisse Root Complex
+1022:1483	Starship/Matisse GPP Bridge
+1022:43d5	400 Series Chipset USB 3.1 XHCI Controller
+1022:43c8	400 Series Chipset SATA Controller
+1022:7901	FCH SATA Controller [AHCI mode]
+1022:790b	FCH SMBus Controller
+1022:790e	FCH LPC Bridge
+1b21:0612	ASM1062 Serial ATA Controller
+1b21:1042	ASM1042 SuperSpeed USB Host Controller
+1b21:1080	ASM1083/1085 PCIe to PCI Bridge
+1b21:1142	ASM1042A USB 3.0 Host Controller
+1b21:1242	ASM1142 USB 3.1 Host Controller
+1b21:2142	ASM2142/ASM3142 USB 3.1 Host Controller
+10de:10f0	GP104 High Definition Audio Controller
+10de:1b00	GP102 [TITAN X]
+10de:1b02	GP102 [TITAN Xp]
+10de:1b06	GP102 [GeForce GTX 1080 Ti]
+10de:1b80	GP104 [GeForce GTX 1080]
+10de:1c82	GP107 [GeForce GTX 1050 Ti]
+10de:1e04	TU102 [GeForce RTX 2080 Ti]
+10de:2204	GA102 [GeForce RTX 3090]
+10de:2206	GA102 [GeForce RTX 3080]
+10de:2484	GA104 [GeForce RTX 3070]
+10de:2503	GA106 [GeForce RTX 3060]
+10de:2684	AD102 [GeForce RTX 4090]
+10de:2782	AD104 [GeForce RTX 4070 Ti]
+10ec:8125	RTL8125 2.5GbE Controller
+10ec:8126	RTL8126 5GbE Controller
+10ec:8136	RTL810xE PCI Express Fast Ethernet controller
+10ec:8139	RTL-8100/8101L/8139 PCI Fast Ethernet Adapter
+10ec:8168	RTL8111/8168/8211/8411 PCI Express Gigabit Ethernet Controller
+10ec:8169	RTL8169 PCI Gigabit Ethernet Controller
+10ec:b822	RTL8822BE 802.11a/b/g/n/ac WiFi adapter
+10ec:c822	RTL8822CE 802.11ac PCIe Wireless Network Adapter
+1106:3483	VL805/806 xHCI USB 3.0 Controller
+1234:1111	QEMU Standard VGA
+126f:2262	SM2262/SM2262EN SSD Controller
+126f:2263	SM2263EN/SM2263XT (DRAM-less) NVMe SSD Controllers
+144d:a802	NVMe SSD Controller S4LV008[Pascal]
+144d:a808	NVMe SSD Controller SM981/PM981/PM983
+144d:a80a	NVMe SSD Controller PM9A1/PM9A3/980PRO
+14c3:7961	MT7921 802.11ax PCI Express Wireless Network Adapter
+14e4:1639	NetXtreme II BCM5709 Gigabit Ethernet
+14e4:1657	NetXtreme BCM5719 Gigabit Ethernet PCIe
+14e4:165f	NetXtreme BCM5720 Gigabit Ethernet PCIe
+15ad:0405	SVGA II Adapter
+15ad:07a0	PCI Express Root Port
+15ad:07b0	VMXNET3 Ethernet Controller
+15b3:1003	MT27500 Family [ConnectX-3]
+15b3:1013	MT27700 Family [ConnectX-4]
+15b3:1015	MT27710 Family [ConnectX-4 Lx]
+15b3:1017	MT27800 Family [ConnectX-5]
+15b3:1019	MT28800 Family [ConnectX-5 Ex]
+15b3:101b	MT28908 Family [ConnectX-6]
+15b3:101d	MT2892 Family [ConnectX-6 Dx]
+168c:0030	AR93xx Wireless Network Adapter
+168c:0032	AR9485 Wireless Network Adapter
+168c:0034	AR9462 Wireless Network Adapter
+168c:0036	AR9565 Wireless Network Adapter
+168c:003e	QCA6174 802.11ac Wireless Network Adapter
+17cb:1103	WCN6855 Wi-Fi 6E 802.11ax
+1912:0014	uPD720201 USB 3.0 Host Controller
+1912:0015	uPD720202 USB 3.0 Host Controller
+1987:5012	E12 NVMe Controller
+1987:5016	E16 PCIe4 NVMe Controller
+1987:5021	E21 PCIe4 NVMe Controller
+197b:2363	JMB363 SATA/IDE Controller
+1a03:1150	AST1150 PCI-to-PCI Bridge
+1a03:2000	ASPEED Graphics Family
+1af4:1000	Virtio network device
+1af4:1001	Virtio block device
+1af4:1002	Virtio memory balloon
+1af4:1003	Virtio console
+1af4:1004	Virtio SCSI
+1af4:1005	Virtio RNG
+1af4:1009	Virtio filesystem
+1af4:1041	Virtio 1.0 network device
+1af4:1042	Virtio 1.0 block device
+1af4:1043	Virtio 1.0 console
+1af4:1044	Virtio 1.0 RNG
+1af4:1045	Virtio 1.0 memory balloon
+1af4:1048	Virtio 1.0 SCSI
+1af4:1049	Virtio 1.0 filesystem
+1af4:1050	Virtio 1.0 GPU
+1af4:1052	Virtio 1.0 input
+1b36:0001	QEMU PCI-PCI bridge
+1b36:0008	QEMU PCIe Host bridge
+1b36:000c	QEMU PCIe Root port
+1b36:000d	QEMU XHCI Host Controller
+1b36:0010	QEMU NVM Express Controller
+1b4b:9215	88SE9215 PCIe 2.0 x1 4-port SATA 6 Gb/s Controller
+1b4b:9230	88SE9230 PCIe SATA 6Gb/s Controller
+1d6a:07b1	AQC107 NBase-T/IEEE 802.3bz Ethernet Controller [AQtion]
+102b:0522	MGA G200e [Pilot] ServerEngines (SEP1)
+102b:0532	MGA G200eW WPCM450
+102b:0534	G200eR2
+8086:0953	PCIe Data Center SSD
+8086:100e	82540EM Gigabit Ethernet Controller
+8086:10d3	82574L Gigabit Network Connection
+8086:10fb	82599ES 10-Gigabit SFI/SFP+ Network Connection
+8086:1237	440FX - 82441FX PMC [Natoma]
+8086:125c	Ethernet Controller I226-V
+8086:1521	I350 Gigabit Network Connection
+8086:1533	I210 Gigabit Network Connection
+8086:1539	I211 Gigabit Network Connection
+8086:153a	Ethernet Connection I217-LM
+8086:15b8	Ethernet Connection (2) I219-V
+8086:15bb	Ethernet Connection (7) I219-LM
+8086:15f3	Ethernet Controller I225-V
+8086:1901	6th-10th Gen Core Processor PCIe Controller (x16)
+8086:1912	HD Graphics 530
+8086:2668	82801FB/FBM/FR/FW/FRW (ICH6 Family) High Definition Audio Controller
+8086:2723	Wi-Fi 6 AX200
+8086:2725	Wi-Fi 6E(802.11ax) AX210/AX1675 2x2
+8086:2918	82801IB (ICH9) LPC Interface Controller
+8086:2922	82801IR/IO/IH (ICH9R/DO/DH) 6 port SATA Controller [AHCI mode]
+8086:2930	82801I (ICH9 Family) SMBus Controller
+8086:2934	82801I (ICH9 Family) USB UHCI Controller #1
+8086:293a	82801I (ICH9 Family) USB2 EHCI Controller #1
+8086:29c0	82G33/G31/P35/P31 Express DRAM Controller
+8086:3e92	CoffeeLake-S GT2 [UHD Graphics 630]
+8086:43ed	Tiger Lake-H USB 3.2 Gen 2x1 xHCI Host Controller
+8086:5912	HD Graphics 630
+8086:7000	82371SB PIIX3 ISA [Natoma/Triton II]
+8086:7010	82371SB PIIX3 IDE [Natoma/Triton II]
+8086:7113	82371AB/EB/MB PIIX4 ACPI
+8086:8c02	8 Series/C220 Series Chipset Family 6-port SATA Controller 1 [AHCI mode]
+8086:8c31	8 Series/C220 Series Chipset Family USB xHCI
+8086:9d2f	Sunrise Point-LP USB 3.0 xHCI Controller
+8086:a0ed	Tiger Lake-LP USB 3.2 Gen 2x1 xHCI Host Controller
+8086:a102	Q170/Q150/B150/H170/H110/Z170/CM236 Chipset SATA Controller [AHCI Mode]
+8086:a12f	100 Series/C230 Series Chipset Family USB 3.0 xHCI Controller
+8086:a170	100 Series/C230 Series Chipset Family HD Audio Controller
+8086:a282	200 Series PCH SATA controller [AHCI mode]
+8086:a348	Cannon Lake PCH cAVS
+8086:a352	Cannon Lake PCH SATA AHCI Controller
+8086:a36d	Cannon Lake PCH USB 3.1 xHCI Host Controller
+8086:f1a5	SSD 600P Series

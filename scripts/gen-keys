@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Generate the operator key set: admin + ro HMAC keys, optional ssh keys. Idempotent; never overwrites without --rotate.
+# usage: gen-keys [--rotate] [--demo] [--no-install] [--ssh-pub FILE] [--quiet]   (--force = --rotate)
+#   keys land in ./keys (0700, gitignored) and are copied to ~/.config/i7labctl (the dir i7labctl searches first).
+#   --demo writes the PUBLIC demo set to ./keys/demo (never installed, only for QEMU tests: docs/KEYS.md).
+# Owner: P10. Spec: docs/PLAN.md section 5, docs/KEYS.md.
+. "$(dirname "$0")/lib/common.sh"
+
+ROTATE=0 DEMO=0 INSTALL=1 QUIET=0 SSHPUB=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --rotate|--force) ROTATE=1; shift;;
+    --demo) DEMO=1; shift;;
+    --no-install) INSTALL=0; shift;;
+    --ssh-pub) SSHPUB="${2:?--ssh-pub needs a file}"; shift 2;;
+    --quiet) QUIET=1; shift;;
+    -h|--help) sed -n '2,6p' "$0"; exit 0;;
+    *) die "unknown option $1 (see --help)";;
+  esac
+done
+say() { [ "$QUIET" = 1 ] || echo "$@"; }
+
+KEYS="$I7_ROOT/keys"
+CONF="${I7LABCTL_HOME:-$HOME/.config/i7labctl}"
+[ "$(id -u)" != 0 ] || [ -n "${SUDO_USER:-}" ] || warn "running as root without SUDO_USER: keys go to root's home"
+umask 077
+
+write_keyset() { # DIR ADMIN_HEX RO_HEX : key files + KEYSET-ID, modes 0600
+  local d=$1 a=$2 r=$3
+  mkdir -p "$d"; chmod 700 "$d"
+  printf 'i7k1:admin:%s\n' "$a" > "$d/admin.key"
+  printf 'i7k1:ro:%s\n' "$r" > "$d/ro.key"
+  printf '%s admin=%s ro=%s\n' "$(date -u +%Y-%m-%d)" "$(key_fp "$a")" "$(key_fp "$r")" > "$d/KEYSET-ID"
+  chmod 600 "$d/admin.key" "$d/ro.key" "$d/KEYSET-ID"
+}
+rand_hex() { head -c 32 /dev/urandom | od -An -v -tx1 | tr -d ' \n'; }
+
+if [ "$DEMO" = 1 ]; then
+  mkdir -p "$KEYS"; chmod 700 "$KEYS"
+  write_keyset "$KEYS/demo" "$(demo_hex admin)" "$(demo_hex ro)"
+  say "demo key set written to keys/demo (PUBLIC keys: admin only inside a VM; never use on real hardware)"
+  say "  use: ALLOW_DEMO_KEYS=1 scripts/bake-keys --demo --image out/i7lablinux.img ; I7LABCTL_KEYDIR=$KEYS/demo i7labctl ..."
+  exit 0
+fi
+
+# ---- the real set ------------------------------------------------------------------------------------------------------
+mkdir -p "$KEYS" "$CONF/keys" "$CONF/ssh"; chmod 700 "$KEYS" "$CONF" "$CONF/keys" "$CONF/ssh"
+have_set() { [ -s "$1/admin.key" ] && [ -s "$1/ro.key" ]; }
+
+if have_set "$KEYS"; then
+  key_line_hex "$KEYS/admin.key" admin >/dev/null || die "keys/admin.key is damaged (not i7k1:admin:<64 hex>); fix it or move it away and re-run"
+  key_line_hex "$KEYS/ro.key" ro >/dev/null || die "keys/ro.key is damaged (not i7k1:ro:<64 hex>); fix it or move it away and re-run"
+  if [ "$ROTATE" = 1 ]; then
+    old="$KEYS/old/$(date -u +%Y%m%dT%H%M%SZ)"
+    mkdir -p "$old"; chmod 700 "$KEYS/old" "$old"
+    mv "$KEYS/admin.key" "$KEYS/ro.key" "$old/"
+    [ -e "$KEYS/KEYSET-ID" ] && mv "$KEYS/KEYSET-ID" "$old/"
+    say "old key set moved to keys/old/$(basename "$old"); sticks written with it stop working after you re-bake"
+  fi
+fi
+
+if ! have_set "$KEYS"; then
+  write_keyset "$KEYS" "$(rand_hex)" "$(rand_hex)"
+  say "generated a new key set: $(cat "$KEYS/KEYSET-ID")"
+else
+  say "key set already present, left alone (--rotate makes a new one): $(cat "$KEYS/KEYSET-ID" 2>/dev/null || echo '?')"
+fi
+
+# ---- ssh material: host key + operator key (NOT shipped in v1: no sshd in the image, PLAN C9; kept for the add-on) -----
+if command -v ssh-keygen >/dev/null 2>&1; then
+  mkdir -p "$KEYS/ssh"; chmod 700 "$KEYS/ssh"
+  [ -e "$KEYS/ssh/ssh_host_ed25519_key" ] || ssh-keygen -q -t ed25519 -N '' -C "i7lablinux-host" -f "$KEYS/ssh/ssh_host_ed25519_key" >/dev/null
+  if [ -n "$SSHPUB" ]; then
+    grep -q 'PRIVATE KEY' "$SSHPUB" && die "$SSHPUB contains private key material; pass the .pub file"
+    install -m 0644 "$SSHPUB" "$KEYS/ssh/operator_ed25519.pub"
+  elif [ ! -e "$KEYS/ssh/operator_ed25519" ]; then
+    ssh-keygen -q -t ed25519 -N '' -C "i7lablinux-operator" -f "$KEYS/ssh/operator_ed25519" >/dev/null
+  fi
+else
+  warn "ssh-keygen not found: skipped ssh keys (they are only needed for the optional ssh add-on)"
+fi
+
+# ---- install into ~/.config/i7labctl (never overwrite a different key without --rotate) --------------------------------
+install_one() { # SRC DST
+  if [ -e "$2" ] && ! cmp -s "$1" "$2"; then
+    if [ "$ROTATE" = 1 ]; then install -m 0600 "$1" "$2"; else
+      die "$2 differs from $1 and --rotate was not given. Keep one: copy ./keys over it (cp -p keys/*.key $CONF/keys/) or move the old file away."
+    fi
+  elif [ ! -e "$2" ]; then install -m 0600 "$1" "$2"; fi
+}
+if [ "$INSTALL" = 1 ]; then
+  for f in admin.key ro.key KEYSET-ID; do install_one "$KEYS/$f" "$CONF/keys/$f"; done
+  if [ -d "$KEYS/ssh" ]; then
+    for f in operator_ed25519 operator_ed25519.pub ssh_host_ed25519_key ssh_host_ed25519_key.pub; do
+      [ -e "$KEYS/ssh/$f" ] && { [ -e "$CONF/ssh/$f" ] || install -m 0600 "$KEYS/ssh/$f" "$CONF/ssh/$f"; }
+    done
+  fi
+  say "installed into $CONF/keys (i7labctl finds them there without flags)"
+fi
+# modes are part of the contract: i7labctl refuses group/other readable key files
+chmod 600 "$KEYS"/*.key "$KEYS/KEYSET-ID" 2>/dev/null || true
+[ "$INSTALL" = 1 ] && chmod 600 "$CONF"/keys/* 2>/dev/null || true
+say "next: scripts/build-usb-drive /dev/sdX   (or scripts/bake-keys ... for an existing image)"

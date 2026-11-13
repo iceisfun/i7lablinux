@@ -1,0 +1,42 @@
+# Symbols that MUST end up =y in the resolved .config (checked by scripts/build-kernel after olddefconfig).
+# Without them a lab host is unreachable or invisible, so a silent Kconfig drop is a build failure (review F-F18).
+# NICs
+E1000
+E1000E
+IGB
+IGC
+IXGBE
+R8169
+TIGON3
+BNX2
+BNXT
+VIRTIO_NET
+VMXNET3
+USB_RTL8152
+USB_NET_AX88179_178A
+USB_NET_CDCETHER
+USB_NET_CDC_NCM
+PACKET
+VLAN_8021Q
+# boot and storage
+EFI_STUB
+BLK_DEV_INITRD
+RD_ZSTD
+DEVTMPFS
+BLK_DEV_NVME
+SATA_AHCI
+BLK_DEV_SD
+BLK_DEV_SR
+USB_STORAGE
+USB_XHCI_HCD
+USB_XHCI_PCI
+USB_EHCI_PCI
+VIRTIO_BLK
+ISO9660_FS
+VFAT_FS
+EXT4_FS
+# console
+SERIAL_8250_CONSOLE
+VT_CONSOLE
+DRM_SIMPLEDRM
+UNIX98_PTYS

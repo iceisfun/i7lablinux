@@ -1,0 +1,19 @@
+i7labctl lab-boot
+  boot a host from lab linux via JetKVM virtual media (through hwlabd)
+
+usage: i7labctl lab-boot --jetkvm HOST --image PATH [--mode cdrom|disk] [--wait S]
+transports: local   role: none
+
+Boot a host from lab linux with no stick: upload the image to the host's JetKVM, mount it as virtual media, power cycle, and wait for the host's beacon. Everything goes through hwlabd (which owns the PDU and JetKVM): set HWLAB to the hwlab CLI command (default hwlabctl) and HWLAB_TOKEN_FILE for its token. This never talks JetKVM JSON-RPC itself.
+  --jetkvm HOST   hwlab host name
+  --image PATH    .iso (CD-ROM mode) or .img (disk mode)
+  --mode cdrom|disk   (default by extension)
+  --wait S        beacon wait (default 300)
+  --dry-run       print the hwlab commands and stop
+The virtual-media subcommand of hwlabctl has not been exercised on a real device yet: the first real run is part of the acceptance.
+
+examples
+  i7labctl lab-boot --jetkvm nova --image out/i7lablinux.iso --dry-run
+  HWLAB=hwlabctl i7labctl lab-boot --jetkvm nova --image out/i7lablinux.iso
+
+global options and exit codes: i7labctl help

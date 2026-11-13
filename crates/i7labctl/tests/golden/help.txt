@@ -1,0 +1,92 @@
+i7labctl: drive i7lablinux hosts over Ethernet frames (no IP needed) or HTTP
+
+usage: i7labctl [global options] <command> [args]
+       i7labctl --ether <mac> --cmd <wire-command> [params..]
+       i7labctl help <command>
+
+quick start
+  i7labctl key init                      create your keys (found automatically from then on)
+  scripts/build-usb-drive /dev/sdX       build, write and key a stick (see docs/BUILD.md); boot a host from it
+  sudo setcap cap_net_raw+ep $(command -v i7labctl)    once, so raw Ethernet works without root
+  i7labctl discover                      hosts booted from the stick appear within seconds
+  i7labctl inv <mac>                     hardware inventory;  i7labctl shell <mac>  for a shell
+
+commands   (transports: E ether, H http, S ssh, L local; role: R read-only key, W admin key)
+  discover     E... -   listen for L2 beacons, fill the registry
+  ls           ...L -   list known hosts
+  ping         EH.. R   round trip, uptime, boot id
+  id           EH.. R   identity, versions, key fingerprints
+  inv          EH.. R   system inventory
+  pcie         EH.. R   PCIe devices
+  usb          EH.. R   USB devices
+  thermal      EH.. R   temperatures, fans
+  logs         EH.. R   logs
+  net          EH.. R/W NICs and configuration
+  blk          EH.. R/W block devices and tests (write: --destructive --serial S)
+  exec         EHS. W   run a program (no shell)
+  sh           EHS. W   run a command line through i7labsh (alias of exec -- i7labsh -c)
+  shell        E.S. W   interactive i7labsh on a pty
+  put          EH.. W   upload a file
+  get          EH.. R/W download a file
+  fs           EH.. R/W remote files
+  jobs         EH.. W   detached jobs
+  reboot       EH.. W   reboot
+  poweroff     EH.. W   power off
+  kexec        EH.. W   boot another kernel (planned v0.4)
+  wait         E... -   wait for a host state (beacons)
+  identify     EH.. W   blink LEDs, banner on the console
+  msg          EH.. W   message on the host console
+  time-set     EH.. W   set the host clock
+  svc          EH.. W   agent services (planned v0.2)
+  tui          EH.. R/W console TUI of the host: switch tab, text screenshot
+  key          ...L -   key management
+  ether        E... -   raw protocol tools
+  api          .H.. -   raw authenticated HTTP request
+  ssh          ..S. W   ssh to a host that runs sshd (system ssh, pinned host keys)
+  lab-boot     ...L -   boot a host from lab linux via JetKVM virtual media (through hwlabd)
+  image        ...L -   wrappers around scripts/ (build, write a stick, bake keys)
+  web          ...L R/W local web UI gateway (planned v0.5)
+  completions  ...L -   shell completion script
+  help         ...L -   help
+  version      ...L -   versions
+
+global options (accepted before or after the command; after `--` nothing is parsed)
+  -H, --host SEL          host selector: MAC (any NIC), IPv4, board serial, board name, hostname, alias, or a
+                          unique MAC prefix of 4+ characters
+  --ether MAC             use the ether transport to that NIC MAC (also the host selector)
+  --cmd NAME              raw form: send wire command NAME with the remaining words as its argv (no checks);
+                          NAME is a catalogue name (help ether) or a numeric id such as 0x0001
+  --http IP[:PORT]        use the http transport (port 8080)
+  --ssh [USER@]IP         ssh transport (exec, sh, shell only)
+  --transport auto|ether|http|ssh
+  -i, --iface IF          lab-side interface (repeatable, or comma separated); default: every Ethernet NIC
+  --vlan ID[,ID|A-B]      802.1Q tag to send with / listen on (repeatable)
+  --role admin|ro         key role (default: admin if its key file exists, else ro)
+  --key FILE              explicit key file (wins over --role)
+  --timeout SEC           whole-command timeout (default 30; streaming commands: none; 0 = none)
+  --retries N             extra full handshake attempts after the session engine's own retries (default 0)
+  --json                  machine output (envelope / NDJSON), see: i7labctl help json
+  -q, --quiet   -v (trace)   -vv (frame trace)   --no-color (also NO_COLOR)   (pcie has its own --verbose)
+  --registry FILE         registry file (default ~/.cache/i7labctl/hosts.json)
+  --no-registry           ignore the registry (and its key-set check)
+  -y, --yes               do not ask before destructive actions (never skips the serial of blk write)
+  --link udp:LOCAL:REMOTE | mcast:GROUP:PORT
+                          test transport: Ethernet frames over UDP (QEMU -netdev dgram), no CAP_NET_RAW needed
+  -h, --help   -V, --version
+
+exit codes
+  0    success
+  1    generic failure (the command ran but reported failure)
+  2    usage error (bad option or arguments), nothing was sent
+  3    a test or probe found a problem: blk read/write/verify errors or mismatches, SMART verdict FAILED
+  4    no response or timeout (transport, handshake without CHALLENGE, wait timeout, ping without reply)
+  5    authentication failure (server proof invalid, key unknown to the host, no key file, role too low)
+  6    host not found in the registry / not reachable at L2
+  7    refused by a safety rule (REFUSED from the host, or a local refusal in blk write / image write)
+  8    ambiguous host selector (candidates are listed)
+  9    host busy (BUSY, NOT_READY)
+  10   unsupported command or version mismatch (UNSUPPORTED, planned commands)
+  130  interrupted (Ctrl-C)
+  255  exec, sh, shell, ssh only: i7labctl's own error (1..254 are then the remote command's exit status)
+
+more: i7labctl help <command> | help --all | help ether | help exit-codes | help boot-keys | help json

@@ -1,0 +1,12 @@
+--json output
+  One JSON document on stdout (NDJSON for streams), nothing else on stdout; diagnostics go to stderr.
+  success   {"ok":true,"transport":"ether","host":{"mac":..,"ip":..,"vlan":..,"serial":..,"boot":..},
+             "cmd":"inv","rtt_ms":0.8,"data":<the server's JSON exactly>}
+  failure   {"ok":false,"cmd":"blk.write","error":{"code":"REFUSED","status":5,"exit":7,
+             "message":"..","reasons":["mounted",..]}}
+  codes     the server status names (EPERM, BAD_ARGS, UNSUPPORTED, BUSY, REFUSED, NOT_FOUND, IO, TIMEOUT, ..)
+            plus E_USAGE E_TRANSPORT E_TIMEOUT E_AUTH E_NOHOST E_AMBIGUOUS E_SAFETY E_FAILED
+  streams   exec, logs -f, blk read/write/verify, discover --watch print one event per line:
+            {"event":"stdout","data":".."}  ({"b64":..} for non-UTF-8)  {"event":"progress",..}
+            and end with {"event":"result","ok":true,"exit":0}
+  ls and discover print {"ok":true,"data":{"hosts":[..]}}. MACs are lower case with colons, times unix seconds.

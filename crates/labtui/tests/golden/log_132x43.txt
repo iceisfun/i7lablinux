@@ -1,0 +1,43 @@
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.141  mac 3c:ec:ef:12:34:56                             attention: 7
+ Overview   PCIe   Storage   Network   USB   Sensors  [Log]  Actions
+┌─ Kernel log ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│9/9 lines  level<=debug  FOLLOW                                                                                                   │
+│[    0.000000] Linux version 6.12.8-i7lab (build@buildvm) (gcc 13.2)                                                              │
+│[    0.410000] ACPI: Core revision 20240827                                                                                       │
+│[    1.200000] nvme nvme0: pci function 0000:01:00.0                                                                              │
+│[    2.020000] pcieport 0000:00:01.0: AER: Correctable error message received from 0000:03:00.0  [pcie-aer]                       │
+│[    2.350000] e1000e 0000:02:00.0 eno1: NIC Link is Up 1000 Mbps Full Duplex                                                     │
+│[    3.100000] ata2.00: failed command: READ FPDMA QUEUED  [ata-error]                                                            │
+│[    3.400000] usb 1-3: new SuperSpeed USB device number 3 using xhci_hcd                                                         │
+│[    4.000000] debug: lab init ready                                                                                              │
+│[    5.500000] i7labd: listening on ether 88b5 and http :8080                                                                     │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit

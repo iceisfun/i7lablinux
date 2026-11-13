@@ -1,0 +1,10 @@
+[package]
+name = "labprobe"
+description = "i7lablinux hardware probes, block enumeration, write gate and block test engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+labproto.workspace = true

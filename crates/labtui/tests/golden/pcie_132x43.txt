@@ -1,0 +1,43 @@
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.141  mac 3c:ec:ef:12:34:56                             attention: 7
+ Overview  [PCIe]  Storage   Network   USB   Sensors   Log   Actions
+┌─ PCIe devices ──────────────────────────────────────┐┌─ Device ──────────────────────────────────────────────────────────────────┐
+│Device               Name                  Link      ││Address:       0000:00:00.0                                                │
+│▾ 00:00.0            Intel 8th Gen Core H… -         ││Name:          Intel 8th Gen Core Host Bridge                              │
+│  ▾ 00:01.0          Intel 6th-10th Gen C… x4 Gen3   ││IDs:           8086:3ec2  subsys 0000:0000  rev 00                         │
+│      03:00.0        Realtek RTL8126 5GbE  x1 Gen1   ││Class:         Host bridge (0x060000)                                      │
+│    00:02.0          Intel UHD Graphics 6… -         ││Driver:        -                                                           │
+│    00:14.0          Intel Cannon Lake PC… x4 Gen3   ││Link:          -                                                           │
+│    00:17.0          Intel Cannon Lake PC… x4 Gen3   ││IOMMU group:   1                                                           │
+│  ▾ 00:1c.0          Intel Cannon Lake PC… x4 Gen3   ││NUMA node:     -                                                           │
+│      01:00.0        Samsung NVMe SSD Con… x4 Gen3   ││AER:           not reported                                                │
+│  ▾ 00:1d.0          Intel Cannon Lake PC… x4 Gen3   ││                                                                           │
+│      02:00.0        Intel Ethernet Conne… x4 Gen3   ││BARs                                                                       │
+│                                                     ││(none listed; verbose probe adds BARs)                                     │
+│                                                     ││                                                                           │
+│                                                     ││Capabilities                                                               │
+│                                                     ││(none listed)                                                              │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+│                                                     ││                                                                           │
+└─────────────────────────────────────────────────────┘└───────────────────────────────────────────────────────────────────────────┘
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit

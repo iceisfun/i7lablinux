@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Run a command in a copy of this tree on the build host ($I7LL_HOST, else ~/.config/i7lablinux/build-host).
+# usage: scripts/remote [-l LABEL] [-H HOST] [--clean] -- CMD...      e.g. scripts/remote -l p1 -- cargo test -p labproto
+# Owner: P10 (initial version by D1).
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+HOST="${I7LL_HOST:-$(head -n1 "$HOME/.config/i7lablinux/build-host" 2>/dev/null || true)}"
+LABEL="${I7LL_LABEL:-$(whoami)}"
+CLEAN=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -l) LABEL="$2"; shift 2;;
+    -H) HOST="$2"; shift 2;;
+    --clean) CLEAN=1; shift;;
+    --) shift; break;;
+    -h|--help) sed -n '2,3p' "$0"; exit 0;;
+    *) break;;
+  esac
+done
+[ -n "$HOST" ] || { echo "remote: no build host: set I7LL_HOST or write it to ~/.config/i7lablinux/build-host" >&2; exit 2; }
+# the label becomes a remote path that --clean removes: plain characters only, never "." or ".."
+[[ "$LABEL" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]] && [[ "$LABEL" != *..* ]] || { echo "remote: bad label '$LABEL' (letters, digits, . _ -)" >&2; exit 2; }
+DIR="/tmp/i7ll-$LABEL"
+if [ "$CLEAN" = 1 ]; then ssh "$HOST" "rm -rf '$DIR'"; exit 0; fi
+[ $# -gt 0 ] || { echo "remote: no command" >&2; exit 2; }
+rsync -a --delete --exclude target --exclude keys --exclude out "$ROOT/" "$HOST:$DIR/"
+printf -v Q '%q ' "$@"
+exec ssh "$HOST" "source ~/.cargo/env 2>/dev/null || true; cd '$DIR' && $Q"

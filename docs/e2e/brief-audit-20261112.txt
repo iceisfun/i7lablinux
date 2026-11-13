@@ -1,0 +1,196 @@
+# V2 brief audit: supplementary QEMU runs on the build host, 2026-11-12 (image built from this tree, scripts/build-image --full;
+# BIOS q35 guest, demo keys, --link mcast test segment; scripts in the audit agent's scratchpad, logic as scripts/e2e start_guest)
+
+######## run probe ########
+== help-local rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl help
+i7labctl: drive i7lablinux hosts over Ethernet frames (no IP needed) or HTTP
+
+usage: i7labctl [global options] <command> [args]
+       i7labctl --ether <mac> --cmd <wire-command> [params..]
+       i7labctl help <command>
+
+quick start
+  i7labctl key init                      create your keys (found automatically from then on)
+== help-all-count rc=0 :: bash -c /tmp/i7ll-v2audit/out/bin/i7labctl help --all | wc -l
+916
+== inv-sections rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 inv 52:54:00:17:00:01 --section cpu,mem,dmi
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+== cpu ==
+  model      AMD EPYC 7601 32-Core Processor
+  topology   1 socket(s), 2 cores, 2 threads
+  microcode  0x800126f
+  freq_mhz   2200
+  flags      lm nx pdpe1gb sse4_2 avx avx2 aes pclmulqdq sha_ni bmi2 adx rdrand rdseed fma f16c svm npt hypervisor smep smap x2apic tsc_adjust ibpb ssbd
+== blk-smart rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 blk smart 52:54:00:17:00:01 nvme0n1
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+device          nvme0n1
+kind            unsupported
+verdict         unknown
+temperature     -
+power_on_hours  -
+reasons         
+== put rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 put 52:54:00:17:00:01 /tmp/i7ll-v2audit/out/brief/up.txt /run/up.txt --yes
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+uploaded 18 bytes to /run/up.txt (0.0 MiB/s), sha256 4d752b189ec11afc7122fc91044b474f0f31f4e1ac6cef5788f4aba51e6ddeae
+== get rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 get 52:54:00:17:00:01 /run/up.txt /tmp/i7ll-v2audit/out/brief/down.txt
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+downloaded 18 bytes to /tmp/i7ll-v2audit/out/brief/down.txt (0.0 MiB/s), sha256 4d752b189ec11afc7122fc91044b474f0f31f4e1ac6cef5788f4aba51e6ddeae
+== get-same rc=0 :: cmp /tmp/i7ll-v2audit/out/brief/up.txt /tmp/i7ll-v2audit/out/brief/down.txt
+
+== fs-ls rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 fs ls 52:54:00:17:00:01 /run
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+v          1
+path       /run
+truncated  false
+
+entries
+name    type
+i7lab   dir
+== fs-stat rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 fs stat 52:54:00:17:00:01 /run/up.txt
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+v      1
+path   /run/up.txt
+type   file
+size   18
+mode   420
+uid    0
+gid    0
+== exec-detach rc=254 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 exec 52:54:00:17:00:01 --detach -- /bin/i7labsh -c sleep 1; echo detached
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+== jobs-ls rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 jobs 52:54:00:17:00:01 ls
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+v  1
+
+jobs
+id  cmd                                     state    exit  started_unix
+1   /bin/i7labsh -c sleep 1; echo detached  running  -     1794538430
+== sh-builtins rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 sh 52:54:00:17:00:01 ls /bin; ps; free; df; uname -a; lspci; lsblk; ip addr
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+i7labsh
+  PID  PPID S COMMAND
+    1     0 S /init
+    2     0 S [kthreadd]
+    3     2 S [pool_workqueue_release]
+    4     2 I [kworker/R-rcu_gp]
+    5     2 I [kworker/R-sync_wq]
+== time-set rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 time-set 52:54:00:17:00:01 now
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+clock set
+== msg rc=10 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 msg 52:54:00:17:00:01 audit message
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+i7labctl: msg: UNSUPPORTED: not implemented in this build
+== identify rc=10 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 identify 52:54:00:17:00:01 --seconds 2
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+i7labctl: identify: UNSUPPORTED: not implemented in this build
+== tui-dump rc=10 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 tui dump 52:54:00:17:00:01
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+i7labctl: tui.dump: UNSUPPORTED: not implemented in this build
+== tui-tab rc=10 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 tui tab 52:54:00:17:00:01 Storage
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+i7labctl: tui: UNSUPPORTED: not implemented in this build
+== svc-planned rc=10 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 svc 52:54:00:17:00:01 http status
+i7labctl: svc: unsupported: 'svc' is planned for v0.2 and is not served by this build (UNSUPPORTED)
+== kexec-planned rc=10 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 kexec 52:54:00:17:00:01 --kernel /x
+i7labctl: kexec: unsupported: 'kexec' is planned for v0.4 and is not served by this build (UNSUPPORTED)
+== vlan13-ping rc=4 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 --vlan 13 --timeout 8 ping 52:54:00:17:00:01
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+no reply (seq=1): transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+no reply (seq=2): transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+no reply (seq=3): transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+no reply (seq=4): transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+i7labctl: ping: transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+== http-put-get rc=5 :: bash -c '/tmp/i7ll-v2audit/out/bin/i7labctl' --http 127.0.0.1:34317 put '/tmp/i7ll-v2audit/out/brief/up.txt' /run/up2.txt --yes && '/tmp/i7ll-v2audit/out/bin/i7labctl' --http 127.0.0.1:34317 get /run/up2.txt '/tmp/i7ll-v2audit/out/brief/down2.txt' && cmp '/tmp/i7ll-v2audit/out/brief/up.txt' '/tmp/i7ll-v2audit/out/brief/down2.txt' && echo same
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+i7labctl: put: authentication: reply from 127.0.0.1:34317 is not authentic (no valid X-Lab-Proof): wrong key, or a spoofed address; nothing was trusted
+== wait-ready rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 wait 52:54:00:17:00:01 --state ready --timeout 10
+52:54:00:17:00:01 is ready after 0 s (boot fc80546a27ae266a)
+== poweroff rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:34316 poweroff 52:54:00:17:00:01
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+power off requested
+== guest-after-poweroff: exited
+== busybox-on-serial count: 0
+
+######## run probe2 ########
+== help-local rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl help
+i7labctl: drive i7lablinux hosts over Ethernet frames (no IP needed) or HTTP
+
+usage: i7labctl [global options] <command> [args]
+       i7labctl --ether <mac> --cmd <wire-command> [params..]
+       i7labctl help <command>
+
+quick start
+  i7labctl key init                      create your keys (found automatically from then on)
+== exec-detach-v rc=254 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:47913 -v exec 52:54:00:17:00:01 --detach -- /bin/i7labsh -c sleep 1
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+i7labctl: ether: session open: role admin host 
+== exec-detach-json rc=254 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:47913 --json exec 52:54:00:17:00:01 --detach -- /bin/i7labsh -c sleep 1
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+{"event":"result","ok":false,"exit":254}
+== vlan13-ping-vv rc=4 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:47913 -vv --vlan 13 --timeout 6 --retries 0 ping 52:54:00:17:00:01 -c 1
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+i7labctl: ether: tx 122B type=1 req=0 len=48
+i7labctl: ether: tx 122B type=1 req=0 len=48
+i7labctl: ether: tx 122B type=1 req=0 len=48
+i7labctl: ether: tx 122B type=1 req=0 len=48
+i7labctl: ether: tx 122B type=1 req=0 len=48
+no reply (seq=1): transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+i7labctl: ping: transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+== http-get-only rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --http 127.0.0.1:47914 get /etc/hostname /tmp/i7ll-v2audit/out/brief/hn.txt
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+downloaded 6 bytes to /tmp/i7ll-v2audit/out/brief/hn.txt (0.0 MiB/s), sha256 5ff108ca572ab3b7294ea11f89fe3692c158c43f5918f4453823336158dc6beb
+== http-put-only rc=2 :: /tmp/i7ll-v2audit/out/bin/i7labctl -v --http 127.0.0.1:47914 put /tmp/i7ll-v2audit/out/brief/up.txt /run/up2.txt --yes
+i7labctl: put: usage: cannot read /tmp/i7ll-v2audit/out/brief/up.txt: No such file or directory (os error 2)
+== http-fs-ls rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --http 127.0.0.1:47914 fs ls /run
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+v          1
+path       /run
+truncated  false
+
+entries
+name   type
+i7lab  dir
+== fs-ls-run rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:47913 fs ls 52:54:00:17:00:01 /run
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+v          1
+path       /run
+truncated  false
+
+entries
+name   type
+i7lab  dir
+
+######## run probe3 ########
+== help-local rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl help
+i7labctl: drive i7lablinux hosts over Ethernet frames (no IP needed) or HTTP
+
+usage: i7labctl [global options] <command> [args]
+       i7labctl --ether <mac> --cmd <wire-command> [params..]
+       i7labctl help <command>
+
+quick start
+  i7labctl key init                      create your keys (found automatically from then on)
+== http-put-small rc=5 :: /tmp/i7ll-v2audit/out/bin/i7labctl -vv --http 127.0.0.1:38924 put /tmp/i7ll-v2audit/out/brief/up.txt /run/up2.txt --yes
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+i7labctl: put: authentication: reply from 127.0.0.1:38924 is not authentic (no valid X-Lab-Proof): wrong key, or a spoofed address; nothing was trusted
+== http-put-big rc=5 :: /tmp/i7ll-v2audit/out/bin/i7labctl --http 127.0.0.1:38924 put /tmp/i7ll-v2audit/out/brief/big.bin /run/big.bin --yes
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+i7labctl: put: authentication: reply from 127.0.0.1:38924 is not authentic (no valid X-Lab-Proof): wrong key, or a spoofed address; nothing was trusted
+== http-stat rc=6 :: /tmp/i7ll-v2audit/out/bin/i7labctl --http 127.0.0.1:38924 fs stat /run/up2.txt
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+i7labctl: fs.stat: NOT_FOUND: No such file or directory (os error 2)
+== ether-put-big rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:38923 put 52:54:00:17:00:01 /tmp/i7ll-v2audit/out/brief/big.bin /run/big2.bin --yes
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+uploaded 300000 bytes to /run/big2.bin (2.6 MiB/s), sha256 98569d743981313c686d614d14123415230b88a225dd0905140c4a7e1ed5b0d5
+== ether-get-big rc=0 :: /tmp/i7ll-v2audit/out/bin/i7labctl --link mcast:239.255.71.1:38923 get 52:54:00:17:00:01 /run/big2.bin /tmp/i7ll-v2audit/out/brief/big2.back
+i7labctl: warning: using the public DEMO key; anyone can drive hosts that trust it (VMs only)
+downloaded 300000 bytes to /tmp/i7ll-v2audit/out/brief/big2.back (2.0 MiB/s), sha256 98569d743981313c686d614d14123415230b88a225dd0905140c4a7e1ed5b0d5
+== ether-big-same rc=0 :: cmp /tmp/i7ll-v2audit/out/brief/big.bin /tmp/i7ll-v2audit/out/brief/big2.back
+
+== http-get-raw rc=0 :: curl -s -m 5 -D - -o /dev/null http://127.0.0.1:38924/api/v1/hello
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 198
+Connection: keep-alive
+X-Content-Type-Options: nosniff
+Cache-Control: no-cache
+

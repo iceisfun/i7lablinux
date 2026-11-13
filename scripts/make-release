@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Build a KEYLESS release bundle: image, ISO, kernel build info, i7labctl, docs, checksums. Never contains keys.
+# usage: make-release [--no-build] [--out DIR]
+#   out/release/i7lablinux-<kver>-<sha7>/ and a .tar.zst next to it. Refuses to run with a key-baked image or when the
+#   build fails the no-busybox check. Reproducible inputs: pinned kernel, SOURCE_DATE_EPOCH, sorted archives (docs/BUILD.md).
+# Owner: P10. Spec: docs/PLAN.md sections 7, 11.
+. "$(dirname "$0")/lib/common.sh"
+
+BUILD=1 OUTD="$I7_OUT/release"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --no-build) BUILD=0; shift;;
+    --out) OUTD="${2:?}"; shift 2;;
+    -h|--help) sed -n '2,6p' "$0"; exit 0;;
+    *) die "unknown option $1 (see --help)";;
+  esac
+done
+need sha256sum tar zstd
+"$I7_ROOT/scripts/check-no-busybox" --repo
+if [ "$BUILD" = 1 ]; then
+  "$I7_ROOT/scripts/build-image" --full
+  "$I7_ROOT/scripts/build-userland" --ctl-only >/dev/null 2>&1 || warn "i7labctl did not build: the bundle has no operator binary"
+fi
+ID="$(i7_image_id)"
+IMG="$I7_OUT/image/i7lablinux-$ID.img" ISOF="$I7_OUT/image/i7lablinux-$ID.iso"
+[ -f "$IMG" ] || die "$IMG missing (run without --no-build)"
+# the shipped image must carry the placeholder, not keys: the ESP keys.cpio is the 124-byte empty archive
+if command -v mcopy >/dev/null 2>&1 && command -v sgdisk >/dev/null 2>&1; then
+  OFF=$(( $(sgdisk -i 2 "$IMG" | awk '/First sector/{print $3}') * 512 ))
+  SZ="$(MTOOLS_SKIP_CHECK=1 mcopy -n -i "$IMG@@$OFF" ::i7lab/keys.cpio - | wc -c)"
+  [ "$SZ" -le 124 ] || die "$IMG carries keys.cpio of $SZ bytes: a release image must be keyless (rebuild with build-image)"
+  "$I7_ROOT/scripts/check-no-busybox" --image "$IMG"
+else warn "mtools/sgdisk missing: could not check the image for baked keys"; fi
+D="$OUTD/i7lablinux-$ID"; rm -rf "$D"; mkdir -p "$D"
+cp "$IMG" "$D/"; [ ! -f "$ISOF" ] || cp "$ISOF" "$D/"
+cp "$I7_OUT/kernel/BUILD-INFO" "$D/KERNEL-BUILD-INFO" 2>/dev/null || true
+cp "$I7_OUT/kernel/config" "$D/kernel-config-$I7_KVER" 2>/dev/null || true
+[ ! -x "$I7_OUT/bin/i7labctl" ] || cp "$I7_OUT/bin/i7labctl" "$D/"
+cp "$I7_ROOT"/docs/{QUICKSTART,KEYS,REMOTE-BOOT,BUILD}.md "$D/" 2>/dev/null || true
+cat > "$D/README.txt" <<EOT
+i7lablinux $ID (keyless). This bundle contains NO keys: generate yours with scripts/gen-keys from the source tree,
+then add them with scripts/bake-keys --image / --iso / --device, or use scripts/build-usb-drive.
+Third-party: Linux GPL-2.0-only, GRUB GPL-3.0-or-later, firmware per linux-firmware (see the image's /usr/share/i7lab/LICENSES).
+EOT
+( cd "$D" && sha256sum -- * > SHA256SUMS )
+( cd "$OUTD" && tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner -cf - "i7lablinux-$ID" | zstd -19 -T1 -q -f -o "i7lablinux-$ID.tar.zst" )
+info "release: $D and $OUTD/i7lablinux-$ID.tar.zst"

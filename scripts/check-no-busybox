@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Fail if busybox appears in the image, the initramfs file list, the build scripts or configs (not docs).
+# usage: check-no-busybox [--repo] [--image FILE] [--initramfs FILE] [--dir DIR]   (no option = --repo)
+#   --repo       scripts/ configs/ crates/ except lines that state the ban ("no busybox", "busybox ban", ...)
+#   --initramfs  newc cpio (.zst/.gz/.xz/plain): no path or script text names busybox, no BusyBox banner in any file
+#   --image      the ESP of a GPT image (extracts bzImage/initramfs with mtools), then as --initramfs
+#   --dir DIR    a toolbox directory about to be pushed with `i7labctl put` (PLAN section 9)
+# Owner: P10. The operator rule: busybox is not used anywhere, not even as a build-time dependency.
+. "$(dirname "$0")/lib/common.sh"
+
+MODE=repo ARG=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --repo) MODE=repo; shift;;
+    --image) MODE=image; ARG="${2:?--image FILE}"; shift 2;;
+    --initramfs) MODE=initramfs; ARG="${2:?--initramfs FILE}"; shift 2;;
+    --dir) MODE=dir; ARG="${2:?--dir DIR}"; shift 2;;
+    -h|--help) sed -n '2,8p' "$0"; exit 0;;
+    *) die "unknown option $1 (see --help)";;
+  esac
+done
+FAIL=0
+bad() { echo "check-no-busybox: FOUND: $*" >&2; FAIL=1; }
+# a line that only states the ban is fine
+BAN='(no|NO|No|not|never|without|ban|banned|forbid|forbidden|refuse|refuses|operator rule|rule)[^a-zA-Z]'
+
+scan_tree() { # DIR : file names, script text, banners
+  local d=$1 f
+  while IFS= read -r f; do bad "path $f"; done < <(find "$d" -iname '*busybox*' 2>/dev/null)
+  while IFS= read -r f; do
+    if [ -L "$f" ] && readlink "$f" | grep -qi busybox; then bad "symlink $f -> $(readlink "$f")"; fi
+  done < <(find "$d" -type l 2>/dev/null)
+  # banner printed by every busybox build, and applet-style shebangs
+  if grep -rIl -e '#!/bin/busybox' -e '#!.*busybox' "$d" 2>/dev/null | head -3 | grep -q .; then bad "busybox shebang in $d"; fi
+  if grep -rl -a -e 'BusyBox v[0-9]' -e 'multi-call binary' "$d" 2>/dev/null | head -3 | grep -q .; then bad "BusyBox banner in a binary under $d"; fi
+}
+
+case "$MODE" in
+  repo)
+    cd "$I7_ROOT"
+    while IFS= read -r hit; do
+      text="${hit#*:*:}"
+      echo "$text" | grep -Eqi "$BAN.*busybox|busybox.*(ban|forbid|not used|is not|refus)" && continue
+      # lines that CHECK for busybox (grep in a log, an assert in a test) are the guard itself, not a use
+      echo "$text" | grep -Eqi "grep[^|]*busybox|contains\(.busybox.\)|assert" && continue
+      bad "$hit"
+    done < <(grep -rniI busybox scripts configs crates Cargo.toml README.md 2>/dev/null | grep -v '^scripts/check-no-busybox:' || true)
+    for f in scripts configs; do
+      while IFS= read -r p; do bad "path $p"; done < <(find "$f" -iname '*busybox*' | grep -v 'check-no-busybox')
+    done
+    ;;
+  dir)
+    [ -d "$ARG" ] || die "$ARG is not a directory"
+    scan_tree "$ARG";;
+  initramfs|image)
+    need cpio zstd
+    T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+    INIT="$ARG"
+    if [ "$MODE" = image ]; then
+      need mcopy sgdisk
+      # ESP = partition 2 (PLAN section 7)
+      START="$(sgdisk -i 2 "$ARG" | awk '/First sector/{print $3}')"; [ -n "$START" ] || die "no partition 2 in $ARG"
+      MTOOLS_SKIP_CHECK=1 mcopy -i "$ARG@@$((START*512))" ::i7lab/initramfs.cpio.zst "$T/initramfs.zst" || die "cannot read i7lab/initramfs.cpio.zst from the ESP"
+      INIT="$T/initramfs.zst"
+    fi
+    mkdir "$T/root"
+    case "$(head -c4 "$INIT" | od -An -tx1 | tr -d ' \n')" in
+      28b52ffd) zstd -dc "$INIT";;
+      1f8b*) gzip -dc "$INIT";;
+      fd377a58) xz -dc "$INIT";;
+      *) cat "$INIT";;
+    esac | ( cd "$T/root" && cpio -id --quiet --no-absolute-filenames 2>/dev/null ) || true
+    [ -n "$(ls -A "$T/root")" ] || die "unpacked nothing from $INIT (not a newc archive?)"
+    scan_tree "$T/root";;
+esac
+if [ "$FAIL" = 0 ]; then echo "check-no-busybox: ok ($MODE)"; exit 0; fi
+exit 1

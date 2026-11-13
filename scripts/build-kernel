@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# Fetch the pinned kernel (configs/kernel/VERSION), verify sha256, merge fragments, build bzImage + modules into out/kernel.
+# usage: build-kernel [--jobs N] [--build-host auto|local|HOST] [--lenient] [--keep-tree] [--no-cache] [WIFI=1]
+#   auto (default): build here when this machine has >= 64 cores or I7_ON_BUILD_HOST=1, else on the build host via scripts/remote
+#   and fetch out/kernel back. --lenient turns "requested symbol was dropped" from an error into a warning (config iteration).
+#   out/kernel: bzImage, config (resolved .config), modules/lib/modules/<rel>/, BUILD-INFO, SHA256SUMS
+# Owner: P10. Spec: docs/PLAN.md section 7, docs/BUILD.md.
+. "$(dirname "$0")/lib/common.sh"
+
+JOBS="" HOSTSEL=auto LENIENT=0 KEEP=0 NOCACHE=0 WIFI="${WIFI:-0}"
+ORIG_ARGS=("$@")
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --jobs) JOBS="${2:?--jobs N}"; shift 2;;
+    --build-host) HOSTSEL="${2:?--build-host auto|local|HOST}"; shift 2;;
+    --lenient) LENIENT=1; shift;;
+    --keep-tree) KEEP=1; shift;;
+    --no-cache) NOCACHE=1; shift;;
+    WIFI=*) WIFI="${1#WIFI=}"; shift;;
+    -h|--help) sed -n '2,7p' "$0"; exit 0;;
+    *) die "unknown option $1 (see --help)";;
+  esac
+done
+
+# ---- not the build host: do it there, fetch the result -----------------------------------------------------------------
+case "$HOSTSEL" in
+  local) I7_BUILD_HOST=local;;
+  auto) ;;
+  *) I7_HOST="$HOSTSEL";;
+esac
+if ! on_build_host; then
+  need ssh rsync
+  LABEL="${I7_REMOTE_LABEL:-build}"
+  info "this machine has $(nproc) cores: building on $I7_HOST (label $LABEL)"
+  remote_run "$LABEL" scripts/build-kernel "${ORIG_ARGS[@]}" --build-host local
+  remote_fetch "$LABEL" kernel
+  info "kernel fetched to $I7_OUT/kernel"
+  exit 0
+fi
+
+# ---- on the build host -------------------------------------------------------------------------------------------------
+need make gcc bc flex bison perl cpio xz tar curl sha256sum awk
+for h in libelf.h openssl/evp.h; do
+  [ -e "/usr/include/$h" ] || [ -e "/usr/include/x86_64-linux-gnu/$h" ] || die "missing header $h (apt-get install libelf-dev libssl-dev)"
+done
+VF="$I7_ROOT/configs/kernel/VERSION"
+KVER="$(conf_get "$VF" version)"; URL="$(conf_get "$VF" url)"; SHA="$(conf_get "$VF" sha256)"; SIGN_URL="$(conf_get "$VF" sign_url)"
+[ -n "$KVER" ] && [ -n "$URL" ] && [[ "$SHA" =~ ^[0-9a-f]{64}$ ]] || die "configs/kernel/VERSION needs version=, url=, sha256= (64 hex)"
+JOBS="${JOBS:-$(nproc)}"
+FRAGDIR="$I7_ROOT/configs/kernel/fragments"
+FRAGS=()
+for f in "$FRAGDIR"/*.config; do
+  case "$(basename "$f")" in 60-wifi.config) [ "$WIFI" = 1 ] || continue;; esac
+  FRAGS+=("$f")
+done
+
+# cache key: everything that changes the kernel
+KEY="$( { cat "$VF" "${FRAGS[@]}" "$I7_ROOT/configs/kernel/must-be-y.list"; gcc --version | head -n1; echo "wifi=$WIFI"; } | sha256sum | cut -c1-16)"
+CDIR="$I7_CACHE/kernel-$KEY"
+mkdir -p "$I7_CACHE/dl" "$I7_OUT"
+if [ -s "$CDIR/bzImage" ] && [ "$NOCACHE" = 0 ]; then
+  info "cache hit $CDIR"
+else
+  # ---- fetch + verify
+  TAR="$I7_CACHE/dl/$(basename "$URL")"
+  if [ ! -s "$TAR" ] || [ "$(sha256_file "$TAR")" != "$SHA" ]; then
+    info "downloading $URL"
+    curl -fsSL --retry 3 -o "$TAR.part" "$URL" || die "download failed: $URL"
+    mv "$TAR.part" "$TAR"
+  fi
+  [ "$(sha256_file "$TAR")" = "$SHA" ] || { rm -f "$TAR"; die "sha256 of $(basename "$TAR") does not match configs/kernel/VERSION (file removed)"; }
+  info "sha256 ok ($SHA)"
+  if command -v gpg >/dev/null 2>&1 && [ -n "$SIGN_URL" ]; then
+    SIG="$I7_CACHE/dl/$(basename "$SIGN_URL")"
+    [ -s "$SIG" ] || curl -fsSL -o "$SIG" "$SIGN_URL" 2>/dev/null || true
+    if [ -s "$SIG" ] && xz -dc "$TAR" | gpg --verify "$SIG" - >/dev/null 2>&1; then info "kernel.org signature ok"
+    else warn "kernel.org signature NOT verified (gpg keys not imported or no .sign file); the pinned sha256 is the control"; fi
+  fi
+
+  # ---- configure
+  W="$I7_CACHE/work-$KEY"; rm -rf "$W"; mkdir -p "$W"
+  info "unpacking into $W"
+  tar -xf "$TAR" -C "$W"
+  SRC="$W/linux-$KVER"; [ -d "$SRC" ] || die "tarball did not contain linux-$KVER"
+  export KBUILD_BUILD_USER=i7lab KBUILD_BUILD_HOST=i7lab
+  KBUILD_BUILD_TIMESTAMP="$(date -u -d "@$SOURCE_DATE_EPOCH")"; export KBUILD_BUILD_TIMESTAMP
+  cd "$SRC"
+  make -s defconfig
+  ./scripts/kconfig/merge_config.sh -m .config "${FRAGS[@]}" >/dev/null 2>"$W/merge.log" || { cat "$W/merge.log" >&2; die "merge_config.sh failed"; }
+  make -s olddefconfig
+
+  # ---- every requested symbol must have survived (a silent Kconfig drop of a NIC driver makes a host unreachable)
+  BAD=0
+  chk_fail() { if [ "$LENIENT" = 1 ]; then warn "$1"; else echo "$I7_ME: ERROR: $1" >&2; BAD=$((BAD+1)); fi; }
+  for f in "${FRAGS[@]}"; do
+    while IFS= read -r line; do
+      case "$line" in
+        CONFIG_*=*)
+          sym="${line%%=*}"; want="${line#*=}"
+          got="$(sed -n "s/^$sym=//p" .config)"
+          if [ "$got" != "$want" ]; then
+            if [ "$want" = m ] && [ "$got" = y ]; then continue; fi    # more built-in than asked: harmless
+            chk_fail "$(basename "$f"): $sym=$want requested, resolved '${got:-unset}' (missing dependency or renamed symbol)"
+          fi;;
+        "# CONFIG_"*" is not set")
+          sym="${line#\# }"; sym="${sym%% *}"
+          got="$(sed -n "s/^$sym=//p" .config)"
+          [ -z "$got" ] || warn "$(basename "$f"): $sym wanted off but Kconfig forces $got";;
+      esac
+    done < "$f"
+  done
+  while IFS= read -r s; do
+    case "$s" in ''|'#'*) continue;; esac
+    grep -qx "CONFIG_$s=y" .config || chk_fail "must-be-y.list: CONFIG_$s is not =y in the resolved config"
+  done < "$I7_ROOT/configs/kernel/must-be-y.list"
+  [ "$BAD" = 0 ] || die "$BAD config problem(s) above; fix configs/kernel/fragments (or --lenient to iterate)"
+  info "config check ok"
+
+  # ---- build
+  info "make -j$JOBS bzImage modules"
+  make -s -j"$JOBS" bzImage modules 2>&1 | tail -n 40
+  [ -s arch/x86/boot/bzImage ] || die "no bzImage produced"
+  STAGE="$W/modstage"; rm -rf "$STAGE"
+  make -s modules_install INSTALL_MOD_PATH="$STAGE" INSTALL_MOD_STRIP=1 DEPMOD=true >/dev/null
+  REL="$(cat include/config/kernel.release)"
+  rm -f "$STAGE/lib/modules/$REL/build" "$STAGE/lib/modules/$REL/source"
+  # depmod over the staged tree (the real one: DEPMOD=true above skipped the host's, which may be a different kmod)
+  depmod -b "$STAGE" "$REL" 2>/dev/null || warn "depmod failed here; build-initramfs runs it again"
+
+  OUTK="$CDIR.tmp"; rm -rf "$OUTK"; mkdir -p "$OUTK/modules"
+  cp arch/x86/boot/bzImage "$OUTK/bzImage"
+  cp .config "$OUTK/config"
+  cp -a "$STAGE/lib" "$OUTK/modules/"
+  {
+    echo "kernel=$KVER"; echo "release=$REL"; echo "sha256_tarball=$SHA"; echo "epoch=$SOURCE_DATE_EPOCH"
+    echo "wifi=$WIFI"; echo "cache_key=$KEY"; echo "gcc=$(gcc --version | head -n1)"; echo "binutils=$(ld --version | head -n1)"
+    echo "built_on=$(hostname) $(nproc) cores"
+  } > "$OUTK/BUILD-INFO"
+  ( cd "$OUTK" && sha256sum bzImage config > SHA256SUMS )
+  rm -rf "$CDIR"; mv "$OUTK" "$CDIR"
+  cd "$I7_ROOT"
+  [ "$KEEP" = 1 ] || rm -rf "$W"
+fi
+
+# ---- publish into out/kernel -------------------------------------------------------------------------------------------
+rm -rf "$I7_OUT/kernel"; mkdir -p "$I7_OUT/kernel"
+cp -a "$CDIR/." "$I7_OUT/kernel/"
+# the resolved config is reviewed in git (PLAN section 7): keep a copy next to the fragments when asked
+[ -z "${I7_KEEP_RESOLVED:-}" ] || cp "$CDIR/config" "$I7_ROOT/configs/kernel/config-$KVER.resolved"
+info "done: $(du -h "$I7_OUT/kernel/bzImage" | cut -f1) bzImage, $(find "$I7_OUT/kernel/modules" -name '*.ko' | wc -l) modules, $(grep ^release= "$I7_OUT/kernel/BUILD-INFO")"

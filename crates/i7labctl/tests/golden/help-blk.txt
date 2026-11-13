@@ -1,0 +1,23 @@
+i7labctl blk
+  block devices and tests (write: --destructive --serial S)
+
+usage: i7labctl blk ls|smart|read|write|verify <host> ...
+transports: ether, http   role: read-only key for reads, admin key for changes
+
+Block devices: enumeration, SMART, read test, write test.
+  blk ls <host> [--all]       name, size, model, SERIAL, table, filesystems, mounted, boot media, and the write-safety verdict (WRITE-SAFE or UNSAFE: reasons)
+  blk smart <host> DEV [--attrs] [--selftest short|long]
+  blk read <host> DEV [--mb N] [--regions start,mid,end | --offset B --len B] [--bs 1m] [--direct]   READ-ONLY (default 256 MiB in three regions)
+  blk write <host> DEV --destructive --serial SERIAL [--mb N] [--regions ..] [--offset B --len B] [--seed N]
+  blk verify <host> DEV --seed N [--mb N] [--regions ..]   read-only compare against a seeded pattern
+SAFETY: blk write is the only command that writes to a disk. It refuses locally without --destructive and --serial (exit 7) and asks for confirmation unless --yes. The host then refuses (exit 7) a disk that is mounted, held, swap, read-only, backing the running system, under test, or the boot media (no override exists for those); a disk with a partition table or filesystem signature needs the same two flags and the real serial (see blk ls). Default is always read-only. The seed is printed (and chosen here when omitted) so blk verify can re-check after a reboot.
+Exit 3 when a test finds I/O errors or mismatches or SMART says FAILED.
+
+examples
+  i7labctl blk ls 02:00:00:9d:01:57
+  i7labctl blk smart m900 nvme0n1 --attrs
+  i7labctl blk read m900 nvme0n1 --mb 1024
+  i7labctl blk write m900 sdb --destructive --serial S3Z9NB0K123456 --mb 512
+  i7labctl blk verify m900 sdb --seed 8812
+
+global options and exit codes: i7labctl help

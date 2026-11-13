@@ -1,0 +1,16 @@
+i7labctl put
+  upload a file
+
+usage: i7labctl put <host> <local> <remote> [--mode 0644] [--resume] [--mkdirs]
+transports: ether, http   role: admin key
+
+Upload a file. Chunked, SHA-256 checked on both ends, written to <remote>.part and renamed at the end. --resume asks the host how much of the .part exists and continues there. The host's path policy applies (no writes under /etc/i7lab or /run/i7lab).
+  --mode 0644   --mkdirs   --resume
+
+examples
+  i7labctl put m900 ./test.elf /run/test.elf --mode 0755
+  i7labctl put m900 big.img /run/big.img --resume
+
+wire command: put (0x0030) PATH --size N --sha256 HEX [--mode 0644] [--offset N] [--mkdirs]
+
+global options and exit codes: i7labctl help

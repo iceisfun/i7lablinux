@@ -1,0 +1,1020 @@
+
+######## bios ########
+
+### guest bios entry 0: pid 110697, L2 segment mcast 239.255.71.1:35141, HTTP forward 127.0.0.1:35142
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 discover --listen 5
+MAC                IP  BOARD  SERIAL  HOST   BUILD          STATE  VLAN  PROTO  KERNEL         AGE  NOTE
+52:54:00:17:00:01                     i7lab  6.18.63-nogit  ready  -     1      6.18.63-i7lab   1s  demo
+[rc=0]
+PASS bios beacon received by discover (raw L2, no IP)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 --ether 52:54:00:17:00:01 --cmd ping
+{"echo":"","uptime_ms":8780,"boot_id":"efe8caa951c5808b","load":[0,0,0],"time":1794537877}
+[rc=0]
+PASS bios ether ping
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 id 52:54:00:17:00:01
+v             1
+version       0.1.0
+build         6.18.63-nogit
+hostname      i7lab
+boot_id       efe8caa951c5808b
+role          admin
+kid           a:ea2bea9f,r:9049fe8c
+state         ready
+proto         1
+caps          1023
+product       Standard PC (Q35 + ICH9, 2009)
+vendor        QEMU
+serial        
+board         
+board_serial  
+kernel        6.18.63-i7lab
+uptime_s      8
+demo_keys     true
+vm            true
+banner        DEMO KEYS (VM): public keys, full control. Test use only.
+http_port     8080
+ether         true
+role granted to your key: admin
+[rc=0]
+PASS bios ether id (admin role)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 --ether 52:54:00:17:00:01 --cmd inv
+{"v":1,"system":{"v":1,"hostname":"i7lab","kernel":"6.18.63-i7lab","cmdline":"BOOT_IMAGE=/i7lab/bzImage console=tty0 console=ttyS0,115200n8 panic=10 loglevel=4 i7lab.boot=PARTUUID=efceb655-311b-43b1-ac85-646f27b3892d","uptime_s":8.92,"load":[0,0,0],"boot_id":"2b150e40-cf04-4e45-b604-1487eeae5c02","boot_mode":"bios","image_build":"6.18.63-nogit"},"cpu":{"v":1,"vendor":"AuthenticAMD","model_name":"A
+[rc=0]
+PASS bios ether inv
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 pcie 52:54:00:17:00:01
+14 PCI devices, IOMMU off
+BDF           ID         CLASS                      NAME                                              DRIVER      LINK                    IOMMU
+0000:00:00.0  0000:0000  Host bridge                Intel Corporation 82G33/G31/P35/P31 Express DRA~  -           -                       -
+0000:00:01.0  0000:0000  VGA compatible controller  Technical Corp. QEMU Standard VGA                 -           -                       -
+0000:00:02.0  0000:0000  USB controller             Red Hat, Inc. QEMU XHCI Host Controller           xhci_hcd    -                       -
+0000:00:03.0  0000:0000  PCI bridge                 Red Hat, Inc. QEMU PCIe Root port                 pcieport    x1 gen1 (max x32 gen4)  -
+0000:00:04.0  0000:0000  PCI bridge                 Red Hat, Inc. QEMU PCIe Root port                 pcieport    x1 gen1 (max x32 gen4)  -
+0000:00:05.0  0000:0000  PCI bridge                 Red Hat, Inc. QEMU PCIe Root port                 pcieport    x1 gen1 (max x32 gen4)  -
+0000:00:06.0  0000:0000  Ethernet controller        Red Hat, Inc. Virtio network device               virtio-pci  -                       -
+0000:00:07.0  0000:0000  Ethernet controller        Intel Corporation 82574L Gigabit Network Connec~  e1000e      -                       -
+0000:00:1f.0  0000:0000  ISA bridge                 Intel Corporation 82801IB (ICH9) LPC Interface ~  lpc_ich     -                       -
+0000:00:1f.2  0000:0000  SATA controller            Intel Corporation 82801IR/IO/IH (ICH9R/DO/DH) 6~  ahci        -                       -
+0000:00:1f.3  0000:0000  SMBus                      Intel Corporation 82801I (ICH9 Family) SMBus Co~  i801_smbus  -                       -
+0000:01:00.0  0000:0000  NVMe controller            Red Hat, Inc. QEMU NVM Express Controller         nvme        x1 gen1 (max x1 gen1)   -
+0000:02:00.0  0000:0000  SCSI storage controller    Red Hat, Inc. Virtio 1.0 block device             virtio-pci  x1 gen1 (max x1 gen1)   -
+0000:03:00.0  0000:0000  SCSI storage controller    Red Hat, Inc. Virtio 1.0 block device             virtio-pci  x1 gen1 (max x1 gen1)   -
+[rc=0]
+PASS bios pcie lists the q35 devices
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 usb 52:54:00:17:00:01
+3 USB devices
+PATH  ID         CLASS  MBPS  MANUFACTURER                  PRODUCT               SERIAL        DRIVER
+usb1  0000:0000  9       480  Linux 6.18.63-i7lab xhci-hcd  xHCI Host Controller  0000:00:02.0  
+usb2  0000:0000  9      5000  Linux 6.18.63-i7lab xhci-hcd  xHCI Host Controller  0000:00:02.0  
+2-1   0000:0000  0      5000  QEMU                          QEMU USB HARDDRIVE    I7STICK0001   
+[rc=0]
+PASS bios usb
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 thermal 52:54:00:17:00:01
+no temperature sensors
+[rc=0]
+PASS bios thermal answers
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk ls 52:54:00:17:00:01
+NAME           SIZE  KIND    MODEL           SERIAL       TABLE  FS    MOUNTED  BOOT  WRITE SAFETY
+nvme0n1   256.0 MiB  nvme    QEMU NVMe Ctrl  I7NVME0001   -      -     -        -     WRITE-SAFE
+sda        67.0 MiB  usb     QEMU HARDDISK   I7STICK0001  gpt    vfat  -        BOOT  UNSAFE: boot_media | partition_table(gpt) | sig~
+sr0      1024.0 MiB  sata    QEMU DVD-ROM    -            -      -     -        -     UNSAFE: read_only | no_serial
+vda       256.0 MiB  virtio  -               I7VIRT0001   -      -     -        -     WRITE-SAFE
+vdb       128.0 MiB  virtio  -               I7PART0001   gpt    ext4  -        -     UNSAFE: partition_table(gpt) | signature(ext4)
+[rc=0]
+PASS bios blk ls shows the disks
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk ls 52:54:00:17:00:01
+NAME           SIZE  KIND    MODEL           SERIAL       TABLE  FS    MOUNTED  BOOT  WRITE SAFETY
+nvme0n1   256.0 MiB  nvme    QEMU NVMe Ctrl  I7NVME0001   -      -     -        -     WRITE-SAFE
+sda        67.0 MiB  usb     QEMU HARDDISK   I7STICK0001  gpt    vfat  -        BOOT  UNSAFE: boot_media | partition_table(gpt) | sig~
+sr0      1024.0 MiB  sata    QEMU DVD-ROM    -            -      -     -        -     UNSAFE: read_only | no_serial
+vda       256.0 MiB  virtio  -               I7VIRT0001   -      -     -        -     WRITE-SAFE
+vdb       128.0 MiB  virtio  -               I7PART0001   gpt    ext4  -        -     UNSAFE: partition_table(gpt) | signature(ext4)
+[rc=0]
+PASS bios blk ls marks the boot media
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk read 52:54:00:17:00:01 nvme0n1 --mb 16
+device  nvme0n1
+serial  I7NVME0001
+mode    read
+seed    -
+REGION     OFFSET      LEN  MiB/s  LAT MAX us  IO ERR  MISMATCH
+start         0 B  5.0 MiB  412.5        3978       0         0
+mid     125.0 MiB  5.0 MiB  321.6        4264       0         0
+end     251.0 MiB  5.0 MiB  345.0        5788       0         0
+RESULT: ok
+[rc=0]
+PASS bios blk read nvme0n1
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 nvme0n1 --destructive --serial I7NVME0001 --mb 16 --seed 77 --yes
+device  nvme0n1
+serial  I7NVME0001
+mode    write
+seed    77
+REGION     OFFSET      LEN  MiB/s  LAT MAX us  IO ERR  MISMATCH
+start         0 B  5.0 MiB  197.4        2867       0         0
+mid     125.0 MiB  5.0 MiB  108.2        3891       0         0
+end     251.0 MiB  5.0 MiB  209.2        3266       0         0
+RESULT: ok
+seed 77 (re-check later with: i7labctl blk verify <host> nvme0n1 --seed 77)
+[rc=0]
+PASS bios blk write nvme0n1 (seed 77)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk verify 52:54:00:17:00:01 nvme0n1 --seed 77 --mb 16
+device  nvme0n1
+serial  I7NVME0001
+mode    verify
+seed    77
+REGION     OFFSET      LEN  MiB/s  LAT MAX us  IO ERR  MISMATCH
+start         0 B  5.0 MiB  145.3        4743       0         0
+mid     125.0 MiB  5.0 MiB  177.2        6845       0         0
+end     251.0 MiB  5.0 MiB  212.0        4246       0         0
+RESULT: ok
+[rc=0]
+PASS bios blk verify nvme0n1 (seed 77)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 vdb --yes
+i7labctl: blk: refused: blk write destroys data and needs BOTH --destructive and --serial SERIAL (the real serial of vdb from `i7labctl blk ls`). Nothing was sent.
+[rc=7]
+PASS bios gate: no flags -> refused locally (exit 7)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 vdb --destructive --serial WRONG --yes
+i7labctl: blk.write: REFUSED: write refused by the safety gate
+[rc=7]
+PASS bios gate: wrong serial on a partitioned disk -> refused (exit 7)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 sda --destructive --serial I7STICK0001 --yes
+i7labctl: blk.write: REFUSED: write refused by the safety gate
+[rc=7]
+PASS bios gate: boot media with the right serial -> refused (exit 7)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 sh 52:54:00:17:00:01 mount /dev/vdb1 /mnt
+[rc=0]
+PASS bios mount the ext4 partition of vdb
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 vdb --destructive --serial I7PART0001 --mb 4 --yes
+i7labctl: blk.write: REFUSED: write refused by the safety gate
+[rc=7]
+PASS bios gate: mounted disk with the right serial -> refused (exit 7)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 sh 52:54:00:17:00:01 umount /mnt
+[rc=0]
+PASS bios umount
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 vdb --destructive --serial I7PART0001 --mb 4 --yes
+device  vdb
+serial  I7PART0001
+mode    write
+seed    3167515037225791
+REGION     OFFSET      LEN  MiB/s  LAT MAX us  IO ERR  MISMATCH
+start         0 B  1.0 MiB  187.1        2837       0         0
+mid      63.0 MiB  1.0 MiB  159.2        3256       0         0
+end     127.0 MiB  1.0 MiB  165.4        3037       0         0
+RESULT: ok
+seed 3167515037225791 (re-check later with: i7labctl blk verify <host> vdb --seed 3167515037225791)
+[rc=0]
+PASS bios gate: partitioned+unmounted with the right serial -> allowed
+
+$ env I7LABCTL_KEYDIR=/tmp/i7ll-integ/out/e2e/20261113T024420Z/ro-keys /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 nvme0n1 --destructive --serial I7NVME0001 --mb 4 --yes
+i7labctl: blk.write: EPERM: admin key required (your key is read-only; this needs the admin key: --role admin)
+[rc=5]
+PASS bios read-only key cannot write (EPERM, exit 5)
+
+$ env I7LABCTL_KEYDIR=/tmp/i7ll-integ/out/e2e/20261113T024420Z/ro-keys /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk ls 52:54:00:17:00:01
+NAME           SIZE  KIND    MODEL           SERIAL       TABLE  FS    MOUNTED  BOOT  WRITE SAFETY
+nvme0n1   256.0 MiB  nvme    QEMU NVMe Ctrl  I7NVME0001   -      -     -        -     WRITE-SAFE
+sda        67.0 MiB  usb     QEMU HARDDISK   I7STICK0001  gpt    vfat  -        BOOT  UNSAFE: boot_media | partition_table(gpt) | sig~
+sr0      1024.0 MiB  sata    QEMU DVD-ROM    -            -      -     -        -     UNSAFE: read_only | no_serial
+vda       256.0 MiB  virtio  -               I7VIRT0001   -      -     -        -     WRITE-SAFE
+vdb       128.0 MiB  virtio  -               I7PART0001   -      -     -        -     WRITE-SAFE
+[rc=0]
+PASS bios read-only key can read
+
+$ env I7LABCTL_KEYDIR=/tmp/i7ll-integ/out/e2e/20261113T024420Z/bad-keys /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 --no-registry --timeout 6 ping 52:54:00:17:00:01
+no reply (seq=1): transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+no reply (seq=2): transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+no reply (seq=3): transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+no reply (seq=4): transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+i7labctl: ping: transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+[rc=4]
+PASS bios a key the host does not hold gets no answer (client check bypassed)
+
+$ env I7LABCTL_KEYDIR=/nonexistent /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 ping 52:54:00:17:00:01
+i7labctl: ping: authentication: no admin or ro key found; create one with: i7labctl key init (or ./scripts/gen-keys)
+[rc=5]
+PASS bios no key at all -> clear error (exit 5)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 sh 52:54:00:17:00:01 echo hello-ether
+hello-ether
+[rc=0]
+PASS bios exec over ether (sh)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 exec 52:54:00:17:00:01 -- /bin/i7labsh -c echo exec-ether
+exec-ether
+[rc=0]
+PASS bios exec over ether (program)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 net ls 52:54:00:17:00:01
+IFACE   MAC                STATE            SPEED  DRIVER      ADDRESSES                                         VLAN OF
+dummy0  6a:c0:e8:4b:d7:e5  unknown/carrier  -      -           fe80::68c0:e8ff:fe4b:d7e5/64                      -
+eth0    52:54:00:17:00:01  up/carrier       -      virtio_net  fe80::5054:ff:fe17:1/64                           -
+eth1    52:54:00:17:00:02  up/carrier       1000M  e1000e      10.0.2.15/24 fe80::5054:ff:fe17:2/64 fec0::5054~  -
+sit0    -                  down             -      -           -                                                 -
+[rc=0]
+PASS bios net ls over ether
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 logs 52:54:00:17:00:01 --dmesg -n 20
+[    2.458510] i7lab-init: console: open (fallback shells on tty1 ttyS0)
+[    2.459393] i7lab-init: started i7labd pid 103
+[    2.573257] 8021q: adding VLAN 0 to HW filter on device eth0
+[    2.737266] 8021q: adding VLAN 0 to HW filter on device eth1
+[    2.756397] scsi 6:0:0:0: Direct-Access     QEMU     QEMU HARDDISK    2.5+ PQ: 0 ANSI: 5
+[    2.757914] sd 6:0:0:0: Attached scsi generic sg1 type 0
+[    2.762314] sd 6:0:0:0: [sda] 137216 512-byte logical blocks: (70.3 MB/67.0 MiB)
+[    2.763757] sd 6:0:0:0: [sda] Write Protect is off
+[    2.763758] sd 6:0:0:0: [sda] Mode Sense: 63 00 10 08
+[    2.765126] sd 6:0:0:0: [sda] Write cache: enabled, read cache: enabled, supports DPO and FUA
+[    2.836689]  sda: sda1 sda2
+[    2.837101] sd 6:0:0:0: [sda] Attached SCSI disk
+[    2.864115] i7lab-init: TUI is up
+[    3.192853] e1000e 0000:00:07.0 eth1: NIC Link is Up 1000 Mbps Full Duplex, Flow Control: Rx/Tx
+[    8.842665] ether (127) used greatest stack depth: 14280 bytes left
+[    8.919737] ether (128) used greatest stack depth: 13456 bytes left
+[    9.084756] ether (129) used greatest stack depth: 12624 bytes left
+[    9.084845] probe-read (130) used greatest stack depth: 12584 bytes left
+[   10.585658] EXT4-fs (vdb1): mounted filesystem b8f834c4-1d8b-4ebd-85bd-f4098096f38e r/w with ordered data mode. Quota mode: none.
+[   10.750622] EXT4-fs (vdb1): unmounting filesystem b8f834c4-1d8b-4ebd-85bd-f4098096f38e.
+[rc=0]
+PASS bios logs over ether
+
+$ curl -s -m 10 http://127.0.0.1:35142/api/v1/hello
+{"v":1,"name":"i7labd","version":"0.1.0","build":"6.18.63-nogit","hostname":"i7lab","boot_id":"efe8caa951c5808b","kid":"a:ea2bea9f,r:9049fe8c","proto":1,"state":"ready","caps":1023,"demo_keys":true}
+[rc=0]
+PASS bios HTTP hello (open)
+
+$ curl -s -m 10 -o /dev/null -w %{http_code} -X POST http://127.0.0.1:35142/api/v1/cmd/reboot
+401
+[rc=0]
+PASS bios HTTP unsigned reboot -> 401
+
+$ curl -s -m 10 http://127.0.0.1:35142/
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>i7lablinux</title>
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--fg:#14171c;--dim:#5b6472;--line:#d3d8df;--accent:#0b5fd6;--accent-fg:#fff;
+--ok:#0a7a3b;--warn:#a15c00;--bad:#b3261e;--okbg:#e1f5e8;--warnbg:#fff0d6;--badbg:#fde4e1;--code:#eceff3;
+--s0:#0b5fd6;--s1:#c2410c;--s2:#0a7a3b;--s3:#7c3aed;--s4:#b3261e;--s5:#0e7490;--s6:#6b7280;--s7:#a16207}
+:root[data-theme=dark]{--bg:#0f1216;--panel:#171b21;--fg:#e4e7ec;--dim:#98a2b0;--line:#2b323c;--accent:#5aa2ff;--accent-fg:#06131f;
+--ok:#4cd07d;--warn:#f0b04a;--bad:#ff7b72;--okbg:#10301d;--warnbg:#3a2a0c;--badbg:#43171a;--code:#0b0e12;
+--s0:#5aa2ff;--s1:#fb923c;--s2:#4cd07d;--s3:#b69cff;--s4:#ff7b72;--s5:#4fd1e6;--s6:#9ca3af;--s7:#facc15}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1216;--panel:#171b21;--fg:#e4e7ec;--dim:#98a2b0;--line:#2b323c;--accent:#5aa2ff;--accent-fg:#06131f;
+--ok:#4cd07d;--warn:#f0b04a;--bad:#ff7b72;--okbg:#10301d;--warnbg:#3a2a0c;--badbg:#43171a;--code:#0b0e12;
+--s0:#5aa2ff;--s1:#fb923c;--s2:#4cd07d;--s3:#b69cff;--s4:#ff7b72;--s5:#4fd1e6;--s6:#9ca3af;--s7:#facc15}}
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}
+code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin:6px 0;overflow:auto;white-space:pre-wrap;word-break:break-word;max-height:420px}
+.skip{position:absolute;left:-999px;top:0;background:var(--accent);color:var(--accent-fg);padding:8px 12px;z-index:10}
+.skip:focus{left:8px;top:8px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+header#top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.brand{font-weight:700;font-size:16px;letter-spacing:.2px}
+.host{color:var(--dim)}
+.sp{flex:1}
+nav#nav{display:flex;gap:2px;overflow-x:auto;padding:0 12px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:46px;z-index:4;scrollbar-width:thin}
+nav#nav a{padding:9px 12px;text-decoration:none;color:var(--dim);border-bottom:3px solid transparent;white-space:nowrap}
+nav#nav a[aria-current=page]{color:var(--fg);border-bottom-color:var(--accent);font-weight:600}
+nav#nav a:hover{color:var(--fg)}
+main{max-width:1280px;margin:0 auto;padding:16px}
+main:focus{outline:none}
+h1{font-size:20px;margin:0 0 12px}
+h2{font-size:15px;margin:0 0 8px}
+h3{font-size:13px;margin:10px 0 4px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+[rc=0]
+PASS bios HTTP serves the SPA
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --http 127.0.0.1:35142 ping
+reply from 127.0.0.1 via http: seq=1 rtt=14.65 ms
+reply from 127.0.0.1 via http: seq=2 rtt=46.01 ms
+reply from 127.0.0.1 via http: seq=3 rtt=14.20 ms
+reply from 127.0.0.1 via http: seq=4 rtt=19.81 ms
+4 sent, 4 received, rtt min/avg/max = 14.20/23.67/46.01 ms
+uptime   25s
+boot_id  efe8caa951c5808b
+load     0.06 0.02 0
+[rc=0]
+PASS bios HTTP ping (signed)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --http 127.0.0.1:35142 inv --json
+{"ok":true,"transport":"http","host":{"mac":null,"ip":"127.0.0.1","vlan":null,"serial":null,"boot":null},"cmd":"inv","rtt_ms":289.4,"data":{"v":1,"system":{"v":1,"hostname":"i7lab","kernel":"6.18.63-i7lab","cmdline":"BOOT_IMAGE=/i7lab/bzImage console=tty0 console=ttyS0,115200n8 panic=10 loglevel=4 i7lab.boot=PARTUUID=efceb655-311b-43b1-ac85-646f27b3892d","uptime_s":25.66,"load":[0.06,0.02,0],"boot
+[rc=0]
+PASS bios HTTP inv --json
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --http 127.0.0.1:35142 sh 127.0.0.1 echo hello-http
+hello-http
+[rc=0]
+PASS bios HTTP sh
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --http 127.0.0.1:35142 exec -- /bin/i7labsh -c echo exec-http
+exec-http
+[rc=0]
+PASS bios HTTP exec
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --http 127.0.0.1:35142 blk read nvme0n1 --mb 8
+device  nvme0n1
+serial  I7NVME0001
+mode    read
+seed    -
+REGION     OFFSET      LEN  MiB/s  LAT MAX us  IO ERR  MISMATCH
+start         0 B  2.0 MiB  270.5        5069       0         0
+mid     127.0 MiB  2.0 MiB  313.4        3677       0         0
+end     254.0 MiB  2.0 MiB  320.7        4201       0         0
+RESULT: ok
+[rc=0]
+PASS bios HTTP blk read
+
+$ curl -s -m 10 http://127.0.0.1:35142/api/v1/openapi.json
+{"openapi":"3.0.3","info":{"title":"i7lablinux agent","version":"0.1.0","description":"Auth: X-Lab-Key / X-Lab-Nonce / X-Lab-Auth (HMAC, see docs/WEB.md). Arguments are argv word lists."},"paths":{"/api/v1/cmd/ping":{"post":{"summary":"round trip, uptime, boot id","description":"usage: ping [ECHO]","x-access":"ro","x-streams":false,"x-planned":false}},"/api/v1/cmd/id":{"post":{"summary":"identity,
+[rc=0]
+PASS bios HTTP openapi
+PASS bios VGA screendump /tmp/i7ll-integ/out/e2e/20261113T024420Z/bios-0/vga.ppm
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 reboot 52:54:00:17:00:01 --delay 30
+reboot requested
+[rc=0]
+PASS bios reboot over ether is answered
+# bios checks took 25 s
+
+######## uefi ########
+
+### guest uefi entry 0: pid 112126, L2 segment mcast 239.255.71.1:35141, HTTP forward 127.0.0.1:35142
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 discover --listen 5
+MAC                IP  BOARD  SERIAL  HOST   BUILD          STATE  VLAN  PROTO  KERNEL         AGE  NOTE
+52:54:00:17:00:01                     i7lab  6.18.63-nogit  ready  -     1      6.18.63-i7lab   0s  demo
+[rc=0]
+PASS uefi beacon received by discover (raw L2, no IP)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 --ether 52:54:00:17:00:01 --cmd ping
+{"echo":"","uptime_ms":9930,"boot_id":"0389b7d3b9db0de4","load":[0,0,0],"time":1794537921}
+[rc=0]
+PASS uefi ether ping
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 id 52:54:00:17:00:01
+v             1
+version       0.1.0
+build         6.18.63-nogit
+hostname      i7lab
+boot_id       0389b7d3b9db0de4
+role          admin
+kid           a:ea2bea9f,r:9049fe8c
+state         ready
+proto         1
+caps          1023
+product       Standard PC (Q35 + ICH9, 2009)
+vendor        QEMU
+serial        
+board         
+board_serial  
+kernel        6.18.63-i7lab
+uptime_s      10
+demo_keys     true
+vm            true
+banner        DEMO KEYS (VM): public keys, full control. Test use only.
+http_port     8080
+ether         true
+role granted to your key: admin
+[rc=0]
+PASS uefi ether id (admin role)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 --ether 52:54:00:17:00:01 --cmd inv
+{"v":1,"system":{"v":1,"hostname":"i7lab","kernel":"6.18.63-i7lab","cmdline":"BOOT_IMAGE=/i7lab/bzImage console=tty0 console=ttyS0,115200n8 panic=10 loglevel=4 i7lab.boot=PARTUUID=efceb655-311b-43b1-ac85-646f27b3892d","uptime_s":10.09,"load":[0,0,0],"boot_id":"013dd478-ec85-492f-9160-1f78c3e8961d","boot_mode":"uefi","image_build":"6.18.63-nogit"},"cpu":{"v":1,"vendor":"AuthenticAMD","model_name":"
+[rc=0]
+PASS uefi ether inv
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 pcie 52:54:00:17:00:01
+14 PCI devices, IOMMU off
+BDF           ID         CLASS                      NAME                                              DRIVER      LINK                    IOMMU
+0000:00:00.0  0000:0000  Host bridge                Intel Corporation 82G33/G31/P35/P31 Express DRA~  -           -                       -
+0000:00:01.0  0000:0000  VGA compatible controller  Technical Corp. QEMU Standard VGA                 -           -                       -
+0000:00:02.0  0000:0000  USB controller             Red Hat, Inc. QEMU XHCI Host Controller           xhci_hcd    -                       -
+0000:00:03.0  0000:0000  PCI bridge                 Red Hat, Inc. QEMU PCIe Root port                 pcieport    x1 gen1 (max x32 gen4)  -
+0000:00:04.0  0000:0000  PCI bridge                 Red Hat, Inc. QEMU PCIe Root port                 pcieport    x1 gen1 (max x32 gen4)  -
+0000:00:05.0  0000:0000  PCI bridge                 Red Hat, Inc. QEMU PCIe Root port                 pcieport    x1 gen1 (max x32 gen4)  -
+0000:00:06.0  0000:0000  Ethernet controller        Red Hat, Inc. Virtio network device               virtio-pci  -                       -
+0000:00:07.0  0000:0000  Ethernet controller        Intel Corporation 82574L Gigabit Network Connec~  e1000e      -                       -
+0000:00:1f.0  0000:0000  ISA bridge                 Intel Corporation 82801IB (ICH9) LPC Interface ~  lpc_ich     -                       -
+0000:00:1f.2  0000:0000  SATA controller            Intel Corporation 82801IR/IO/IH (ICH9R/DO/DH) 6~  ahci        -                       -
+0000:00:1f.3  0000:0000  SMBus                      Intel Corporation 82801I (ICH9 Family) SMBus Co~  i801_smbus  -                       -
+0000:01:00.0  0000:0000  NVMe controller            Red Hat, Inc. QEMU NVM Express Controller         nvme        x1 gen1 (max x1 gen1)   -
+0000:02:00.0  0000:0000  SCSI storage controller    Red Hat, Inc. Virtio 1.0 block device             virtio-pci  x1 gen1 (max x1 gen1)   -
+0000:03:00.0  0000:0000  SCSI storage controller    Red Hat, Inc. Virtio 1.0 block device             virtio-pci  x1 gen1 (max x1 gen1)   -
+[rc=0]
+PASS uefi pcie lists the q35 devices
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 usb 52:54:00:17:00:01
+3 USB devices
+PATH  ID         CLASS  MBPS  MANUFACTURER                  PRODUCT               SERIAL        DRIVER
+usb1  0000:0000  9       480  Linux 6.18.63-i7lab xhci-hcd  xHCI Host Controller  0000:00:02.0  
+usb2  0000:0000  9      5000  Linux 6.18.63-i7lab xhci-hcd  xHCI Host Controller  0000:00:02.0  
+2-1   0000:0000  0      5000  QEMU                          QEMU USB HARDDRIVE    I7STICK0001   
+[rc=0]
+PASS uefi usb
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 thermal 52:54:00:17:00:01
+no temperature sensors
+[rc=0]
+PASS uefi thermal answers
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk ls 52:54:00:17:00:01
+NAME           SIZE  KIND    MODEL           SERIAL       TABLE  FS    MOUNTED  BOOT  WRITE SAFETY
+nvme0n1   256.0 MiB  nvme    QEMU NVMe Ctrl  I7NVME0001   -      -     -        -     WRITE-SAFE
+sda        67.0 MiB  usb     QEMU HARDDISK   I7STICK0001  gpt    vfat  -        BOOT  UNSAFE: boot_media | partition_table(gpt) | sig~
+sr0      1024.0 MiB  sata    QEMU DVD-ROM    -            -      -     -        -     UNSAFE: read_only | no_serial
+vda       256.0 MiB  virtio  -               I7VIRT0001   -      -     -        -     WRITE-SAFE
+vdb       128.0 MiB  virtio  -               I7PART0001   gpt    ext4  -        -     UNSAFE: partition_table(gpt) | signature(ext4)
+[rc=0]
+PASS uefi blk ls shows the disks
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk ls 52:54:00:17:00:01
+NAME           SIZE  KIND    MODEL           SERIAL       TABLE  FS    MOUNTED  BOOT  WRITE SAFETY
+nvme0n1   256.0 MiB  nvme    QEMU NVMe Ctrl  I7NVME0001   -      -     -        -     WRITE-SAFE
+sda        67.0 MiB  usb     QEMU HARDDISK   I7STICK0001  gpt    vfat  -        BOOT  UNSAFE: boot_media | partition_table(gpt) | sig~
+sr0      1024.0 MiB  sata    QEMU DVD-ROM    -            -      -     -        -     UNSAFE: read_only | no_serial
+vda       256.0 MiB  virtio  -               I7VIRT0001   -      -     -        -     WRITE-SAFE
+vdb       128.0 MiB  virtio  -               I7PART0001   gpt    ext4  -        -     UNSAFE: partition_table(gpt) | signature(ext4)
+[rc=0]
+PASS uefi blk ls marks the boot media
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk read 52:54:00:17:00:01 nvme0n1 --mb 16
+device  nvme0n1
+serial  I7NVME0001
+mode    read
+seed    -
+REGION     OFFSET      LEN  MiB/s  LAT MAX us  IO ERR  MISMATCH
+start         0 B  5.0 MiB  482.7        3529       0         0
+mid     125.0 MiB  5.0 MiB  421.9        5038       0         0
+end     251.0 MiB  5.0 MiB  423.4        3823       0         0
+RESULT: ok
+[rc=0]
+PASS uefi blk read nvme0n1
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 nvme0n1 --destructive --serial I7NVME0001 --mb 16 --seed 77 --yes
+device  nvme0n1
+serial  I7NVME0001
+mode    write
+seed    77
+REGION     OFFSET      LEN  MiB/s  LAT MAX us  IO ERR  MISMATCH
+start         0 B  5.0 MiB  121.0        4077       0         0
+mid     125.0 MiB  5.0 MiB  177.8        3969       0         0
+end     251.0 MiB  5.0 MiB  194.0        3465       0         0
+RESULT: ok
+seed 77 (re-check later with: i7labctl blk verify <host> nvme0n1 --seed 77)
+[rc=0]
+PASS uefi blk write nvme0n1 (seed 77)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk verify 52:54:00:17:00:01 nvme0n1 --seed 77 --mb 16
+device  nvme0n1
+serial  I7NVME0001
+mode    verify
+seed    77
+REGION     OFFSET      LEN  MiB/s  LAT MAX us  IO ERR  MISMATCH
+start         0 B  5.0 MiB  164.4        4861       0         0
+mid     125.0 MiB  5.0 MiB  156.2        7548       0         0
+end     251.0 MiB  5.0 MiB  161.3        7012       0         0
+RESULT: ok
+[rc=0]
+PASS uefi blk verify nvme0n1 (seed 77)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 vdb --yes
+i7labctl: blk: refused: blk write destroys data and needs BOTH --destructive and --serial SERIAL (the real serial of vdb from `i7labctl blk ls`). Nothing was sent.
+[rc=7]
+PASS uefi gate: no flags -> refused locally (exit 7)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 vdb --destructive --serial WRONG --yes
+i7labctl: blk.write: REFUSED: write refused by the safety gate
+[rc=7]
+PASS uefi gate: wrong serial on a partitioned disk -> refused (exit 7)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 sda --destructive --serial I7STICK0001 --yes
+i7labctl: blk.write: REFUSED: write refused by the safety gate
+[rc=7]
+PASS uefi gate: boot media with the right serial -> refused (exit 7)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 sh 52:54:00:17:00:01 mount /dev/vdb1 /mnt
+[rc=0]
+PASS uefi mount the ext4 partition of vdb
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 vdb --destructive --serial I7PART0001 --mb 4 --yes
+i7labctl: blk.write: REFUSED: write refused by the safety gate
+[rc=7]
+PASS uefi gate: mounted disk with the right serial -> refused (exit 7)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 sh 52:54:00:17:00:01 umount /mnt
+[rc=0]
+PASS uefi umount
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 vdb --destructive --serial I7PART0001 --mb 4 --yes
+device  vdb
+serial  I7PART0001
+mode    write
+seed    3837167805129083
+REGION     OFFSET      LEN  MiB/s  LAT MAX us  IO ERR  MISMATCH
+start         0 B  1.0 MiB  124.2        3033       0         0
+mid      63.0 MiB  1.0 MiB  143.9        3280       0         0
+end     127.0 MiB  1.0 MiB  181.1        2492       0         0
+RESULT: ok
+seed 3837167805129083 (re-check later with: i7labctl blk verify <host> vdb --seed 3837167805129083)
+[rc=0]
+PASS uefi gate: partitioned+unmounted with the right serial -> allowed
+
+$ env I7LABCTL_KEYDIR=/tmp/i7ll-integ/out/e2e/20261113T024420Z/ro-keys /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk write 52:54:00:17:00:01 nvme0n1 --destructive --serial I7NVME0001 --mb 4 --yes
+i7labctl: blk.write: EPERM: admin key required (your key is read-only; this needs the admin key: --role admin)
+[rc=5]
+PASS uefi read-only key cannot write (EPERM, exit 5)
+
+$ env I7LABCTL_KEYDIR=/tmp/i7ll-integ/out/e2e/20261113T024420Z/ro-keys /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 blk ls 52:54:00:17:00:01
+NAME           SIZE  KIND    MODEL           SERIAL       TABLE  FS    MOUNTED  BOOT  WRITE SAFETY
+nvme0n1   256.0 MiB  nvme    QEMU NVMe Ctrl  I7NVME0001   -      -     -        -     WRITE-SAFE
+sda        67.0 MiB  usb     QEMU HARDDISK   I7STICK0001  gpt    vfat  -        BOOT  UNSAFE: boot_media | partition_table(gpt) | sig~
+sr0      1024.0 MiB  sata    QEMU DVD-ROM    -            -      -     -        -     UNSAFE: read_only | no_serial
+vda       256.0 MiB  virtio  -               I7VIRT0001   -      -     -        -     WRITE-SAFE
+vdb       128.0 MiB  virtio  -               I7PART0001   -      -     -        -     WRITE-SAFE
+[rc=0]
+PASS uefi read-only key can read
+
+$ env I7LABCTL_KEYDIR=/tmp/i7ll-integ/out/e2e/20261113T024420Z/bad-keys /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 --no-registry --timeout 6 ping 52:54:00:17:00:01
+no reply (seq=1): transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+no reply (seq=2): transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+no reply (seq=3): transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+no reply (seq=4): transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+i7labctl: ping: transport: no CHALLENGE: wrong key set or host unreachable (timeout)
+[rc=4]
+PASS uefi a key the host does not hold gets no answer (client check bypassed)
+
+$ env I7LABCTL_KEYDIR=/nonexistent /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 ping 52:54:00:17:00:01
+i7labctl: ping: authentication: no admin or ro key found; create one with: i7labctl key init (or ./scripts/gen-keys)
+[rc=5]
+PASS uefi no key at all -> clear error (exit 5)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 sh 52:54:00:17:00:01 echo hello-ether
+hello-ether
+[rc=0]
+PASS uefi exec over ether (sh)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 exec 52:54:00:17:00:01 -- /bin/i7labsh -c echo exec-ether
+exec-ether
+[rc=0]
+PASS uefi exec over ether (program)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 net ls 52:54:00:17:00:01
+IFACE   MAC                STATE            SPEED  DRIVER      ADDRESSES                                         VLAN OF
+dummy0  aa:5c:77:94:5e:5e  unknown/carrier  -      -           fe80::a85c:77ff:fe94:5e5e/64                      -
+eth0    52:54:00:17:00:01  up/carrier       -      virtio_net  fe80::5054:ff:fe17:1/64                           -
+eth1    52:54:00:17:00:02  up/carrier       1000M  e1000e      10.0.2.15/24 fec0::5054:ff:fe17:2/64 fe80::5054~  -
+sit0    -                  down             -      -           -                                                 -
+[rc=0]
+PASS uefi net ls over ether
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 logs 52:54:00:17:00:01 --dmesg -n 20
+[    2.396529] i7lab-init: console: open (fallback shells on tty1 ttyS0)
+[    2.403022] i7lab-init: started i7labd pid 104
+[    2.539644] 8021q: adding VLAN 0 to HW filter on device eth0
+[    2.608893] i7lab-init: TUI is up
+[    2.696431] 8021q: adding VLAN 0 to HW filter on device eth1
+[    2.845161] scsi 6:0:0:0: Direct-Access     QEMU     QEMU HARDDISK    2.5+ PQ: 0 ANSI: 5
+[    2.846022] sd 6:0:0:0: Attached scsi generic sg1 type 0
+[    2.851462] sd 6:0:0:0: [sda] 137216 512-byte logical blocks: (70.3 MB/67.0 MiB)
+[    2.853147] sd 6:0:0:0: [sda] Write Protect is off
+[    2.853153] sd 6:0:0:0: [sda] Mode Sense: 63 00 10 08
+[    2.854769] sd 6:0:0:0: [sda] Write cache: enabled, read cache: enabled, supports DPO and FUA
+[    2.913720]  sda: sda1 sda2
+[    2.914329] sd 6:0:0:0: [sda] Attached SCSI disk
+[    3.156846] e1000e 0000:00:07.0 eth1: NIC Link is Up 1000 Mbps Full Duplex, Flow Control: Rx/Tx
+[    9.937518] ether (128) used greatest stack depth: 14280 bytes left
+[   10.305644] ether (130) used greatest stack depth: 14040 bytes left
+[   10.305730] probe-read (131) used greatest stack depth: 12784 bytes left
+[   10.863390] ether (142) used greatest stack depth: 12624 bytes left
+[   12.209044] EXT4-fs (vdb1): mounted filesystem 40bca8fd-2a39-444b-81b0-1c3a037ecfc8 r/w with ordered data mode. Quota mode: none.
+[   12.375807] EXT4-fs (vdb1): unmounting filesystem 40bca8fd-2a39-444b-81b0-1c3a037ecfc8.
+[rc=0]
+PASS uefi logs over ether
+
+$ curl -s -m 10 http://127.0.0.1:35142/api/v1/hello
+{"v":1,"name":"i7labd","version":"0.1.0","build":"6.18.63-nogit","hostname":"i7lab","boot_id":"0389b7d3b9db0de4","kid":"a:ea2bea9f,r:9049fe8c","proto":1,"state":"ready","caps":1023,"demo_keys":true}
+[rc=0]
+PASS uefi HTTP hello (open)
+
+$ curl -s -m 10 -o /dev/null -w %{http_code} -X POST http://127.0.0.1:35142/api/v1/cmd/reboot
+401
+[rc=0]
+PASS uefi HTTP unsigned reboot -> 401
+
+$ curl -s -m 10 http://127.0.0.1:35142/
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>i7lablinux</title>
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--fg:#14171c;--dim:#5b6472;--line:#d3d8df;--accent:#0b5fd6;--accent-fg:#fff;
+--ok:#0a7a3b;--warn:#a15c00;--bad:#b3261e;--okbg:#e1f5e8;--warnbg:#fff0d6;--badbg:#fde4e1;--code:#eceff3;
+--s0:#0b5fd6;--s1:#c2410c;--s2:#0a7a3b;--s3:#7c3aed;--s4:#b3261e;--s5:#0e7490;--s6:#6b7280;--s7:#a16207}
+:root[data-theme=dark]{--bg:#0f1216;--panel:#171b21;--fg:#e4e7ec;--dim:#98a2b0;--line:#2b323c;--accent:#5aa2ff;--accent-fg:#06131f;
+--ok:#4cd07d;--warn:#f0b04a;--bad:#ff7b72;--okbg:#10301d;--warnbg:#3a2a0c;--badbg:#43171a;--code:#0b0e12;
+--s0:#5aa2ff;--s1:#fb923c;--s2:#4cd07d;--s3:#b69cff;--s4:#ff7b72;--s5:#4fd1e6;--s6:#9ca3af;--s7:#facc15}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1216;--panel:#171b21;--fg:#e4e7ec;--dim:#98a2b0;--line:#2b323c;--accent:#5aa2ff;--accent-fg:#06131f;
+--ok:#4cd07d;--warn:#f0b04a;--bad:#ff7b72;--okbg:#10301d;--warnbg:#3a2a0c;--badbg:#43171a;--code:#0b0e12;
+--s0:#5aa2ff;--s1:#fb923c;--s2:#4cd07d;--s3:#b69cff;--s4:#ff7b72;--s5:#4fd1e6;--s6:#9ca3af;--s7:#facc15}}
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}
+code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin:6px 0;overflow:auto;white-space:pre-wrap;word-break:break-word;max-height:420px}
+.skip{position:absolute;left:-999px;top:0;background:var(--accent);color:var(--accent-fg);padding:8px 12px;z-index:10}
+.skip:focus{left:8px;top:8px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+header#top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.brand{font-weight:700;font-size:16px;letter-spacing:.2px}
+.host{color:var(--dim)}
+.sp{flex:1}
+nav#nav{display:flex;gap:2px;overflow-x:auto;padding:0 12px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:46px;z-index:4;scrollbar-width:thin}
+nav#nav a{padding:9px 12px;text-decoration:none;color:var(--dim);border-bottom:3px solid transparent;white-space:nowrap}
+nav#nav a[aria-current=page]{color:var(--fg);border-bottom-color:var(--accent);font-weight:600}
+nav#nav a:hover{color:var(--fg)}
+main{max-width:1280px;margin:0 auto;padding:16px}
+main:focus{outline:none}
+h1{font-size:20px;margin:0 0 12px}
+h2{font-size:15px;margin:0 0 8px}
+h3{font-size:13px;margin:10px 0 4px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+[rc=0]
+PASS uefi HTTP serves the SPA
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --http 127.0.0.1:35142 ping
+reply from 127.0.0.1 via http: seq=1 rtt=14.88 ms
+reply from 127.0.0.1 via http: seq=2 rtt=22.48 ms
+reply from 127.0.0.1 via http: seq=3 rtt=15.97 ms
+reply from 127.0.0.1 via http: seq=4 rtt=15.95 ms
+4 sent, 4 received, rtt min/avg/max = 14.88/17.32/22.48 ms
+uptime   27s
+boot_id  0389b7d3b9db0de4
+load     0 0 0
+[rc=0]
+PASS uefi HTTP ping (signed)
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --http 127.0.0.1:35142 inv --json
+{"ok":true,"transport":"http","host":{"mac":null,"ip":"127.0.0.1","vlan":null,"serial":null,"boot":null},"cmd":"inv","rtt_ms":518.8,"data":{"v":1,"system":{"v":1,"hostname":"i7lab","kernel":"6.18.63-i7lab","cmdline":"BOOT_IMAGE=/i7lab/bzImage console=tty0 console=ttyS0,115200n8 panic=10 loglevel=4 i7lab.boot=PARTUUID=efceb655-311b-43b1-ac85-646f27b3892d","uptime_s":27.51,"load":[0,0,0],"boot_id":"
+[rc=0]
+PASS uefi HTTP inv --json
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --http 127.0.0.1:35142 sh 127.0.0.1 echo hello-http
+hello-http
+[rc=0]
+PASS uefi HTTP sh
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --http 127.0.0.1:35142 exec -- /bin/i7labsh -c echo exec-http
+exec-http
+[rc=0]
+PASS uefi HTTP exec
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --http 127.0.0.1:35142 blk read nvme0n1 --mb 8
+device  nvme0n1
+serial  I7NVME0001
+mode    read
+seed    -
+REGION     OFFSET      LEN  MiB/s  LAT MAX us  IO ERR  MISMATCH
+start         0 B  2.0 MiB  367.8        3159       0         0
+mid     127.0 MiB  2.0 MiB  389.4        3269       0         0
+end     254.0 MiB  2.0 MiB  344.7        3665       0         0
+RESULT: ok
+[rc=0]
+PASS uefi HTTP blk read
+
+$ curl -s -m 10 http://127.0.0.1:35142/api/v1/openapi.json
+{"openapi":"3.0.3","info":{"title":"i7lablinux agent","version":"0.1.0","description":"Auth: X-Lab-Key / X-Lab-Nonce / X-Lab-Auth (HMAC, see docs/WEB.md). Arguments are argv word lists."},"paths":{"/api/v1/cmd/ping":{"post":{"summary":"round trip, uptime, boot id","description":"usage: ping [ECHO]","x-access":"ro","x-streams":false,"x-planned":false}},"/api/v1/cmd/id":{"post":{"summary":"identity,
+[rc=0]
+PASS uefi HTTP openapi
+PASS uefi VGA screendump /tmp/i7ll-integ/out/e2e/20261113T024420Z/uefi-0/vga.ppm
+
+$ /tmp/i7ll-integ/out/bin/i7labctl --link mcast:239.255.71.1:35141 reboot 52:54:00:17:00:01 --delay 30
+reboot requested
+[rc=0]
+PASS uefi reboot over ether is answered
+# uefi checks took 25 s
+
+### guest bios entry 1: pid 113794, L2 segment mcast 239.255.71.1:35141, HTTP forward 127.0.0.1:35142
+
+$ tests/e2e/tuicap.py (serial console, TERM=vt100, Tab/arrow/F-keys)
+=== overview ===
+ i7lablinux 0.1.0  host:i7lab  up 00:00:15  ip 10.0.2.15/24  mac 52:54:00:17:0~
+[Overview]  PCIe   Storage   Network   USB   Sensors   Log   Actions
+ DEMO KEYS (VM): public keys, full control. Test use only.
++- Overview -------------------------------------------------------------------+
+|Attention                                                                    #|
+|nothing needs attention                                                      #|
+|                                                                             #|
+|System                                                                       #|
+|Product:       QEMU Standard PC (Q35 + ICH9, 2009)                           #|
+|Serial:        -                                                             #|
+|Board:         - -                                                           #|
+|BIOS:          SeaBIOS 1.17.0-debian-1.17.0-1ubuntu1 04/01/2014              #|
+|Boot:          bios (secure boot n/a)                                        :|
+|Kernel:        6.18.63-i7lab                                                 :|
+|Uptime:        00:00:15                                                      :|
+|Load:          0.66 0.15 0.05                                                :|
+|Image:         6.18.63-nogit                                                 :|
+|                                                                             :|
+|CPU                                                                          :|
+|AMD EPYC 7601 32-Core Processor                                              :|
+|Cores:         1 sockets, 4 cores, 4 threads                                 :|
+|Frequency:     2200 MHz                                                      :|
+|Microcode:     0x800126f                                                     :|
++------------------------------------------------------------------------------+
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit
+
+=== pcie ===
+ i7lablinux 0.1.0  host:i7lab  up 00:00:17  ip 10.0.2.15/24  mac 52:54:00:17:0~
+ Overview  [PCIe]  Storage   Network   USB   Sensors   Log   Actions
+ DEMO KEYS (VM): public keys, full control. Test use only.
++- PCIe devices ---------------------------------------------------------------+
+|Device               Name                            Driver         Link      |
+|  00:00.0            Intel Corporation 82G33/G31/P3~ -              -         |
+|  00:01.0            Technical Corp. QEMU Standard ~ -              -         |
+|  00:02.0            Red Hat, Inc. QEMU XHCI Host C~ xhci_hcd       -         |
+|- 00:03.0            Red Hat, Inc. QEMU PCIe Root p~ pcieport       x1 Gen1   |
+|    01:00.0          Red Hat, Inc. QEMU NVM Express~ nvme           x1 Gen1   |
+|- 00:04.0            Red Hat, Inc. QEMU PCIe Root p~ pcieport       x1 Gen1   |
+|    02:00.0          Red Hat, Inc. Virtio 1.0 block~ virtio-pci     x1 Gen1   |
+|- 00:05.0            Red Hat, Inc. QEMU PCIe Root p~ pcieport       x1 Gen1   |
+|    03:00.0          Red Hat, Inc. Virtio 1.0 block~ virtio-pci     x1 Gen1   |
+|  00:06.0            Red Hat, Inc. Virtio network d~ virtio-pci     -         |
+|  00:07.0            Intel Corporation 82574L Gigab~ e1000e         -         |
+|  00:1f.0            Intel Corporation 82801IB (ICH~ lpc_ich        -         |
+|  00:1f.2            Intel Corporation 82801IR/IO/I~ ahci           -         |
+|  00:1f.3            Intel Corporation 82801I (ICH9~ i801_smbus     -         |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
++------------------------------------------------------------------------------+
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit
+
+=== storage ===
+ i7lablinux 0.1.0  host:i7lab  up 00:00:20  ip 10.0.2.15/24  mac 52:54:00:17:0~
+ Overview   PCIe  [Storage]  Network   USB   Sensors   Log   Actions
+ DEMO KEYS (VM): public keys, full control. Test use only.
++- Disks ----------------------------------------------------------------------+
+|Dev       Type        Size Model         Serial               SMART State     |
+|nvme0n1   nvme    268.4 MB QEMU NVMe Ct~ I7NVME0001           -     idle      |
+|sda       usb      70.3 MB QEMU QEMU HA~ I7STICK0001          -     boot media|
+|sr0       sata      1.1 GB QEMU QEMU DV~ -                    -     idle      |
+|vda       virtio  268.4 MB 0x1af4        I7VIRT0001           -     idle      |
+|vdb       virtio  134.2 MB 0x1af4        I7PART0001           -     idle      |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
++------------------------------------------------------------------------------+
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit
+
+=== network ===
+ i7lablinux 0.1.0  host:i7lab  up 00:00:22  ip 10.0.2.15/24  mac 52:54:00:17:0~
+ Overview   PCIe   Storage  [Network]  USB   Sensors   Log   Actions
+ DEMO KEYS (VM): public keys, full control. Test use only.
++- Interfaces -----------------------------------------------------------------+
+|Iface      Link   Speed     IPv4       MAC                       RX         TX|
+|dummy0     up     -         -          a6:cc:53:c3:b3:2a      0 b/s          -|
+|eth0       up     -         -          52:54:00:17:00:01     3 kb/s          -|
+|eth1       up     1000 Mb/s 10.0.2.15~ 52:54:00:17:00:02      0 b/s          -|
+|sit0       down   -         -          -                      0 b/s          -|
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
++------------------------------------------------------------------------------+
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit
+
+=== network-pane2 ===
+ i7lablinux 0.1.0  host:i7lab  up 00:00:24  ip 10.0.2.15/24  mac 52:54:00:17:0~
+ Overview   PCIe   Storage  [Network]  USB   Sensors   Log   Actions
+ DEMO KEYS (VM): public keys, full control. Test use only.
++- Interfaces -----------------------------------------------------------------+
+|Iface      Link   Speed     IPv4       MAC                       RX         TX|
+|dummy0     up     -         -          a6:cc:53:c3:b3:2a      0 b/s          -|
+|eth0       up     -         -          52:54:00:17:00:01     5 kb/s          -|
+|eth1       up     1000 Mb/s 10.0.2.15~ 52:54:00:17:00:02      0 b/s          -|
+|sit0       down   -         -          -                      0 b/s          -|
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
++------------------------------------------------------------------------------+
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit
+
+=== usb ===
+ i7lablinux 0.1.0  host:i7lab  up 00:00:26  ip 10.0.2.15/24  mac 52:54:00:17:0~
+ Overview   PCIe   Storage   Network  [USB]  Sensors   Log   Actions
+ DEMO KEYS (VM): public keys, full control. Test use only.
++- USB devices ----------------------------------------------------------------+
+|Device               Name                                    ID          Speed|
+|  usb1               Linux 6.18.63-i7lab xhci-hcd xHCI Host~ 1d6b:0002    480M|
+|- usb2               Linux 6.18.63-i7lab xhci-hcd xHCI Host~ 1d6b:0003      5G|
+|    2-1              QEMU QEMU USB HARDDRIVE                 46f4:0001      5G|
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
++------------------------------------------------------------------------------+
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit
+
+=== sensors ===
+ i7lablinux 0.1.0  host:i7lab  up 00:00:28  ip 10.0.2.15/24  mac 52:54:00:17:0~
+ Overview   PCIe   Storage   Network   USB  [Sensors]  Log   Actions
+ DEMO KEYS (VM): public keys, full control. Test use only.
++- Sensors --------------------------------------------------------------------+
+|Sensor                                             Kind       Value      Limit|
+|nvme/Composite                                     temp      49.9 C     70/100|
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
++------------------------------------------------------------------------------+
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit
+
+=== log ===
+ i7lablinux 0.1.0  host:i7lab  up 00:00:28  ip 10.0.2.15/24  mac 52:54:00:17:0~
+ Overview   PCIe   Storage   Network   USB   Sensors  [Log]  Actions
+ DEMO KEYS (VM): public keys, full control. Test use only.
++- Kernel log -----------------------------------------------------------------+
+|300/300 lines  level<=debug  FOLLOW                                           |
+|[    4.342130] input: ImExPS/2 Generic Explorer Mouse as /devices/platform/i~:|
+|[    4.656283] i7lab-init: modules: 0 loaded, 0 failed (2 round(s))          :|
+|[    4.678052] i7lab-init: watchdog armed (60 s)                             :|
+|[    4.686971] i7lab-init: console: open (fallback shells on tty1 ttyS0)     :|
+|[    4.705409] i7lab-init: started i7labd pid 100                            :|
+|[    4.918012] i7lab-init: TUI is up                                         :|
+|[    5.156942] scsi 6:0:0:0: Direct-Access     QEMU     QEMU HARDDISK    2.5~:|
+|[    5.158238] sd 6:0:0:0: Attached scsi generic sg1 type 0                  :|
+|[    5.181190] sd 6:0:0:0: [sda] 137216 512-byte logical blocks: (70.3 MB/67~:|
+|[    5.189505] sd 6:0:0:0: [sda] Write Protect is off                        :|
+|[    5.189512] sd 6:0:0:0: [sda] Mode Sense: 63 00 10 08                     :|
+|[    5.196570] sd 6:0:0:0: [sda] Write cache: enabled, read cache: enabled, ~:|
+|[    5.250997] 8021q: adding VLAN 0 to HW filter on device eth0              :|
+|[    5.365968]  sda: sda1 sda2                                               :|
+|[    5.366149] sd 6:0:0:0: [sda] Attached SCSI disk                          :|
+|[    5.722455] 8021q: adding VLAN 0 to HW filter on device eth1              :|
+|[    6.238492] e1000e 0000:00:07.0 eth1: NIC Link is Up 1000 Mbps Full Duple~:|
+|[   15.709791] clocksource: Long readout interval, skipping watchdog check: ~#|
++------------------------------------------------------------------------------+
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit
+
+=== actions ===
+ i7lablinux 0.1.0  host:i7lab  up 00:00:30  ip 10.0.2.15/24  mac 52:54:00:17:0~
+ Overview   PCIe   Storage   Network   USB   Sensors   Log  [Actions]
+ DEMO KEYS (VM): public keys, full control. Test use only.
++- Actions --------------------------------------------------------------------+
+|Reboot                                                                        |
+|Power off                                                                     |
+|Rescan PCI bus                                                                |
+|Probe now                                                                     |
+|Open shell                                                                    |
+|Show key fingerprints                                                         |
+|Kexec into another kernel  (planned)                                          |
+|Set wake-on-LAN  (planned)                                                    |
+|Run stress test  (planned)                                                    |
+|Enrol keys  (planned)                                                         |
+|Wipe disk  (planned)                                                          |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
+|                                                                              |
++------------------------------------------------------------------------------+
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit
+
+=== about ===
+ i7lablinux 0.1.0  host:i7lab  up 00:00:33  ip 10.0.2.15/24  mac 52:54:00:17:0~
+[Overview]  PCIe   Storage   Network   USB   Sensors   Log   Actions
+ DEMO KEYS (VM): public keys, full control. Test use only.
++- Overview -------------------------------------------------------------------+
+|Attention                                                                    #|
+|nothing needs attention                                                      #|
+|                                                                             #|
+|System                                                                       #|
+|Product:       QEMU St+- About ------------------------+                     #|
+|Serial:        -      | i7lablinux 0.1.0               |                     #|
+|Board:         - -    | build 6.18.63-nogit            |                     #|
+|BIOS:          SeaBIOS| host i7lab                     |01/2014              #|
+|Boot:          bios (s|                                |                     :|
+|Kernel:        6.18.63| a:ea2bea9f r:9049fe8c          |                     :|
+|Uptime:        00:00:3|                                |                     :|
+|Load:          1.18 0.| <Close>                        |                     :|
+|Image:         6.18.63+--------------------------------+                     :|
+|                                                                             :|
+|CPU                                                                          :|
+|AMD EPYC 7601 32-Core Processor                                              :|
+|Cores:         1 sockets, 4 cores, 4 threads                                 :|
+|Frequency:     2200 MHz                                                      :|
+|Microcode:     0x800126f                                                     :|
++------------------------------------------------------------------------------+
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit
+
+=== shell ===
+i7lablinux 0.1.0 shell. Type help for the builtins; ^D or exit leaves the shell.
+i7lab:/# echo shell-on-serial-tty\r
+PASS TUI shows '=== overview ==='
+PASS TUI shows 'Attention'
+PASS TUI shows '=== pcie ==='
+PASS TUI shows 'PCIe Root'
+PASS TUI shows '=== storage ==='
+PASS TUI shows 'I7NVME0001'
+PASS TUI shows '=== network ==='
+PASS TUI shows 'eth1'
+PASS TUI shows '=== sensors ==='
+PASS TUI shows '=== log ==='
+PASS TUI shows '=== actions ==='
+PASS TUI shows 'Reboot'
+PASS TUI shows 'About'
+PASS TUI shows 'shell-on-serial-tty'
+
+$ /tmp/i7ll-integ/scripts/check-no-busybox --image /tmp/i7ll-integ/out/image/i7lablinux.img
+check-no-busybox: ok (image)
+[rc=0]
+PASS image no busybox in the image
+
+RESULT: 91 passed, 0 failed

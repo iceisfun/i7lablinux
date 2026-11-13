@@ -1,0 +1,25 @@
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.1… attention: 7
+ Overview   PCIe   Storage  [Network]  USB   Sensors   Log   Actions
+┌─ Interfaces ─────────────────────────────────────────────────────────────────┐
+│Iface      Link   Speed     IPv4       MAC                       RX         TX│
+│lo         up     -         127.0.0.1  00:00:00:00:00:00          -          -│
+│eno1       up     1000 Mb/s 192.0.2.1… 3c:ec:ef:12:34:56   160 kb/s    24 kb/s│
+│enp3s0     down   -         -          3c:ec:ef:12:34:57          -          -│
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit

@@ -1,0 +1,11 @@
+[package]
+name = "i7labctl"
+description = "i7lablinux operator CLI: discover, ether/http control, keys, images"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+labproto.workspace = true
+# labtui is not used by v1 (the lab-side fleet dashboard `tui` is planned v0.2); no extra dependencies.

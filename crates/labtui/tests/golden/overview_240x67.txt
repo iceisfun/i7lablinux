@@ -1,0 +1,67 @@
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.141  mac 3c:ec:ef:12:34:56                                                                                                                                         attention: 7
+[Overview]  PCIe   Storage   Network   USB   Sensors   Log   Actions
+┌─ System ─────────────────────────────────────────────────────────────────────┐┌─ Network ────────────────────────────────────────────────────────────────────┐┌─ Attention ──────────────────────────────────────────────────────────────────┐
+│Product:       LENOVO ThinkCentre M720q                                       ││eno1     up    1000 Mb/s 192.0.2.141                                          ││!! NIC 0000:03:00.0 has no driver (RTL8126 5GbE)                              │
+│Serial:        MJ0AB1CD                                                       ││enp3s0   down      -      no address                                          ││!  PCIe 0000:01:00.0 AER correctable errors: 3                                │
+│Board:         LENOVO 3110                                                    │└──────────────────────────────────────────────────────────────────────────────┘│!  PCIe 0000:03:00.0 link degraded: x1 Gen1 (max x4 Gen3)                     │
+│BIOS:          LENOVO M1UKT47A 05/14/2019                                     │┌─ Storage ────────────────────────────────────────────────────────────────────┐│!  SMART sdb: warning reallocated sectors: 12                                 │
+│Boot:          uefi (secure boot off)                                         ││Disks:         3                                                              ││!  coretemp Core 1 at 88 C (over max)                                         │
+│Kernel:        Linux 6.12.8-i7lab x86_64                                      ││nvme0n1   500.1 GB idle       smart ok                                        ││!  kernel log: 1 x pcie-aer                                                   │
+│Uptime:        01:02:05                                                       ││sda        31.9 GB boot media smart -                                         ││!  kernel log: 1 x ata-error                                                  │
+│Load:          0.42 0.30 0.21                                                 ││sdb         1.0 TB idle       SMART WARN                                      │└──────────────────────────────────────────────────────────────────────────────┘
+│Image:         i7lablinux 0.1.0 2026-11-12                                    │└──────────────────────────────────────────────────────────────────────────────┘┌─ Temperatures ───────────────────────────────────────────────────────────────┐
+└──────────────────────────────────────────────────────────────────────────────┘┌─ Recent activity ────────────────────────────────────────────────────────────┐│coretemp/Package            ▁▂▂▅█▇▆▆ 52 C                                     │
+┌─ CPU ────────────────────────────────────────────────────────────────────────┐│12:04:02 admin ether 3c:ec:ef:aa:bb:cc  blk.test nvme0n1 read                 ││coretemp/Core 0                      49 C                                     │
+│Intel(R) Core(TM) i7-8700T CPU @ 2.40GHz                                      ││12:03:44 ro    http  192.0.2.17           id                                  ││coretemp/Core 1                      88 C                                     │
+│Cores:         1 sockets, 6 cores, 12 threads                                 ││12:01:10 admin ether 3c:ec:ef:aa:bb:cc  probe pci                             ││nvme/Composite               ▁▁▅▅█▅▅ 41 C                                     │
+│Frequency:     2400 MHz                                                       │└──────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────┘
+│Microcode:     0xf6                                                           │
+│Hottest:       88 C  coretemp/Core 1                                          │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌─ Memory ─────────────────────────────────────────────────────────────────────┐
+│[██████░░░░░░░░░░░░░░] 5.0 GiB / 16.0 GiB                                     │
+│DIMMs:         2x 8.0 GiB DDR4 @2666                                          │
+│ECC:           none                                                           │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit

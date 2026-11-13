@@ -1,0 +1,25 @@
+ i7lablinux 0.1.0  host:i7lab-m720q-04  up 01:02:05  ip 192.0.2.1… attention: 7
+ Overview   PCIe   Storage   Network   USB   Sensors   Log  [Actions]
+┌─ Actions ────────────────────────────────────────────────────────────────────┐
+│Reboot                                                                        │
+│Power off                                                                     │
+│Boot next: 0001 Windows Boot Manager                                          │
+│Boot next: 0003 UEFI: USB stick                                               │
+│Rescan PCI bus                                                                │
+│Probe now                                                                     │
+│Open shell                                                                    │
+│Show key fingerprints                                                         │
+│Kexec into another kernel  (planned)                                          │
+│Set wake-on-LAN  (planned)                                                    │
+│Run stress test  (planned)                                                    │
+│Enrol keys  (planned)                                                         │
+│Wipe disk  (planned)                                                          │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+F1 Help  F2 Probe  F5 Refresh  Tab Pane  F10 Shell  q Quit

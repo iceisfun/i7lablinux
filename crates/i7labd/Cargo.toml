@@ -1,0 +1,12 @@
+[package]
+name = "i7labd"
+description = "i7lablinux agent: command registry, ether responder, beacon, HTTP API + web UI, console TUI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+labproto.workspace = true
+labprobe.workspace = true
+labtui.workspace = true

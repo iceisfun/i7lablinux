@@ -1,0 +1,23 @@
+i7labctl discover
+  listen for L2 beacons, fill the registry
+
+usage: i7labctl discover [--listen S] [--active] [--watch] [--all] [--assign MAC=IP/PFX[/GW]].. [-i IF].. [--vlan IDS]
+transports: ether   role: none
+
+Listen for L2 beacons (ethertype 0x88B5) and probe replies on every Ethernet NIC with carrier, print what was seen, and record it in the registry. Works with no IP at all and on VLANs (802.1Q tags are decoded; --vlan restricts the listen set and tags probes).
+  --listen S    listen window in seconds (default 4)
+  --active      also broadcast PROBE frames (at most 1 per second per NIC, 5 per run) so hosts answer within half a second; with --vlan 1-200 every id is probed on a tagged trunk
+  --watch       run until Ctrl-C and print events: new, lost (silent 15 s), reboot (boot id changed), ip, state
+  --all         include registry entries not seen in this run
+  --assign MAC=IP/PFX[/GW]
+                answer that MAC's address-less beacon with an address hint (I7LR2 signed with the admin key; I7LR1 to old sticks); at most one hint per MAC per 10 s
+  --daemon      keep running and rewrite the registry every second (like --watch without output)
+Beacons whose mac= differs from the Ethernet source are flagged src-mac-mismatch. A beacon tag that fails verification is shown as unverified, never trusted.
+
+examples
+  i7labctl discover
+  i7labctl discover --active --listen 3
+  i7labctl discover --watch -i eth1 --vlan 13
+  i7labctl discover --assign 02:00:00:9d:01:57=192.0.2.195/24/192.0.2.1
+
+global options and exit codes: i7labctl help

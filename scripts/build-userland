@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# cargo build --release --target x86_64-unknown-linux-musl for the image binaries, and the host i7labctl.
+# usage: build-userland [--locked] [--ctl-only] [--no-ctl] [--build-host auto|local|HOST]
+#   out/bin/{i7lab-init,i7labd,i7labsh,i7labctl}: static x86_64 musl, stripped (release profile strips). i7labctl is
+#   built static too so one binary runs on any operator Linux. cargo and rustup need not be on the operator machine: small machines re-run
+#   this on the build host through scripts/remote and fetch out/bin.
+# Owner: P10. Spec: docs/PLAN.md sections 5, 7, 8.
+. "$(dirname "$0")/lib/common.sh"
+
+LOCKED="" CTLONLY=0 NOCTL=0 HOSTSEL=auto ORIG=("$@")
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --locked) LOCKED="--locked"; shift;;
+    --ctl-only) CTLONLY=1; shift;;
+    --no-ctl) NOCTL=1; shift;;
+    --build-host) HOSTSEL="${2:?}"; shift 2;;
+    -h|--help) sed -n '2,6p' "$0"; exit 0;;
+    *) die "unknown option $1 (see --help)";;
+  esac
+done
+case "$HOSTSEL" in local) I7_BUILD_HOST=local;; auto) ;; *) I7_HOST="$HOSTSEL";; esac
+if ! on_build_host; then
+  need ssh rsync
+  LABEL="${I7_REMOTE_LABEL:-build}"
+  info "no cargo here: building on $I7_HOST (label $LABEL)"
+  remote_run "$LABEL" scripts/build-userland "${ORIG[@]}" --build-host local
+  remote_fetch "$LABEL" bin
+  info "binaries fetched to $I7_OUT/bin"
+  exit 0
+fi
+
+need cargo rustup
+TARGET=x86_64-unknown-linux-musl
+if ! rustup target list --installed 2>/dev/null | grep -qx "$TARGET"; then
+  info "installing rust target $TARGET"
+  rustup target add "$TARGET" >&2
+fi
+cd "$I7_ROOT"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/tmp/i7ll-target-$(id -un)}"
+PKGS=(-p i7labctl)
+[ "$CTLONLY" = 1 ] || { PKGS=(-p i7lab-init -p i7labd -p i7labsh); [ "$NOCTL" = 1 ] || PKGS+=(-p i7labctl); }
+info "cargo build --release --target $TARGET ${PKGS[*]}"
+# shellcheck disable=SC2086
+cargo build --release --target "$TARGET" $LOCKED "${PKGS[@]}"
+BIN="$CARGO_TARGET_DIR/$TARGET/release"
+rm -rf "$I7_OUT/bin"; mkdir -p "$I7_OUT/bin"
+for b in i7lab-init i7labd i7labsh i7labctl; do
+  if [ "$CTLONLY" = 1 ] && [ "$b" != i7labctl ]; then continue; fi
+  if [ "$NOCTL" = 1 ] && [ "$b" = i7labctl ]; then continue; fi
+  [ -x "$BIN/$b" ] || die "cargo did not produce $b"
+  install -m 0755 "$BIN/$b" "$I7_OUT/bin/$b"
+  # static check: file(1) says "static-pie linked" or "statically linked" for musl binaries
+  if command -v file >/dev/null 2>&1; then
+    file "$I7_OUT/bin/$b" | grep -Eq 'statically linked|static-pie linked' || die "$b is not statically linked: $(file "$I7_OUT/bin/$b")"
+  fi
+done
+( cd "$I7_OUT/bin" && sha256sum ./* > SHA256SUMS )
+info "done: $(ls "$I7_OUT/bin" | grep -v SHA256SUMS | tr '\n' ' ')"
