@@ -10,8 +10,10 @@ USB writer, PID 1, agent, L2 beacons and commands without IP, HTTP API and web p
 block read/write/verify with the safety gate, exec, shell, file transfer, reboot. 728 host tests.
 Evidence: [E2E-RESULTS.md](E2E-RESULTS.md).
 
-Not proven: any physical machine, a real USB boot, a real JetKVM, Secure Boot, tagged VLAN frames over a real switch,
-SMART data (stub), Wi-Fi, kexec, bit-for-bit reproducible builds. These are the first items of v0.2.
+Used on physical lab hosts since after v0.1 (several machines, including a System76 Darter Pro: NVMe and USB boot, signed
+HTTP/API, exec, inventory, NVMe SMART, whole-disk image streaming onto the boot disk). What is NOT yet recorded as proven in
+a checked-in transcript: a real JetKVM virtual-media run, Secure Boot, tagged VLAN frames over a real switch, Wi-Fi, kexec,
+bit-for-bit reproducible builds, and a per-machine hardware checklist. These are the first items of v0.2.
 
 ## Versions
 

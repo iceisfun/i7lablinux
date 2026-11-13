@@ -79,11 +79,15 @@ you are not standing at to boot it: [docs/REMOTE-BOOT.md](docs/REMOTE-BOOT.md).
 
 ## Status
 
-Version 0.1.0, pre-release. Proven in QEMU (BIOS and UEFI, image and ISO): boot, beacon, L2 commands with no IP, HTTP,
-signed API, write gate refusals, console and serial TUI, exec, key baking. 728 host tests pass. **Nothing has been run on
-physical hardware yet**, no real JetKVM, no real USB stick boot, no Secure Boot, no tagged VLAN frames through a real
-switch. SMART is a stub. Details and the failure list are in [docs/E2E-RESULTS.md](docs/E2E-RESULTS.md); what comes next
-is in [docs/ROADMAP.md](docs/ROADMAP.md).
+Version 0.1.0, pre-release, in daily use on physical lab hosts. Proven in QEMU (BIOS and UEFI, image and ISO): boot,
+beacon, L2 commands with no IP, HTTP, signed API, write gate refusals, console and serial TUI, exec, key baking. It has
+also been installed on several physical lab machines, including a System76 Darter Pro laptop (booted from its NVMe and
+from a USB stick): beacon, signed HTTP API, `exec`, hardware inventory (PCIe, ACPI tables, DMI, thermals, NVMe SMART),
+and writing a 40 GiB Windows image onto the machine's own boot NVMe with `i7labctl blk image` (the host runs entirely from
+RAM, so the gate allows this with `--allow-boot-media`). 888 host tests pass. Not yet recorded in
+[docs/E2E-RESULTS.md](docs/E2E-RESULTS.md) as passed: a real JetKVM virtual-media run, Secure Boot, tagged VLAN frames
+through a real switch, and a hardware checklist per machine. The failure list and the QEMU details are in that file;
+what comes next is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Developing
 
